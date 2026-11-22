@@ -33,14 +33,14 @@
       "projectId": "utp",
       "title": "D1 · Choose the first release’s request kinds",
       "summary": "Record which kinds ship in phase 1 and which move to phase 2. Include the effect of adding side-by-side blind comparisons.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 20,
       "prereqs": [],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T19:37:43Z"
+        "updatedAt": "2026-11-22T20:07:03Z"
       },
       "evidence": [
         {
@@ -54,6 +54,12 @@
           "at": "2026-11-22T19:37:43Z",
           "kind": "note",
           "message": "D1 is waiting for a choice between all everyday kinds, choices and approvals only, or all everyday kinds plus blind comparisons and their review page."
+        },
+        {
+          "entryId": "review-0002-d1-option-a",
+          "at": "2026-11-22T20:07:03Z",
+          "kind": "stage-change",
+          "message": "Phase 1 ships choices, approvals, manual steps, clarifications, result checks, assumption lists and FYI notices. Side-by-side blind comparisons ship in phase 2."
         }
       ]
     },
