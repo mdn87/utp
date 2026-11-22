@@ -1,0 +1,27 @@
+{
+  "name": "utp",
+  "version": "0.1.0",
+  "description": "User testing platform: typed decision cards between coding agents and the person they work for.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "utp": "dist/src/cli/main.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "node scripts/build.mjs --noEmit",
+    "test": "node scripts/build.mjs && node scripts/test.mjs"
+  },
+  "files": [
+    "dist/src",
+    "LICENSE",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "5.9.3"
+  }
+}

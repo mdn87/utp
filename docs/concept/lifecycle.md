@@ -68,12 +68,13 @@ The service handles one write at a time per project, holding the store's
 OS file lock, which also stops a second service instance from writing. Each
 write does this in order:
 
-1. Writes each payload (request revision, answer, evidence) to a temporary
+1. Writes each payload (a request revision's body) to a temporary
    file, flushes it to disk, and renames it into place under its content
    hash. A crash here leaves an unreferenced file, which is ignored.
 2. Appends one event line, ending in a newline, that references the payloads
-   by hash and carries the operation id and the operation's result. The event
-   is the commit point, and the only record of the operation.
+   by hash and carries the operation id and the operation's result. Answers,
+   grants, and evidence are small and travel inside the event line itself. The
+   event is the commit point, and the only record of the operation.
 
 A retry with the same operation id finds the committed event and returns the
 result stored in it, so no step can commit a mutation without its result. On
@@ -215,7 +216,8 @@ grant.
 
   Every reconciliation is a new log entry; nothing earlier is rewritten.
 - **Takeover.** `utp takeover` of an unused grant (no `begin` recorded) is
-  allowed as soon as its owner session has ended, or after the grant has sat
+  allowed as soon as its owner session has ended (an ending session gives its
+  unused grants back with `utp release`), or after the grant has sat
   idle for 15 minutes. A used grant can be taken over only after its lease ran
   out and its outcome was reconciled, or when the person explicitly
   authorizes it. Takeover increases the epoch under the lock, so the former
@@ -301,6 +303,7 @@ its own request.
 | `utp init`, `utp link` | Register a project; link another checkout to it |
 | `utp serve` | Runs the service on the home server |
 | `utp token create <machine>` | Creates a client token (run on the server by the person) |
+| `utp connect <url>` | Saves the service address, and this machine's token read from standard input, in `~/.utp/config.json` |
 | `utp setup <platform>` | Shows, and after confirmation applies, the sandbox setting that lets that platform's agents reach the service |
 | `utp new <kind>` | Writes a request template with fix hints |
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
@@ -315,6 +318,7 @@ its own request.
 | `utp begin <grant>` | Re-checks the grant, epoch, and preconditions immediately before the effect |
 | `utp applied <grant> --evidence <file>` | Records what the agent did, including scope and effect |
 | `utp reconcile <grant> --outcome <outcome>` | Records what recovery found after an uncertain effect |
+| `utp release <grant>` | Gives back an unused grant, for example when a session ends; the request returns to `answered` |
 | `utp revise <id> <file>` | Writes a new revision, superseding the old one and revoking its grants |
 | `utp cancel`, `utp reverse`, `utp takeover` | Withdraw, record a reversal, take over after reconciliation |
 | `utp log`, `utp status` | Search the log; show what is waiting |
@@ -327,7 +331,9 @@ its own request.
 - Exit codes: 0 success or answered; 10 still waiting; 11 stale (a
   precondition changed); 12 cancelled; 13 expired; 14 late conflict; 15
   default claimed; 16 an answer arrived first; 17 grant revoked (answer
-  revised or withdrawn, or request superseded); 20 check failed; 30 store
+  revised or withdrawn, or request superseded); 18 the answer lacks the
+  provenance its action needs (see "Provenance follows the effect"); 19 not
+  allowed in the request's current state; 20 check failed; 30 store
   busy (safe to retry); 31 lease epoch outdated; 32 can't reach the UTP
   service (check the service, or run `utp setup` in a sandbox); 40 not found; 1 any other error.
 - Supported lanes, tested separately: PowerShell 7 and Git Bash on Windows,

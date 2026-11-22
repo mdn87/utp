@@ -13,7 +13,16 @@ Node 20 or later. `docs/concept/` is the specification; `docs/decisions/`
 records the person's answers. Review 0002 re-asks D1 (which request kinds ship
 in phase 1), D4 (what an agent does while an answer is pending), and D5 (where
 the person answers). Build nothing that depends on those three until they are
-answered.
+answered. `utp claim-default` and the late-conflict path depend on D4 and are
+not built yet.
+
+## Build and test
+
+Node 20 or later. `npm ci`, then `npm test`, which compiles to `dist/` and runs
+every test. In a synced or backed-up folder, keep `node_modules` and build
+output elsewhere: set `UTP_TOOLING_DIR` to a folder whose `node_modules` holds
+`typescript` and `@types/node`, and `UTP_BUILD_DIR` to the build folder, for
+both `node scripts/build.mjs` and `node scripts/test.mjs`.
 
 ## Public repository
 
