@@ -69,14 +69,14 @@
       "projectId": "utp",
       "title": "D4 · Decide what an unanswered request allows",
       "summary": "Record when dependent work waits and whether a reversible default is allowed. Apply the answer to default claims and later corrections.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 30,
       "prereqs": [],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:14:29Z"
       },
       "evidence": [
         {
@@ -84,6 +84,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Review 0002 contains the options and the panel’s recommendation. The decision record contains an answer to the earlier review only."
+        },
+        {
+          "entryId": "review-0002-d4-answered",
+          "at": "2026-11-22T23:14:29Z",
+          "kind": "stage-change",
+          "message": "D4 chose defaults for small decisions with a one-step undo, plus a panel before larger technical defaults."
         }
       ]
     },
@@ -93,14 +99,14 @@
       "projectId": "utp",
       "title": "D5 · Choose where people answer reviews",
       "summary": "Record the default channel for a single question and a batch, including any size cutoff and whether the review page moves into phase 1.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 40,
       "prereqs": [],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:14:29Z"
       },
       "evidence": [
         {
@@ -108,6 +114,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Review 0002 asks the person to choose chat, a page, or a split by batch size."
+        },
+        {
+          "entryId": "review-0002-d5-answered",
+          "at": "2026-11-22T23:14:29Z",
+          "kind": "stage-change",
+          "message": "D5 chose chat for one or two questions and a phase 1 review page for batches of three or more. Terminal review worked well for decisions without visuals."
         }
       ]
     },
@@ -117,14 +129,14 @@
       "projectId": "utp",
       "title": "D6b · Confirm who maintains blind comparisons",
       "summary": "Record whether UTP takes over the existing comparison pages. Combine this answer with D1 when scheduling any move.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 50,
       "prereqs": [],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:14:29Z"
       },
       "evidence": [
         {
@@ -132,6 +144,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Review 0001 kept the integration plan. Review 0002 asks for confirmation after defining blind comparison."
+        },
+        {
+          "entryId": "review-0002-d6b-answered",
+          "at": "2026-11-22T23:14:29Z",
+          "kind": "stage-change",
+          "message": "D6b chose to move existing comparison workflows to UTP when side-by-side blind comparisons ship in phase 2."
         }
       ]
     },
@@ -141,7 +159,7 @@
       "projectId": "utp",
       "title": "Publish the decisions from review 0002",
       "summary": "Record all four answers, update the phase scope and adjust the board dependencies for any review page or blind comparisons selected for phase 1.",
-      "stage": "planned",
+      "stage": "ready",
       "sequence": 60,
       "prereqs": [
         "utp:review:kinds",
@@ -153,7 +171,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:10:41Z"
+        "updatedAt": "2026-11-22T23:14:29Z"
       },
       "evidence": [
         {
@@ -167,6 +185,12 @@
           "at": "2026-11-22T23:10:41Z",
           "kind": "note",
           "message": "UTP presented D4, D5 and D6b together in the terminal. Publishing waits for those answers. D1 was recorded in conversation."
+        },
+        {
+          "entryId": "review-0002-answers-complete",
+          "at": "2026-11-22T23:14:29Z",
+          "kind": "stage-change",
+          "message": "All four choices are recorded. UTP verified D4, D5 and D6b in the terminal. The public decision record and phase updates can now be prepared."
         }
       ]
     },

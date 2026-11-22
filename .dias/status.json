@@ -11,8 +11,8 @@
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
   "currentMilestone": "Prove the shared decision log and a complete choice workflow across Windows, macOS and Linux. The CLI, event store and execution grants passed CI on all three.",
-  "remainingSummary": "Keep relinked history searchable, deploy the shared service and test cross-machine recovery. Review 0002 sets request kinds, defaults, answer channels and comparison page plans.",
-  "nextChipId": "utp:core:relink",
+  "remainingSummary": "Publish review 0002, preserve history when relinking and verify direct clients and recovery across machines. The persistent review service is running.",
+  "nextChipId": "utp:review:record",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-22"
