@@ -23,7 +23,10 @@ share a project. Read [the concept](concept.md) first.
   `UTP_SERVER` overrides the address. The person creates tokens on the server
   (`utp token create <machine>`), and the service stores only their hashes.
   In phase 1 every token has the same rights; each answer records the
-  machine and channel it came through.
+  machine and channel it came through. Each command also names its session
+  through `UTP_SESSION`, which adapters set to the agent's session id. Grants
+  belong to a machine and a session, so without it every command on that
+  machine counts as one session.
 - **No service, no UTP.** When the service can't be reached, every command
   fails with exit code 32 and lists the likely causes: the service is down, a
   sandbox blocks network access, or the address is wrong. Phase 1 has no
