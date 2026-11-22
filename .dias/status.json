@@ -10,8 +10,8 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Prove the shared decision log and the first complete choice workflow across Windows, macOS and Linux. The command-line client, event store and execution grants have passed CI on all three systems.",
-  "remainingSummary": "Preserve searchable history when relinking, bring the shared service online and verify cross-machine recovery. Review 0002 decides the first request kinds, the default policy, answer channels and the future of the existing comparison pages.",
+  "currentMilestone": "Prove the shared decision log and a complete choice workflow across Windows, macOS and Linux. The CLI, event store and execution grants passed CI on all three.",
+  "remainingSummary": "Keep relinked history searchable, deploy the shared service and test cross-machine recovery. Review 0002 sets request kinds, defaults, answer channels and comparison page plans.",
   "nextChipId": "utp:core:relink",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",

@@ -40,7 +40,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T19:37:43Z"
       },
       "evidence": [
         {
@@ -48,6 +48,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Review 0002 asks the person to choose between choices and approvals, all everyday kinds, and adding blind comparisons."
+        },
+        {
+          "entryId": "review-0002-d1-awaiting-answer",
+          "at": "2026-11-22T19:37:43Z",
+          "kind": "note",
+          "message": "D1 is waiting for a choice between all everyday kinds, choices and approvals only, or all everyday kinds plus blind comparisons and their review page."
         }
       ]
     },
