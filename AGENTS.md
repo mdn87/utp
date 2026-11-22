@@ -7,10 +7,13 @@ repository: Claude Code, Codex, Antigravity, or another.
 
 ## Current phase
 
-Concept under review. `docs/concept/concept.md` is the working concept and
-`docs/research/` holds the prior-art and failure-pattern research behind it.
-Do not start implementation work until the concept's open decisions are
-answered; record answers in `docs/decisions/`.
+Phase 1a: the lifecycle core (the `utp` client, the service on the home
+server, the store, the state machine, and execution grants), in TypeScript for
+Node 20 or later. `docs/concept/` is the specification; `docs/decisions/`
+records the person's answers. Review 0002 re-asks D1 (which request kinds ship
+in phase 1), D4 (what an agent does while an answer is pending), and D5 (where
+the person answers). Build nothing that depends on those three until they are
+answered.
 
 ## Public repository
 

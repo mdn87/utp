@@ -1,6 +1,6 @@
 ---
 title: UTP lifecycle
-status: draft v0.8, ready for review after five adversarial rounds
+status: v0.9, store moved to the home server per decision D2
 updated: 2026-11-22
 ---
 
@@ -12,46 +12,61 @@ share a project. Read [the concept](concept.md) first.
 
 ## Store
 
-- **One authoritative store per project per machine, outside the code
-  checkout**: `~/.utp/stores/<project-id>/`. (Open decision D2.) `UTP_HOME`
-  moves the store root.
-- **Sandboxed agents need write access to it.** `utp setup <platform>` shows
-  the one setting that lets that platform's sandbox write to the store root
-  and applies it after the person confirms. Without it, the first write fails
-  with exit code 32 and names the setup command; UTP never asks for a
-  sandbox exception per request.
-- **Project identity is a registration, not a guess.** `utp init` assigns a
-  random project id and records the checkout in the user's UTP registry.
-  Worktrees of a registered checkout share its Git common directory and join
-  the same project automatically. Another clone on the same machine with the
-  same remote is offered as a link (`utp link`) and joins only when the person
-  or agent confirms; until then it keeps its own log. In phase 1, `utp link`
-  refuses while either store has open requests or active grants. A clone
-  whose own store already has records keeps them as a read-only archive of
-  the project: `utp log` and lookups search it too, labeled with where each
-  record came from, and nothing in it can be answered, granted, or applied.
-  Merging the two into one log is the phase 3 import. Forks and unrelated
+- **One central store on the home server** (decision D2, answered
+  2026-11-22). A small service, `utp serve`, runs on the home server and
+  keeps every project's log under its data folder:
+  `<data>/stores/<project-id>/`. Every `utp` command on every machine sends
+  its operation to the service, which is the only writer. Current state is a
+  projection rebuilt from the event log.
+- **Clients.** Each machine's `utp` keeps the service address and that
+  machine's token in `~/.utp/config.json`, readable only by the user;
+  `UTP_SERVER` overrides the address. The person creates tokens on the server
+  (`utp token create <machine>`), and the service stores only their hashes.
+  In phase 1 every token has the same rights; each answer records the
+  machine and channel it came through.
+- **No service, no UTP.** When the service can't be reached, every command
+  fails with exit code 32 and lists the likely causes: the service is down, a
+  sandbox blocks network access, or the address is wrong. Phase 1 has no
+  local fallback; that is the accepted cost of one shared log.
+- **Sandboxed agents need network access to it.** `utp setup <platform>`
+  shows the setting that lets that platform's sandbox reach the service and
+  applies it after the person confirms. For Codex's `workspace-write` mode
+  that is `[sandbox_workspace_write] network_access = true`, which opens all
+  outbound network for that agent, not just UTP, and the setup step says so.
+  UTP never asks for a sandbox exception per request.
+- **The network path.** The service listens on one port that the home
+  server's firewall allows from the home network only; the person adds that
+  rule. Traffic is plain HTTP on the home network, like the server's other
+  services, so tokens cross the network unencrypted; over Tailscale the link
+  is encrypted.
+- **Project identity is a registration, not a guess.** `utp init` asks the
+  service for a new random project id and records the checkout in this
+  machine's registry, `~/.utp/registry.json`, keyed by its Git common
+  directory. Worktrees of a registered checkout share that directory and join
+  the same project automatically. Another clone, on this machine or another,
+  joins with `utp link <project-id>` once the person or agent confirms; until
+  then UTP refuses to queue requests for it, and `utp init` there points out
+  a registered project with the same remote. A checkout already registered
+  to a different project can be relinked only while neither project has open
+  requests or active grants; the old project's records stay searchable from
+  the new one as a read-only archive, labeled with their origin, and nothing
+  in them can be answered, granted, or applied. Forks and unrelated
   repositories stay separate unless linked. History is never used as the
   identity, so shallow clones, repositories with several roots, and new
   repositories need no special handling.
-- **One machine per log in phase 1.** Each machine keeps its own stores. A
-  project worked on from two machines has two independent logs, and lookups
-  on one machine don't see decisions made on the other. A lossless migration
-  (`utp export --full` and `utp import`) is a phase 3 item; a shared store is
-  a later phase.
-- **Only the `utp` command writes**, under an exclusive lock on `store.lock`
-  (OS file locking on Windows, macOS, and Linux). Current state is a
-  projection rebuilt from the event log.
+- **One log across machines.** A project worked on from several machines has
+  one log, and lookups see every machine's decisions.
 - **Search is project-scoped:** `utp log --tags`, `--related`, `--text`, and
   `--kind`.
 - **Publishing is an explicit export.** `utp export --redact` writes selected
   records, such as UTP's own design decisions, to a folder for committing, and
-  runs the leak check on what it writes. It is a publication copy, not a
-  migration.
+  runs the leak check on what it writes.
 
 ## Crash-consistent writes
 
-Each mutating command, holding the lock, does this in order:
+The service handles one write at a time per project, holding the store's
+OS file lock, which also stops a second service instance from writing. Each
+write does this in order:
 
 1. Writes each payload (request revision, answer, evidence) to a temporary
    file, flushes it to disk, and renames it into place under its content
@@ -62,7 +77,7 @@ Each mutating command, holding the lock, does this in order:
 
 A retry with the same operation id finds the committed event and returns the
 result stored in it, so no step can commit a mutation without its result. On
-every lock acquisition, UTP checks the log's last line. A line with no final
+start and on every lock acquisition, the service checks the log's last line. A line with no final
 newline or that doesn't parse is a torn write: it is moved to a quarantine
 file and its operation counts as not done, so a retry performs it once.
 Because payloads are written before the event that references them, an event
@@ -284,7 +299,9 @@ its own request.
 | Verb | Does |
 |---|---|
 | `utp init`, `utp link` | Register a project; link another checkout to it |
-| `utp setup <platform>` | Shows, and after confirmation applies, the sandbox setting that lets that platform's agents write to the store |
+| `utp serve` | Runs the service on the home server |
+| `utp token create <machine>` | Creates a client token (run on the server by the person) |
+| `utp setup <platform>` | Shows, and after confirmation applies, the sandbox setting that lets that platform's agents reach the service |
 | `utp new <kind>` | Writes a request template with fix hints |
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
 | `utp ask <file>` | Checks, stores, attaches when equivalent, queues into the current review |
@@ -311,14 +328,15 @@ its own request.
   precondition changed); 12 cancelled; 13 expired; 14 late conflict; 15
   default claimed; 16 an answer arrived first; 17 grant revoked (answer
   revised or withdrawn, or request superseded); 20 check failed; 30 store
-  busy (safe to retry); 31 lease epoch outdated; 32 store not writable from
-  this sandbox (run `utp setup`); 40 not found; 1 any other error.
+  busy (safe to retry); 31 lease epoch outdated; 32 can't reach the UTP
+  service (check the service, or run `utp setup` in a sandbox); 40 not found; 1 any other error.
 - Supported lanes, tested separately: PowerShell 7 and Git Bash on Windows,
   zsh on macOS, bash over SSH on Linux.
 
 ## Privacy
 
-- Stores live outside code checkouts, so a commit can't include them.
+- Stores live on the home server, outside code checkouts, so a commit can't
+  include them.
 - `utp export --redact` runs a leak check: generic patterns (absolute paths,
   email addresses, IP addresses, token shapes) plus a private deny-list kept in
   the user's UTP configuration, never in a repository. The public repository's

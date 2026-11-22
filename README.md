@@ -10,14 +10,16 @@ understanding it. Some of those answers get reversed later, at real cost.
 UTP turns those moments into structured reviews. The agent writes a typed
 decision request (what is being decided, the options and their concrete
 consequences, its recommendation, and what it will do with each answer).
-UTP renders it as a short review in a terminal, a local web page, or a
+UTP renders it as a short review in a terminal, a review page, or a
 desktop app, and returns your answer to the agent as structured data. Every
 decision is kept in a decision log so that later sessions, and other agents,
 don't relitigate or silently undo it.
 
 ## Status
 
-Concept under review. There is no code yet. Start with:
+The concept has been reviewed and its first decisions answered (review 0001,
+2026-11-22). Phase 1a, the lifecycle core, is being built in TypeScript. A
+few decisions are being asked again in review 0002. Start with:
 
 - [Concept](docs/concept/concept.md): what UTP is, the kinds of decisions it
   handles, the request and answer formats, and the build phases.
@@ -30,4 +32,10 @@ Concept under review. There is no code yet. Start with:
 
 UTP is built command line first, so any agent that can run a shell command
 can use it. Adapters are planned for Claude Code, OpenAI Codex, and Google
-Antigravity. Desktop-app features are optional conveniences on top.
+Antigravity. Desktop-app features are optional conveniences on top. The
+decision log lives in one small service on a home server, so every machine
+and every agent sees the same decisions.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

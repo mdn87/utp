@@ -1,0 +1,133 @@
+{
+  "utp": "0",
+  "review_id": "V-20261122-concept",
+  "recorded_at": "2026-11-22T12:57:10Z",
+  "answers": [
+    {
+      "request_id": "D1",
+      "revision": 2,
+      "kind": "choose",
+      "value": "custom",
+      "custom": "i dont know what blind ballot pages is",
+      "outcome": "needs_clarification",
+      "follow_up": "The card used 'blind-ballot pages' without defining it. Re-asked in plain language, with the term defined, in review 0002.",
+      "sureness": "leaning",
+      "feedback": "needed_more",
+      "answered_at": "2026-11-22T12:09:37.475Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    },
+    {
+      "request_id": "D2",
+      "revision": 4,
+      "kind": "choose",
+      "value": "d",
+      "outcome": "settled",
+      "follow_up": "One central log on the home server. The lifecycle's store moves into a service there; see lifecycle.md.",
+      "sureness": "sure",
+      "feedback": "clear",
+      "answered_at": "2026-11-22T12:09:37.762Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    },
+    {
+      "request_id": "D3",
+      "revision": 1,
+      "kind": "choose",
+      "value": "c",
+      "outcome": "settled",
+      "follow_up": "TypeScript on Node. The code targets Node 20 and later, compiled to JavaScript, because the home server runs Node 20.",
+      "sureness": "leaning",
+      "feedback": "clear",
+      "answered_at": "2026-11-22T12:09:37.878Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    },
+    {
+      "request_id": "D4",
+      "revision": 3,
+      "kind": "choose",
+      "value": "custom",
+      "outcome": "custom_in_progress",
+      "custom_note": "Paraphrased here; the verbatim answer names an internal tool and is kept in the private evidence folder.",
+      "custom_paraphrase": "First run a multi-agent review to see whether agents can, and should, agree on the recommended course of action.",
+      "follow_up": "Read two ways: as a policy (agents consult a multi-agent panel before using a default) and as a request to have agents try to agree on D4 itself. A three-agent debate covering both readings is running; its result comes back as D4 in review 0002.",
+      "sureness": "leaning",
+      "feedback": "clear",
+      "answered_at": "2026-11-22T12:09:38.018Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    },
+    {
+      "request_id": "D5",
+      "revision": 4,
+      "kind": "choose",
+      "value": "custom",
+      "custom": "large batches in one window, i actually am having trouble understanding the proposed solutions options as stated",
+      "outcome": "needs_clarification",
+      "follow_up": "Clear part: large batches in one window. The options were hard to follow, so D5 is re-asked in the person's own terms in review 0002.",
+      "sureness": "leaning",
+      "feedback": "needed_more",
+      "answered_at": "2026-11-22T12:09:38.146Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    },
+    {
+      "request_id": "D6",
+      "revision": 3,
+      "kind": "assumptions",
+      "value": null,
+      "items": {
+        "ballots": "keep",
+        "brasstacks": "keep",
+        "interview": "keep",
+        "notify": "keep",
+        "openitems": "keep",
+        "phone": "keep",
+        "quiz": "keep",
+        "register": "keep"
+      },
+      "outcome": "settled",
+      "follow_up": "All eight items kept. The blind-ballot item uses the same undefined term as D1, so it is re-confirmed with D1 in review 0002.",
+      "sureness": "leaning",
+      "feedback": "clear",
+      "answered_at": "2026-11-22T12:09:38.290Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    },
+    {
+      "request_id": "D7",
+      "revision": 3,
+      "kind": "choose",
+      "value": "a",
+      "outcome": "settled",
+      "follow_up": "MIT. LICENSE added; the answer came through a channel the agent doesn't control, which this outward-facing change requires.",
+      "sureness": "leaning",
+      "feedback": "clear",
+      "answered_at": "2026-11-22T12:09:38.414Z",
+      "provenance": {
+        "channel": "review-page",
+        "recorded_by": "the person, signed in to the review page",
+        "verified": "channel the agent doesn't control"
+      }
+    }
+  ]
+}

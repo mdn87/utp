@@ -1,6 +1,6 @@
 ---
 title: UTP concept
-status: draft v0.8, ready for review after five adversarial rounds and the prior-art research
+status: v0.9, updated with the answers to review 0001
 updated: 2026-11-22
 ---
 
@@ -20,7 +20,7 @@ answer well, shows it as one card per decision in a batched review, and
 returns the answer to the agent as data bound to exactly what the person saw.
 Every request, answer, and reversal goes into a decision log the next session
 can search. The command line and plain files are the contract; answering in
-the conversation, a local review page, the app's own question dialog, and a
+the conversation, a review page, the app's own question dialog, and a
 phone inbox are ways to reach the same request.
 
 ## The problem, from the evidence
@@ -277,7 +277,7 @@ Rules around the ladder:
 |---|---|---|
 | The conversation | The default for most requests: the agent shows the review as Markdown cards with lettered answers, and records the person's reply | 1 |
 | Terminal review (`utp review`) | SSH-only machines; answering outside any agent; consequential approvals where the transcript can't be checked | 1 |
-| Local review page (`utp serve`) | Previews, side-by-side and blind comparison, batches of three or more cards, step checklists | 2 |
+| Review page, served by the UTP service | Previews, side-by-side and blind comparison, batches of three or more cards, step checklists | 2 |
 | The app's own question dialog | One-click answers for small requests in Claude Code, Codex, and the Antigravity app | 2 |
 | Phone inbox | Answering away from the desk, through the existing phone inbox | 4 |
 
@@ -381,13 +381,14 @@ use only the command line.
   conversation for ordinary answers and the terminal review for consequential
   approvals.
 
-**Store access in sandboxes.** An agent in a restricted sandbox can't write
-outside its project by default. Codex's `workspace-write` mode, for example,
-writes only to the workspace and temporary folders. `utp setup <platform>`
-shows the one setting that lets that agent write to the store folder (for
-Codex, an entry in `[sandbox_workspace_write] writable_roots`) and applies it
-only after the person confirms. Without it, `utp` fails at the first write
-with exit code 32 and names the setup command, instead of asking for a
+**Reaching the service from sandboxes.** The decision log lives in one
+service on the home server (decision D2), so every `utp` command needs the
+network. An agent sandbox that blocks network access can't reach it, and
+Codex's `workspace-write` mode blocks it by default. `utp setup <platform>`
+shows the setting that allows it (for Codex, `[sandbox_workspace_write]
+network_access = true`, which opens all outbound network for that agent, not
+just UTP) and applies it only after the person confirms. Without it, `utp`
+fails with exit code 32 and names the setup command, instead of asking for a
 sandbox exception on every request. Phase 1c demonstrates the setting on
 each platform.
 
@@ -473,11 +474,11 @@ those reviews drives the next template revision.
 | Phase | Delivers | Done when |
 |---|---|---|
 | 0. Concept | This document set, research, roundtable review, the person's answers to D1 to D7 | Answers logged in `docs/decisions/` |
-| 1a. Lifecycle | Store, revisions, state machine, locking, execution grants, `ask`, `flush`, `wait`, `answer`, `claim-default`, `begin`, `applied`, `reconcile`, `revise`, `log`, `reverse`, exit codes; one complete `choose` flow through Markdown and the terminal review | Lifecycle, crash-resume, and concurrency tests pass on Windows, macOS, and Linux |
+| 1a. Lifecycle | The service on the home server (`utp serve`) and the `utp` client, in TypeScript for Node 20 or later (decision D3); store, revisions, state machine, locking, execution grants, `ask`, `flush`, `wait`, `answer`, `claim-default`, `begin`, `applied`, `reconcile`, `revise`, `log`, `reverse`, exit codes; one complete `choose` flow through Markdown and the terminal review | Lifecycle, crash-resume, and concurrency tests pass with clients on Windows, macOS, and Linux against the service |
 | 1b. Kinds and lint | `approve`, `handoff`, `clarify`, `accept`, `assumptions`, `notice` digests; `utp check` with both rule classes; fixtures; feedback and timestamps | Fixture recall and specificity targets met on the held-out half, with precision reported as defined in [verification](verification.md) |
-| 1c. Adapters | Skills and instruction files for Claude Code, Codex, and Antigravity; conversation answers with transcript checks, demonstrated per platform; presentation receipts; `utp setup` for store access in each platform's default sandbox; the resume path after an answer given outside the conversation; a Claude Code hook that checks a completion report exists | The scripted end-to-end run passes on each platform, and the real-use criteria in [verification](verification.md) are met |
-| 2. Rich review | Local review page (previews, batches, blind `judge` generalizing the ballot pages, identical-candidate detection); native question dialogs | A real `judge` and a real `handoff` run through it; renderer conformance passes for every channel |
-| 3. Learning | `revisit`, `retro`, template versions, the metrics report, lossless export and import between machines | The first retro produces a change the person accepts |
+| 1c. Adapters | Skills and instruction files for Claude Code, Codex, and Antigravity; conversation answers with transcript checks, demonstrated per platform; presentation receipts; `utp setup` for reaching the service from each platform's default sandbox; the resume path after an answer given outside the conversation; a Claude Code hook that checks a completion report exists | The scripted end-to-end run passes on each platform, and the real-use criteria in [verification](verification.md) are met |
+| 2. Rich review | Review page (previews, batches, blind `judge` generalizing the ballot pages, identical-candidate detection); native question dialogs | A real `judge` and a real `handoff` run through it; renderer conformance passes for every channel |
+| 3. Learning | `revisit`, `retro`, template versions, the metrics report | The first retro produces a change the person accepts |
 | 4. Conveniences | Phone inbox channel, MCP server | Each ships only when it saves the person time |
 
 ## How we will know it works
@@ -509,14 +510,23 @@ to answer.
   reason, measured against must-accept fixtures and waiver rates.
 - **Duplicating existing tools.** UTP generalizes the blind-ballot pages and
   uses the existing phone, notification, and open-items channels.
-- **Privacy.** Stores live outside the code checkout; public exports are
-  redacted and leak-checked.
-- **Forged answers on the local review page.** Loopback alone isn't
-  authentication: any local process, or another website open in the browser,
-  could try to post an answer. The page listens only on loopback, accepts an
-  answer only with a random per-session token that `utp serve` hands to the
-  browser it opens and never prints to the agent's output, and checks the
-  Host and Origin headers. That stops cross-site posts and an agent posting
+- **Privacy.** Stores live on the home server, outside code checkouts;
+  public exports are redacted and leak-checked.
+- **One service for everything.** When the home server or the service is
+  down, no agent can ask or record anything (exit code 32), and agents fall
+  back to asking in plain conversation. This is the accepted cost of one
+  shared log (decision D2). The store is a plain folder on the server, so the
+  server's existing backups can cover it.
+- **Tokens on the home network.** Clients send their tokens over plain HTTP
+  on the home network, like the server's other services; over Tailscale the
+  link is encrypted. A token lets any agent on that machine act in every
+  project; phase 1 records which machine acted rather than limiting it.
+- **Forged answers on the review page.** Being on the home network isn't
+  authentication: any process with a client token, or another website open
+  in the browser, could try to post an answer. The page accepts an answer
+  only with a random per-presentation token that only the person's browser
+  receives, never printed to the agent's output, and checks the Host and
+  Origin headers. That stops cross-site posts and an agent posting
   an answer by mistake. It can't stop a process running as the same user
   that sets out to read the token, which is the same limit the store has:
   UTP assumes cooperating agents and makes forgery auditable, not
@@ -524,15 +534,18 @@ to answer.
 - **Platform drift.** Adapters stay thin; the command line and store are the
   contract.
 
-## Open decisions
+## Decisions
 
-Written as full v0 requests in
-[0001-concept-review](../decisions/0001-concept-review.md):
+Asked in [0001-concept-review](../decisions/0001-concept-review.md). The
+answers, with how each was recorded, are in
+[0001-concept-review.answers.json](../decisions/0001-concept-review.answers.json).
 
-- D1. Which request kinds ship in phase 1.
-- D2. Where each project's decision log lives.
-- D3. Implementation language.
-- D4. What the agent does when an answer hasn't arrived.
-- D5. Where the person answers by default.
-- D6. Which existing tools UTP absorbs, connects to, or leaves alone.
-- D7. License for the public repository.
+| Decision | Answer (2026-11-22) |
+|---|---|
+| D1. Which request kinds ship in phase 1 | Asked again in review 0002: the card used "blind-ballot pages" without defining it |
+| D2. Where each project's decision log lives | One central log on the home server |
+| D3. Implementation language | TypeScript on Node |
+| D4. What the agent does when an answer hasn't arrived | The person asked for a multi-agent debate first; its result comes back in review 0002 |
+| D5. Where the person answers by default | Large batches in one window; the options are asked again, more plainly, in review 0002 |
+| D6. Which existing tools UTP absorbs, connects to, or leaves alone | All eight proposals kept; the blind-ballot item is confirmed again with D1 |
+| D7. License for the public repository | MIT |
