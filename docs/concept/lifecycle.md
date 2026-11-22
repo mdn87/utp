@@ -212,9 +212,14 @@ grant.
     recovery basis: the remaining scope and the expected state of the target
     after the recorded partial effect. Later grants check that recovery basis
     instead of the original fingerprint, so any other change to the target
-    still makes the request `stale`. If the partial effect itself left the
-    target in a state the authorization didn't anticipate, the request
-    becomes `stale` and is asked again.
+    still makes the request `stale`. If the person changed the answer after
+    execution began, reconcile against the latest authorization. To resume
+    on the same action and target, confirm that the exact authorized scope
+    remains. A later correction requires this check again before a new grant.
+    If the report cannot confirm that scope, mark the effect unanticipated
+    and revise the request with the remaining work spelled out. An
+    unanticipated change to the target also makes the request `stale`
+    and requires a revision.
   - `different`: the request moves to `applied`, with the mismatch flagged
     and shown in the next review.
   - `unknown`: the request stays in `outcome_unknown` and is shown in the

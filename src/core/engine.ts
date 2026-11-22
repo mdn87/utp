@@ -52,6 +52,7 @@ export interface Rev {
   grants: string[];
   flags: string[];
   remaining_scope?: string;
+  recovery_authorization?: Authorization;
   reconciliations: { at: string; outcome: string; grant: string }[];
 }
 
@@ -143,6 +144,14 @@ function contentKey(body: RequestBody, basis: Basis): string {
 
 function strongProvenance(a: AnswerRecord): boolean {
   return a.verified === "channel" || (a.verified === "transcript" && a.addressed === true);
+}
+
+function sameTarget(a: Authorization, b: Authorization): boolean {
+  return a.action === b.action && a.target === b.target;
+}
+
+function sameAuthorization(a: Authorization, b: Authorization): boolean {
+  return sameTarget(a, b) && a.scope === b.scope;
 }
 
 export class Engine {
@@ -358,6 +367,9 @@ export class Engine {
         message: `this answer came through ${answer.channel} with no proof that the person gave it, and the action it authorizes is level 3; ask the person to answer in their own terminal with utp review`,
       };
     }
+    if (this.recoveryNeedsNewScope(rev, auth)) {
+      return { code: EXIT.NOT_ALLOWED, ...base, message: "the answer changed after a partial effect; reconcile what remains under the current answer" };
+    }
     const changed = this.changedBasis(rev, basisArg(a.basis));
     if (changed.length) {
       return this.commit("wait", "request.stale", actor, { id: rev.id, revision: rev.revision, changed, step: "wait" },
@@ -426,7 +438,10 @@ export class Engine {
     const found = this.grantContext(a);
     if ("code" in found) return found;
     const { g, rev } = found;
-    if (rev.status !== "outcome_unknown" || this.lastGrant(rev)?.id !== g.id) {
+    const current = rev.answer && this.authorizationFor(rev, rev.answer);
+    const updatingScope = a.outcome === "partial" && rev.status === "answered" && g.status === "done"
+      && current && this.recoveryNeedsNewScope(rev, current);
+    if ((rev.status !== "outcome_unknown" && !updatingScope) || this.lastGrant(rev)?.id !== g.id) {
       return { code: EXIT.NOT_ALLOWED, grant: g.id, message: `there's nothing to reconcile: the request is ${rev.status}` };
     }
     const outcome = str(a, "outcome") as Outcome;
@@ -439,7 +454,18 @@ export class Engine {
       const recovery = basisArg(a.recovery_basis) ?? {};
       const missing = Object.keys(rev.basis).filter((p) => !(p in recovery));
       if (missing.length) throw new UsageError(`the recovery basis needs a fingerprint for ${missing.join(", ")}`);
-      Object.assign(data, { recovery_basis: recovery, remaining_scope: str(a, "remaining_scope"), unanticipated });
+      const remaining = str(a, "remaining_scope");
+      const started = this.authorizationAtGrant(rev, g);
+      if (!unanticipated && current && !sameAuthorization(started, current)
+          && (!sameTarget(started, current) || remaining !== current.scope)) {
+        return {
+          code: EXIT.NOT_ALLOWED, grant: g.id,
+          message: "the answer changed after execution began; confirm the current authorized scope is exactly what remains, or mark the partial effect unanticipated",
+        };
+      }
+      Object.assign(data, {
+        recovery_basis: recovery, remaining_scope: remaining, recovery_authorization: current ?? started, unanticipated,
+      });
     }
     const status = this.reconcileTarget(rev, outcome, unanticipated);
     return this.commit("reconcile", "grant.reconciled", actor, data, { code: EXIT.OK, grant: g.id, outcome, status }, opId);
@@ -763,6 +789,7 @@ export class Engine {
           const recovery = d.recovery_basis as Basis;
           if (Object.keys(recovery).length) r.expected_basis = { ...recovery };
           r.remaining_scope = d.remaining_scope as string;
+          r.recovery_authorization = (d.recovery_authorization as Authorization | undefined) ?? this.authorizationAtGrant(r, g);
         }
         r.reconciliations.push({ at: e.at, outcome, grant: g.id });
         if (target !== r.status) this.move(r, target, e.at);
@@ -854,6 +881,14 @@ export class Engine {
       case "partial":
         return unanticipated ? "stale" : r.answer ? "answered" : "presented";
     }
+  }
+
+  private authorizationAtGrant(rev: Rev, grant: Grant): Authorization {
+    return rev.body.options?.find((option) => option.id === grant.option)?.authorization ?? grant.authorization;
+  }
+
+  private recoveryNeedsNewScope(rev: Rev, current: Authorization): boolean {
+    return rev.recovery_authorization !== undefined && !sameAuthorization(rev.recovery_authorization, current);
   }
 
   private closedResult(st: State): OpResult | undefined {

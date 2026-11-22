@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Engine, GRANT_LEASE_MS, TAKEOVER_IDLE_MS } from "../src/core/engine.js";
 import { EventStore } from "../src/core/store.js";
-import type { Actor, OpResult, RequestBody } from "../src/core/types.js";
+import type { Actor, Grant, OpResult, RequestBody } from "../src/core/types.js";
 
 const AGENT: Actor = { machine: "laptop", session: "s1" };
 const OTHER: Actor = { machine: "laptop", session: "s2" };
@@ -208,6 +208,105 @@ test("a partial effect narrows the next grant and checks the recovery basis inst
   const next = h.ok("wait", { id, basis: H3 }).grant as { id: string; authorization: { scope: string } };
   assert.equal(next.authorization.scope, "the four files left");
   assert.equal(h.run("begin", { grant: next.id, basis: H1 }).code, 11, "the original fingerprint no longer counts");
+});
+
+const recoveryBasis = { "exports/list.txt": "after-partial-effect" };
+
+function recoveryGrant(h: Harness): { id: string; grant: string } {
+  const request = approve();
+  request.options?.splice(1, 0, {
+    id: "narrow", label: "Remove only the two confirmed exports", consequence: "All other exports stay.",
+    authorization: { action: "delete", target: "exports/", scope: "the two confirmed exports" },
+  });
+  const id = h.present(request, H1);
+  h.ok("answer", { id, value: "yes", channel: "terminal-review" }, PERSON);
+  const grant = h.ok("wait", { id, basis: H1 }).grant as Grant;
+  h.ok("begin", { grant: grant.id, basis: H1 });
+  return { id, grant: grant.id };
+}
+
+test("withdrawing after begin prevents a second grant after zero or partial effects", () => {
+  for (const outcome of ["not-performed", "partial"]) {
+    const h = new Harness();
+    const { id, grant } = recoveryGrant(h);
+    h.ok("answer", { id, withdraw: true, channel: "terminal-review" }, PERSON);
+    h.advance(GRANT_LEASE_MS + MINUTE);
+    const result = h.ok("reconcile", {
+      grant, outcome, evidence: { checked: true }, recovery_basis: recoveryBasis, remaining_scope: "four listed exports",
+    });
+    assert.equal(result.status, "presented");
+    assert.equal(h.run("wait", { id, basis: recoveryBasis }).code, 10);
+    assert.notEqual(h.run("begin", { grant, basis: H1 }).code, 0);
+  }
+});
+
+test("finding zero effect re-grants the latest narrower authorization", () => {
+  const h = new Harness();
+  const { id, grant } = recoveryGrant(h);
+  h.ok("answer", { id, value: "narrow", channel: "terminal-review" }, PERSON);
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  h.ok("reconcile", { grant, outcome: "not-performed", evidence: { checked: true } });
+  const next = h.ok("wait", { id, basis: H1 }).grant as Grant;
+  assert.equal(next.authorization.scope, "the two confirmed exports");
+});
+
+test("partial recovery refuses a remaining scope under a superseded answer", () => {
+  const h = new Harness();
+  const { id, grant } = recoveryGrant(h);
+  h.ok("answer", { id, value: "narrow", channel: "terminal-review" }, PERSON);
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  const report = { grant, outcome: "partial", evidence: { checked: true }, recovery_basis: recoveryBasis };
+  assert.equal(h.run("reconcile", { ...report, remaining_scope: "four listed exports" }).code, 19);
+  h.ok("reconcile", { ...report, remaining_scope: "the two confirmed exports" });
+  const next = h.ok("wait", { id, basis: recoveryBasis }).grant as Grant;
+  assert.equal(next.authorization.scope, "the two confirmed exports");
+});
+
+test("a later narrowing requires fresh evidence before a partial recovery can resume", () => {
+  const h = new Harness();
+  const { id, grant } = recoveryGrant(h);
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  const report = { grant, outcome: "partial", evidence: { checked: true }, recovery_basis: recoveryBasis };
+  h.ok("reconcile", { ...report, remaining_scope: "four listed exports" });
+  h.ok("answer", { id, value: "narrow", channel: "terminal-review" }, PERSON);
+  assert.equal(h.run("wait", { id, basis: recoveryBasis }).code, 19);
+  h.ok("reconcile", { ...report, remaining_scope: "the two confirmed exports" });
+  h.engine = h.reopen();
+  h.ok("takeover", { id }, OTHER);
+  assert.equal(h.run("begin", { grant, basis: H1 }).code, 31);
+  const next = h.ok("wait", { id, basis: recoveryBasis }, OTHER).grant as Grant;
+  assert.equal(next.authorization.scope, "the two confirmed exports");
+  h.ok("begin", { grant: next.id, basis: recoveryBasis }, OTHER);
+  h.ok("applied", { grant: next.id, evidence: { ...EVIDENCE, scope: "the two confirmed exports" } }, OTHER);
+  assert.equal(h.status(id), "applied");
+});
+
+test("replaying a legacy partial recovery retains the authorization behind its grant", () => {
+  const h = new Harness();
+  const { id, grant } = recoveryGrant(h);
+  h.ok("answer", { id, value: "narrow", channel: "terminal-review" }, PERSON);
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  assert.equal(h.status(id), "outcome_unknown");
+  h.store.append({
+    at: new Date(h.t).toISOString(), type: "grant.reconciled", actor: AGENT,
+    data: { op: "reconcile", grant, outcome: "partial", recovery_basis: recoveryBasis, remaining_scope: "four listed exports" },
+  });
+  h.engine = h.reopen();
+  assert.equal(h.run("wait", { id, basis: recoveryBasis }).code, 19);
+});
+
+test("an unknown effect blocks a retry and a different effect stays flagged", () => {
+  const h = new Harness();
+  const { id, grant } = recoveryGrant(h);
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  const report = { grant, evidence: { checked: true } };
+  assert.equal(h.ok("reconcile", { ...report, outcome: "unknown" }).status, "outcome_unknown");
+  assert.equal(h.run("wait", { id, basis: H1 }).code, 19);
+  assert.equal(h.run("takeover", { id }, OTHER).code, 19);
+  assert.equal(h.ok("reconcile", { ...report, outcome: "different" }).status, "applied");
+  const { flags } = h.ok("show", { id }).request as { flags: string[] };
+  assert.ok(flags.includes("reconciled as different from what was authorized"));
+  assert.notEqual(h.run("begin", { grant, basis: H1 }).code, 0);
 });
 
 test("takeover waits for 15 idle minutes, raises the epoch, and refuses the old owner's begin", () => {
