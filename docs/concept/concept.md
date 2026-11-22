@@ -123,7 +123,7 @@ decision, ask first.
 ## Request kinds
 
 Ranked by how often each decision type appeared in the evidence. Phase 1
-covers the first six plus `notice` digests (open decision D1). By decision
+covers the first six plus `notice` digests (decision D1). By decision
 type, the six kinds map to 50 of the 60 evidence cases; review batching and
 the evidence rules cover 6 more (3 batches, 3 diagnosis claims). Judging an
 artifact (2) and understanding an answer (2) wait for later phases. These
@@ -252,16 +252,21 @@ Rules around the ladder:
 - **Notices ride on the decision that depends on them.** A level-3 request
   lists the level-1 decisions it builds on, so the person sees them at the
   moment they matter. Notices never ask for an acknowledgement of their own.
-- **Defaults are narrow.** A level-2 request may let the agent use its stated
-  default when the work reaches the dependency first, only when the choice is
-  reversible (`easy`), the scope delta is `none`, and the request is a
-  `clarify` or a non-design `choose`. Design and scope questions, approvals,
-  acceptances, and judgments always wait. The agent reserves the default with
+- **Defaults are narrow (D4).** A level-2 `clarify` or non-design `choose`
+  may use its stated default when dependent work reaches it first. The choice
+  must be local, have a one-step undo, and keep the scope delta at `none`.
+  Design and scope questions, approvals, result checks, matters of taste, and
+  choices the agent cannot classify wait for the person. A larger technical
+  default calls for a panel of agents before use. The panel runs with the
+  person's authorization and gives advice. The default still needs its own
+  authority. The agent reserves the default with
   `utp claim-default` before acting, which returns the person's answer
   instead if one already arrived. A used default is listed in the next review
   as "applied by default: change?"; a later answer that contradicts it,
   before or after the work was done, is flagged as a late conflict for both
-  agent and person and never applied or dropped silently. (Open decision D4.)
+  agent and person and never applied or dropped silently. If the person changes
+  a default, the agent records why and asks them to confirm whether similar
+  questions should always wait.
 - **Close-out is a report, not a gate.** Before reporting work that changed
   files or external state as complete, the agent writes a completion report:
   each stated goal or risk mapped to covered, partly covered, or not covered,
@@ -275,9 +280,10 @@ Rules around the ladder:
 
 | Channel | What it's for | Phase |
 |---|---|---|
-| The conversation | The default for most requests: the agent shows the review as Markdown cards with lettered answers, and records the person's reply | 1 |
+| The conversation | The default for one or two questions. The agent shows Markdown cards with lettered answers and records the person's reply | 1 |
 | Terminal review (`utp review`) | SSH-only machines; answering outside any agent; consequential approvals where the transcript can't be checked | 1 |
-| Review page, served by the UTP service | Previews, side-by-side and blind comparison, batches of three or more cards, step checklists | 2 |
+| Review page, served by the UTP service | One page and one save for batches of three or more cards, with previews where the person needs to inspect an artifact | 1 |
+| Blind comparison on the review page | Side-by-side review with candidate identities and recommendations hidden until the person votes | 2 |
 | The app's own question dialog | One-click answers for small requests in Claude Code, Codex, and the Antigravity app | 2 |
 | Phone inbox | Answering away from the desk, through the existing phone inbox | 4 |
 
@@ -464,10 +470,11 @@ From the [prior-art research](../research/prior-art.md):
 ## UTP reviews itself
 
 The open decisions in [0001-concept-review](../decisions/0001-concept-review.md)
-are UTP's first requests, rendered by hand in the v0 format. Once UTP runs,
-its own later decisions are written and answered through it, its store's
-redacted export goes into `docs/decisions/`, and the person's feedback on
-those reviews drives the next template revision.
+are UTP's first requests, rendered by hand in the v0 format. Review 0002
+recorded D1 through conversation and captured D4, D5, and D6b through UTP's
+terminal review. The terminal worked well for decisions without visual material.
+Later decisions go through UTP. Redacted records go into `docs/decisions/`,
+and feedback from those reviews drives the next template revision.
 
 ## Build phases
 
@@ -477,7 +484,8 @@ those reviews drives the next template revision.
 | 1a. Lifecycle | The service on the home server (`utp serve`) and the `utp` client, in TypeScript for Node 20 or later (decision D3); store, revisions, state machine, locking, execution grants, `ask`, `flush`, `wait`, `answer`, `claim-default`, `begin`, `applied`, `reconcile`, `revise`, `log`, `reverse`, exit codes; one complete `choose` flow through Markdown and the terminal review | Lifecycle, crash-resume, and concurrency tests pass with clients on Windows, macOS, and Linux against the service |
 | 1b. Kinds and lint | `approve`, `handoff`, `clarify`, `accept`, `assumptions`, `notice` digests; `utp check` with both rule classes; fixtures; feedback and timestamps | Fixture recall and specificity targets met on the held-out half, with precision reported as defined in [verification](verification.md) |
 | 1c. Adapters | Skills and instruction files for Claude Code, Codex, and Antigravity; conversation answers with transcript checks, demonstrated per platform; presentation receipts; `utp setup` for reaching the service from each platform's default sandbox; the resume path after an answer given outside the conversation; a Claude Code hook that checks a completion report exists | The scripted end-to-end run passes on each platform, and the real-use criteria in [verification](verification.md) are met |
-| 2. Rich review | Review page (previews, batches, blind `judge` generalizing the ballot pages, identical-candidate detection); native question dialogs | A real `judge` and a real `handoff` run through it; renderer conformance passes for every channel |
+| 1d. Batch review | Review page with previews, all cards in one window, and one save for batches of three or more (D5) | A batch saves answers bound to the displayed revisions, and page access and renderer conformance tests pass |
+| 2. Rich review | Blind `judge` with side-by-side comparison and identical-candidate detection. Move existing blind comparison workflows to the shared page (D6b). Add native question dialogs | A real `judge` and a real `handoff` run through it, and renderer conformance passes for every channel |
 | 3. Learning | `revisit`, `retro`, template versions, the metrics report | The first retro produces a change the person accepts |
 | 4. Conveniences | Phone inbox channel, MCP server | Each ships only when it saves the person time |
 
@@ -538,14 +546,15 @@ to answer.
 
 Asked in [0001-concept-review](../decisions/0001-concept-review.md). The
 answers, with how each was recorded, are in
-[0001-concept-review.answers.json](../decisions/0001-concept-review.answers.json).
+[review 0001](../decisions/0001-concept-review.answers.json) and
+[review 0002](../decisions/0002-followup-review.answers.json).
 
 | Decision | Answer (2026-11-22) |
 |---|---|
-| D1. Which request kinds ship in phase 1 | Asked again in review 0002: the card used "blind-ballot pages" without defining it |
+| D1. Which request kinds ship in phase 1 | All seven everyday kinds. Side-by-side blind comparisons ship in phase 2 |
 | D2. Where each project's decision log lives | One central log on the home server |
 | D3. Implementation language | TypeScript on Node |
-| D4. What the agent does when an answer hasn't arrived | The person asked for a multi-agent debate first; its result comes back in review 0002 |
-| D5. Where the person answers by default | Large batches in one window; the options are asked again, more plainly, in review 0002 |
-| D6. Which existing tools UTP absorbs, connects to, or leaves alone | All eight proposals kept; the blind-ballot item is confirmed again with D1 |
+| D4. What the agent does when an answer hasn't arrived | Small local choices can use a default with a one-step undo. Larger technical defaults call for a panel, which advises within the person's authority |
+| D5. Where the person answers by default | One or two questions in the conversation. Batches of three or more on one review page, which ships in phase 1 |
+| D6. Which existing tools UTP absorbs, connects to, or leaves alone | All eight proposals kept. D6b confirms the existing blind comparison workflows move to UTP in phase 2 |
 | D7. License for the public repository | MIT |

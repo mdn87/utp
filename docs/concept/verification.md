@@ -27,7 +27,7 @@ tested, what ends each phase, and how the measures are defined.
 | Renderer conformance | No channel drops required content | Review level: the intent block, and every `depends_on` link shown on the dependent card; a combined answer resolves to one plan (for example, choosing to bring blind judging into phase 1 on one card moves the dependent item on another card to phase 1, keeping both answers as given). Every card: the question, every option label and consequence line, the default and its consequence, the recommendation's reason, any waiver. Kind-specific: the action, target, and scope of each option carried out as an action, on `approve` and on any other kind; each `handoff` step's actor, machine, shell, tested status, and expected result; goal mappings and evidence for `accept` and completion reports; change text for `assumptions`. Every flagged code is defined or shows its waiver. A channel that can't carry a request refuses it and falls back to Markdown; a native dialog's free-text "Other" maps to a `custom` answer; a dialog that pre-selects an option is never used for a card with a recommendation: a recommended approval, a recommended narrowing, and a recommended decline all fall back to Markdown or the terminal review on the demonstrated tool surface, with options and recommendation unchanged |
 | Close-out hook | Completion is never turned into an acceptance gate | With a valid completion report and no `accept` request, the Claude Code Stop hook lets the turn end; without a report after files changed, it asks the agent (not the person) to write one |
 | Asking policy | The ladder is applied and auditable | The evidence's silent-decision cases replayed with an expected minimum level; an instruction such as "fix, test, and publish" produces no new request for the publish, while a wider target does; a lookup with a shared tag shows a prior reversal; a level-1 to 3 record without a level and reason is refused |
-| Review page (phase 2) | Only the person's browser can answer through the page | A post without the presentation token, with a foreign Origin, or with a rebinding Host header is refused; the token never appears in `utp serve` output |
+| Review page (phase 1) | The person can inspect and answer a batch in one window | One save binds every answer to the displayed revision. A post without the presentation token, with a foreign Origin, or with a rebinding Host header is refused. The token stays out of `utp serve` output |
 | Blind judge (phase 2) | Blind means blind | The recommendation and candidate identities are absent from the served page and API before the ballot is saved; a changed second ballot returns 409; byte-identical candidates are blocked before the review opens |
 | Leaks | Nothing private reaches the public repository | CI runs generic patterns over committed fixtures and exports; the private deny-list check runs locally before push and on every export |
 
@@ -60,9 +60,9 @@ The fixture plan is built so the rules can't pass by construction.
 
 ## Phase exit criteria
 
-Phase 0 ends when the person has answered D1 to D7 and the answers are
-logged in `docs/decisions/`. D2, D3, D6, and D7 were settled on 2026-11-22;
-D1, D4, and D5 continue in review 0002.
+Phase 0 ended when the decisions from
+[review 0001](../decisions/0001-concept-review.answers.json) and
+[review 0002](../decisions/0002-followup-review.answers.json) were published.
 
 Phase 1 ends when all of these hold:
 
@@ -82,7 +82,8 @@ Phase 1 ends when all of these hold:
 - **AC4 Content.** Renderer conformance passes at review level and for every
   phase-1 kind, so each review shows the intent block, a consequence line for
   every option and default, the kind-specific fields, and a definition or a
-  visible waiver for every flagged code.
+  visible waiver for every flagged code. Verify the phase 1 review page
+  with a batch of three or more.
 - **AC5 Close-out.** At least 3 real tasks that changed files close with a
   completion report mapping every stated goal, with queued notices shown,
   and none of them waited on the person to finish.

@@ -20,8 +20,9 @@ don't relitigate or silently undo it.
 The concept has been reviewed and its first decisions answered (review 0001,
 2026-11-22). Phase 1a, the lifecycle core, is built and tested: the `utp`
 command, the service it talks to, the crash-safe event log, the request state
-machine, and execution grants. Three decisions are being asked again in review
-0002, and `utp claim-default` waits for one of them (D4). Start with:
+machine, and execution grants. [Review 0002](docs/decisions/0002-followup-review.answers.json)
+settled the scope of phase 1 and the policies for defaults and answers.
+UTP's terminal review recorded three of its four decisions. Start with:
 
 - [Concept](docs/concept/concept.md): what UTP is, the kinds of decisions it
   handles, the request and answer formats, and the build phases.

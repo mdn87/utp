@@ -1,0 +1,63 @@
+{
+  "utp": "0",
+  "review_id": "V-20261122-followup",
+  "recorded_at": "2026-11-22T23:19:46Z",
+  "answers": [
+    {
+      "request_id": "D1",
+      "revision": 3,
+      "kind": "choose",
+      "value": "a",
+      "outcome": "settled",
+      "follow_up": "Phase 1 includes choices, approvals, manual steps, clarifications, result checks, assumption lists, and FYI notices. Side-by-side blind comparisons ship in phase 2.",
+      "answered_at": "2026-11-22T20:07:03.009Z",
+      "provenance": {
+        "channel": "conversation",
+        "recorded_by": "the agent from the person’s reply",
+        "verified": "none"
+      }
+    },
+    {
+      "request_id": "D4",
+      "revision": 4,
+      "kind": "choose",
+      "value": "e",
+      "outcome": "settled",
+      "follow_up": "Small local choices with a one-step undo may use a stated default within the existing scope. Larger technical defaults call for an authorized panel before use. The panel advises and the work still needs its own authority.",
+      "answered_at": "2026-11-22T23:11:24.108Z",
+      "provenance": {
+        "channel": "terminal-review",
+        "recorded_by": "the person through UTP",
+        "verified": "channel the agent does not control"
+      }
+    },
+    {
+      "request_id": "D5",
+      "revision": 5,
+      "kind": "choose",
+      "value": "a",
+      "outcome": "settled",
+      "follow_up": "Use conversation for one or two questions and one page with one save for batches of three or more. The review page moves into phase 1. Terminal review worked well for decisions without visual material.",
+      "answered_at": "2026-11-22T23:11:51.187Z",
+      "provenance": {
+        "channel": "terminal-review",
+        "recorded_by": "the person through UTP",
+        "verified": "channel the agent does not control"
+      }
+    },
+    {
+      "request_id": "D6b",
+      "revision": 1,
+      "kind": "choose",
+      "value": "keep",
+      "outcome": "settled",
+      "follow_up": "Move existing blind comparison workflows to UTP once it supports side-by-side blind comparisons in phase 2.",
+      "answered_at": "2026-11-22T23:12:19.012Z",
+      "provenance": {
+        "channel": "terminal-review",
+        "recorded_by": "the person through UTP",
+        "verified": "channel the agent does not control"
+      }
+    }
+  ]
+}

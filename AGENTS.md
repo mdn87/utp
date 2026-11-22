@@ -7,14 +7,13 @@ repository: Claude Code, Codex, Antigravity, or another.
 
 ## Current phase
 
-Phase 1a: the lifecycle core (the `utp` client, the service on the home
-server, the store, the state machine, and execution grants), in TypeScript for
-Node 20 or later. `docs/concept/` is the specification; `docs/decisions/`
-records the person's answers. Review 0002 re-asks D1 (which request kinds ship
-in phase 1), D4 (what an agent does while an answer is pending), and D5 (where
-the person answers). Build nothing that depends on those three until they are
-answered. `utp claim-default` and the late-conflict path depend on D4 and are
-not built yet.
+Phase 1: verify the lifecycle on the shared service and deliver the seven
+everyday request kinds, the default policy, and the batch review page.
+The code targets TypeScript on Node 20 or later. `docs/concept/` is the
+specification and `docs/decisions/` records the person's answers.
+[Review 0002](docs/decisions/0002-followup-review.answers.json) sets the
+release scope and default policy. Blind comparisons and migration of the
+existing comparison workflows are phase 2 work.
 
 ## Build and test
 

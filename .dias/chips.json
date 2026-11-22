@@ -159,7 +159,7 @@
       "projectId": "utp",
       "title": "Publish the decisions from review 0002",
       "summary": "Record all four answers, update the phase scope and adjust the board dependencies for any review page or blind comparisons selected for phase 1.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 60,
       "prereqs": [
         "utp:review:kinds",
@@ -171,7 +171,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:14:29Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -191,6 +191,12 @@
           "at": "2026-11-22T23:14:29Z",
           "kind": "stage-change",
           "message": "All four choices are recorded. UTP verified D4, D5 and D6b in the terminal. The public decision record and phase updates can now be prepared."
+        },
+        {
+          "entryId": "review-0002-published",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "stage-change",
+          "message": "Published all four decisions and updated the release scope. Batch review pages ship in phase 1. Blind comparisons and migration ship in phase 2."
         }
       ]
     },
@@ -312,7 +318,7 @@
       "projectId": "utp",
       "title": "Apply the chosen rule for unanswered decisions",
       "summary": "If D4 allows defaults, reserve an eligible default once after checking authority and preconditions. If D4 requires waiting, verify that dependent work waits.",
-      "stage": "blocked",
+      "stage": "ready",
       "sequence": 110,
       "prereqs": [
         "utp:review:defaults",
@@ -322,7 +328,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -330,6 +336,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "An answer that arrives first wins. An unused claim expires without an answer or an effect. The exact eligibility rules come from D4."
+        },
+        {
+          "entryId": "review-0002-scope-set",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "stage-change",
+          "message": "D4 allows narrow reversible defaults and calls for authorized panel advice before larger technical defaults."
         }
       ]
     },
@@ -415,7 +427,7 @@
       "projectId": "utp",
       "title": "Complete templates and answers for the selected kinds",
       "summary": "Implement D1’s selected kinds in the terminal, including scoped approvals and each kind’s required fields. Track any kinds deferred to phase 2.",
-      "stage": "blocked",
+      "stage": "ready",
       "sequence": 150,
       "prereqs": [
         "utp:review:kinds",
@@ -425,7 +437,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -433,6 +445,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Choice and approval templates already exist. Check the selected scope against manual steps, clarification, result checks, assumptions and informational notices."
+        },
+        {
+          "entryId": "review-0002-scope-set",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "stage-change",
+          "message": "D1 selected all seven everyday kinds for phase 1."
         }
       ]
     },
@@ -632,13 +650,14 @@
       "sequence": 230,
       "prereqs": [
         "utp:review:channel",
-        "utp:cards:render"
+        "utp:cards:render",
+        "utp:rich:page"
       ],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -646,6 +665,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Bind the answer to the card and revision shown. Test ambiguous assent, intervening corrections, narrower custom approval and overlapping reviews."
+        },
+        {
+          "entryId": "review-0002-page-channel",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "note",
+          "message": "D5 requires proof that batches of three or more use the review page."
         }
       ]
     },
@@ -710,8 +735,8 @@
       "chipId": "utp:rich:page",
       "projectId": "utp",
       "title": "Review a batch and its previews on one page",
-      "summary": "Present all cards and previews together and save answers once. Test presentation receipts, local page access and revision binding. D5 or D1 may move this into phase 1.",
-      "stage": "blocked",
+      "summary": "Ship one page with previews and one save for batches of three or more in phase 1. Test presentation receipts, local page access and revision binding.",
+      "stage": "ready",
       "sequence": 260,
       "prereqs": [
         "utp:review:channel",
@@ -722,7 +747,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -730,6 +755,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Rich review includes page access checks, complete content, stable option IDs and explicit custom answers. Preserve the terminal path."
+        },
+        {
+          "entryId": "review-0002-page-phase-1",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "stage-change",
+          "message": "D5 moves the batch review page into phase 1. Terminal review remains available."
         }
       ]
     },
@@ -738,7 +769,7 @@
       "chipId": "utp:rich:blind",
       "projectId": "utp",
       "title": "Support blind comparisons and the chosen migration",
-      "summary": "Hide authors and recommendations until a ballot is saved. Refuse identical candidates and a changed second ballot. Migrate the existing pages only if D6b confirms it.",
+      "summary": "Hide authors and recommendations until a ballot is saved. Refuse identical candidates and changed second ballots. Move existing workflows to UTP in phase 2.",
       "stage": "planned",
       "sequence": 270,
       "prereqs": [
@@ -750,7 +781,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -758,6 +789,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "D1 sets the release phase for blind judging. D6b separately decides whether existing comparison workflows move to UTP."
+        },
+        {
+          "entryId": "review-0002-migration",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "note",
+          "message": "D1 and D6b place side-by-side blind comparisons and migration of the existing comparison workflows in phase 2."
         }
       ]
     },
@@ -779,13 +816,14 @@
         "utp:reviews:delivery",
         "utp:adapters:platforms",
         "utp:adapters:closeout",
-        "utp:policy:lookup"
+        "utp:policy:lookup",
+        "utp:rich:page"
       ],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -793,6 +831,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Close AC1–AC6 with evidence, including waivers at or below 10%, three completion reports and the shared-tag lookup. Add page or blind tests here if selected for phase 1."
+        },
+        {
+          "entryId": "review-0002-phase-1-proof",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "note",
+          "message": "Phase 1 must prove the batch review page on a review with three or more cards."
         }
       ]
     },
@@ -800,8 +844,8 @@
       "schemaVersion": 1,
       "chipId": "utp:rich:deferred-kinds",
       "projectId": "utp",
-      "title": "Deliver everyday request kinds deferred by D1",
-      "summary": "Complete the everyday templates, checks and renderers moved to phase 2 by D1. Record the item as satisfied if all everyday kinds shipped in phase 1.",
+      "title": "Confirm all everyday kinds shipped in phase 1",
+      "summary": "Verify that all seven everyday request kinds shipped in phase 1, as D1 selected.",
       "stage": "planned",
       "sequence": 290,
       "prereqs": [
@@ -812,7 +856,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:19:46Z"
       },
       "evidence": [
         {
@@ -820,6 +864,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "D1’s narrow option moves manual steps, clarification, acceptance and assumptions into the next release. Check the accepted scope for notices as well."
+        },
+        {
+          "entryId": "review-0002-no-kind-deferrals",
+          "at": "2026-11-22T23:19:46Z",
+          "kind": "note",
+          "message": "D1 assigned all seven everyday kinds to phase 1. Close this item when their renderers and templates are delivered."
         }
       ]
     },
