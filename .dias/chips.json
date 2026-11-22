@@ -238,7 +238,7 @@
       "projectId": "utp",
       "title": "Run one shared decision service",
       "summary": "Deploy the service with persistent storage and connect clients on the intended private network. A request made on one machine can be answered on another.",
-      "stage": "active",
+      "stage": "done",
       "sequence": 80,
       "prereqs": [
         "utp:core:baseline"
@@ -247,7 +247,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:10:41Z"
+        "updatedAt": "2026-11-22T23:33:53Z"
       },
       "evidence": [
         {
@@ -261,6 +261,12 @@
           "at": "2026-11-22T23:10:41Z",
           "kind": "stage-change",
           "message": "UTP runs on the home server and reloads reviews after restart. SSH terminal access works. Direct cross-machine clients still need verification."
+        },
+        {
+          "entryId": "direct-client-proof",
+          "at": "2026-11-22T23:33:53Z",
+          "kind": "stage-change",
+          "message": "On the private network, Windows filed a test request, macOS answered it, and Linux read the same decision from the persistent service."
         }
       ]
     },
