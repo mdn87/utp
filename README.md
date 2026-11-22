@@ -18,8 +18,10 @@ don't relitigate or silently undo it.
 ## Status
 
 The concept has been reviewed and its first decisions answered (review 0001,
-2026-11-22). Phase 1a, the lifecycle core, is being built in TypeScript. A
-few decisions are being asked again in review 0002. Start with:
+2026-11-22). Phase 1a, the lifecycle core, is built and tested: the `utp`
+command, the service it talks to, the crash-safe event log, the request state
+machine, and execution grants. Three decisions are being asked again in review
+0002, and `utp claim-default` waits for one of them (D4). Start with:
 
 - [Concept](docs/concept/concept.md): what UTP is, the kinds of decisions it
   handles, the request and answer formats, and the build phases.
@@ -27,6 +29,31 @@ few decisions are being asked again in review 0002. Start with:
   and research on agent-to-person decisions.
 - [Decision failure patterns](docs/research/decision-failure-patterns.md):
   how real agent-session decisions went wrong and had to be reversed.
+
+## Try it
+
+UTP needs Node 20 or later. `npm ci && npm test` builds it and runs the
+tests; run it as `node dist/src/cli/main.js`, or `npm link` to put `utp` on
+your PATH.
+
+On the home server:
+
+```sh
+utp token create laptop    # prints the laptop's token once
+utp serve --host 0.0.0.0   # port 7340; allow it from the home network only
+```
+
+On the laptop, inside a checkout:
+
+```sh
+utp connect http://homeserver:7340 < token.txt
+utp init
+utp new choose --file question.json   # fill it in, then:
+utp ask question.json
+utp flush          # prints the review as Markdown for the conversation
+utp review         # the person answers in their own terminal
+utp wait <request-id>
+```
 
 ## Platforms
 

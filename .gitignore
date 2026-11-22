@@ -4,3 +4,5 @@ private/
 __pycache__/
 *.pyc
 .venv/
+dist/
+node_modules/
