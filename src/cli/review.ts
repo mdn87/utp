@@ -6,7 +6,7 @@
 import readline from "node:readline";
 import { EXIT } from "../core/types.js";
 import { call } from "./client.js";
-import { cardMarkdown, letter, type RequestView } from "./render.js";
+import { cardMarkdown, defaultNoticeMarkdown, letter, type ReviewView } from "./render.js";
 
 export interface ReviewIO {
   input: NodeJS.ReadableStream;
@@ -39,7 +39,8 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
   try {
     outer: for (const v of reviews) {
       const shown = await call("show", { id: v.id }, { project });
-      const items = ((shown.review as { items: RequestView[] }).items)
+      const review = shown.review as ReviewView;
+      const items = review.items
         .filter((i) => i.current && (i.status === "queued" || i.status === "presented"));
       if (items.length === 0) continue;
       const receipt = await call("presented", { review: v.id, channel }, { project });
@@ -49,6 +50,7 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
       }
       shownAny = true;
       write(`\n## Review ${v.id}\n`);
+      for (const notice of review.default_notices ?? []) write(defaultNoticeMarkdown(notice));
       for (const [n, item] of items.entries()) {
         write(`${cardMarkdown(item, letter(n))}\n`);
         if (item.body.kind === "notice") continue;

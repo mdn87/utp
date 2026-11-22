@@ -235,3 +235,59 @@ test("every command fails with exit code 32 when the service is down", async () 
   assert.equal(r.code, 32);
   assert.match(r.stderr, /can't reach the UTP service/);
 });
+
+test("the CLI reports an applied default and redoes an authorized late choice", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  const home = mkdtempSync(path.join(tmpdir(), "utp-home-"));
+  const cwd = repo();
+  const run = async (args: string[], code = 0) => {
+    const result = await utp(args, { cwd, home });
+    assert.equal(result.code, code, result.stdout + result.stderr);
+    return result.stdout;
+  };
+  try {
+    const connected = await utp(["connect", svc.url], { cwd, home, input: createToken(data, "laptop") });
+    assert.equal(connected.code, 0, connected.stdout + connected.stderr);
+    await run(["init"]);
+    const fixture = path.join(cwd, "fixture.json");
+    writeFileSync(fixture, "initial");
+    const authorization = { action: "write", target: "fixture.json", scope: "one fixture" };
+    const request = {
+      kind: "choose", category: "approach", question: "Which fixture mode should we use?", why_now: "The test needs a mode.",
+      options: [
+        { id: "a", label: "Strict", consequence: "Use strict parsing.", authorization },
+        { id: "b", label: "Lenient", consequence: "Skip bad rows.", authorization },
+      ],
+      default: { option: "a", consequence: "Use strict parsing for now.", eligibility: {
+        local: true, scope_delta: "none", undo: "Replace the fixture in one edit.",
+        authority: "The person asked for a fixture update.", size: "small",
+      } },
+      basis: { files: ["fixture.json"] }, stakes: { reversibility: "easy" }, level: 2, level_reason: "One edit reverses the change.",
+    };
+    const card = path.join(cwd, "request.json");
+    writeFileSync(card, JSON.stringify(request));
+    const { id, review_id: review } = JSON.parse(await run(["ask", card, "--json"]));
+    await run(["flush"]);
+    await run(["presented", review]);
+    const { grant } = JSON.parse(await run(["claim-default", id, "--json"], 15));
+    await run(["begin", grant.id]);
+    writeFileSync(fixture, "strict");
+    const evidence = path.join(cwd, "evidence.json");
+    writeFileSync(evidence, JSON.stringify({ ...authorization, effect: "Fixture written." }));
+    await run(["applied", grant.id, "--evidence", evidence]);
+
+    writeFileSync(card, JSON.stringify({ ...request, question: "Should we also test CSV fixtures?" }));
+    await run(["ask", card]);
+    assert.match(await run(["flush"]), /Applied by default: change\?/);
+    await run(["answer", id, "--option", "b"]);
+    await run(["wait", id], 14);
+    const { grant: redo } = JSON.parse(await run(["resolve-late", id, "--resolution", "redo", "--json"]));
+    await run(["begin", redo.id]);
+    writeFileSync(fixture, "lenient");
+    await run(["applied", redo.id, "--evidence", evidence]);
+    assert.equal(readFileSync(fixture, "utf8"), "lenient");
+  } finally {
+    await svc.close();
+  }
+});

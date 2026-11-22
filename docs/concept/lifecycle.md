@@ -163,6 +163,14 @@ grant.
   session, the lease epoch, the authorization (action, target, scope, and
   expected effect), the preconditions checked at issue, and the provenance
   of the answer behind it.
+- **Default eligibility.** A level-2 `choose` or `clarify` request in an
+  approach, priority, or process category can declare a local default. Its
+  `default.eligibility` records `local: true`, `scope_delta: "none"`, the
+  one-step `undo`, the existing `authority`, and the `size`. A
+  `larger-technical` choice also records the person's request for a panel
+  (`panel.requested_by_person: true`) and the `panel.finding`. The option
+  binds its own action, target, and scope. The service checks the declaration
+  and the basis. Agents are responsible for accurate declarations.
 - **Provenance follows the effect.** The stricter approval rules apply to
   any answer that authorizes a level-3 effect, whatever the request kind: a
   `choose` answer that will be carried out as an outward or hard-to-reverse
@@ -326,10 +334,11 @@ its own request.
 | `utp answer <id>` | Records or revises an answer; `--from-chat` takes a verbatim quote and checks it against the session transcript |
 | `utp wait <id> --timeout <s>` | Waits for an answer and issues an execution grant when it authorizes an action |
 | `utp claim-default <id>` | Reserves the default and issues a grant, or returns the answer that already won |
+| `utp resolve-late <id> --resolution keep\|redo` | Records a decision to keep an applied default, or issues a fresh grant under the later answer after checking the state the default left |
 | `utp begin <grant>` | Re-checks the grant, epoch, and preconditions immediately before the effect |
 | `utp applied <grant> --evidence <file>` | Records what the agent did, including scope and effect |
 | `utp reconcile <grant> --outcome <outcome>` | Records what recovery found after an uncertain effect |
-| `utp release <grant>` | Gives back an unused grant, for example when a session ends; the request returns to `answered` |
+| `utp release <grant>` | Gives back an unused grant. The request returns to `answered` for an answer grant or `presented` for a default |
 | `utp revise <id> <file>` | Writes a new revision, superseding the old one and revoking its grants |
 | `utp cancel`, `utp reverse`, `utp takeover` | Withdraw, record a reversal, take over after reconciliation |
 | `utp log`, `utp status` | Search the log; show what is waiting |

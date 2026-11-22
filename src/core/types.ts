@@ -17,13 +17,31 @@ export interface OptionSpec {
   authorization?: Authorization;
 }
 
+export interface DefaultEligibility {
+  local: true;
+  scope_delta: "none";
+  undo: string;
+  authority: string;
+  size: "small" | "larger-technical";
+  panel?: { requested_by_person: true; finding: string };
+}
+
+export interface DefaultNotice {
+  request_id: string;
+  revision: number;
+  question: string;
+  option: string;
+  conflict: boolean;
+}
+
 export interface RequestBody {
   kind: Kind;
+  category?: string;
   question: string;
   why_now: string;
   options?: OptionSpec[];
   recommendation?: { option: string; because: string; preserves?: string; bolder_alternative?: string };
-  default?: { option: string; consequence: string };
+  default?: { option: string; consequence: string; eligibility?: DefaultEligibility };
   glossary?: Record<string, string>;
   evidence?: { claim: string; kind: string; source: string; date: string }[];
   stakes: { reversibility: "easy" | "costly" | "one_way" };

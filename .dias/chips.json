@@ -348,7 +348,7 @@
       "projectId": "utp",
       "title": "Apply the chosen rule for unanswered decisions",
       "summary": "If D4 allows defaults, reserve an eligible default once after checking authority and preconditions. If D4 requires waiting, verify that dependent work waits.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 110,
       "prereqs": [
         "utp:review:defaults",
@@ -358,7 +358,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-22T23:51:15Z"
       },
       "evidence": [
         {
@@ -372,6 +372,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "stage-change",
           "message": "D4 allows narrow reversible defaults and calls for authorized panel advice before larger technical defaults."
+        },
+        {
+          "entryId": "default-lifecycle-verified",
+          "at": "2026-11-22T23:51:15Z",
+          "kind": "stage-change",
+          "message": "Eligible local defaults reserve one grant. Tests cover panel declarations, answers arriving first, changed basis, ownership, release and expiry."
         }
       ]
     },
@@ -381,7 +387,7 @@
       "projectId": "utp",
       "title": "Handle answers that arrive after a default",
       "summary": "If D4 permits defaults, distinguish confirmation, correction before work starts and disagreement after an effect. Preserve both decisions and reconcile any redo.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 120,
       "prereqs": [
         "utp:core:default-policy"
@@ -390,7 +396,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:51:15Z"
       },
       "evidence": [
         {
@@ -398,6 +404,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Verify keep, redo and stale outcomes. A redo needs a fresh grant tied to the state the first action left. Close this item as inapplicable if D4 rules out defaults."
+        },
+        {
+          "entryId": "default-lifecycle-verified",
+          "at": "2026-11-22T23:51:15Z",
+          "kind": "stage-change",
+          "message": "Late disagreement is logged and shown in the next review. Keeping issues no grant. Redo uses the later answer and checks the state left by the default."
         }
       ]
     },
