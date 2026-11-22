@@ -1,0 +1,969 @@
+{
+  "schemaVersion": 1,
+  "projectId": "utp",
+  "projectLabel": "UTP",
+  "chips": [
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:baseline",
+      "projectId": "utp",
+      "title": "Lifecycle core on the command line",
+      "summary": "The merged client, service, event log and execution grants support a complete choice through Markdown and terminal review.",
+      "stage": "done",
+      "sequence": 10,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Commit 314ba02 delivered the core. Six CI jobs passed on Windows, macOS and Linux with Node 20 and 22. Each job starts its own test service."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:review:kinds",
+      "projectId": "utp",
+      "title": "D1 · Choose the first release’s request kinds",
+      "summary": "Record which kinds ship in phase 1 and which move to phase 2. Include the effect of adding side-by-side blind comparisons.",
+      "stage": "blocked",
+      "sequence": 20,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Review 0002 asks the person to choose between choices and approvals, all everyday kinds, and adding blind comparisons."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:review:defaults",
+      "projectId": "utp",
+      "title": "D4 · Decide what an unanswered request allows",
+      "summary": "Record when dependent work waits and whether a reversible default is allowed. Apply the answer to default claims and later corrections.",
+      "stage": "blocked",
+      "sequence": 30,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Review 0002 contains the options and the panel’s recommendation. The decision record contains an answer to the earlier review only."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:review:channel",
+      "projectId": "utp",
+      "title": "D5 · Choose where people answer reviews",
+      "summary": "Record the default channel for a single question and a batch, including any size cutoff and whether the review page moves into phase 1.",
+      "stage": "blocked",
+      "sequence": 40,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Review 0002 asks the person to choose chat, a page, or a split by batch size."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:review:comparisons",
+      "projectId": "utp",
+      "title": "D6b · Confirm who maintains blind comparisons",
+      "summary": "Record whether UTP takes over the existing comparison pages. Combine this answer with D1 when scheduling any move.",
+      "stage": "blocked",
+      "sequence": 50,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Review 0001 kept the integration plan. Review 0002 asks for confirmation after defining blind comparison."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:review:record",
+      "projectId": "utp",
+      "title": "Publish the decisions from review 0002",
+      "summary": "Record all four answers, update the phase scope and adjust the board dependencies for any review page or blind comparisons selected for phase 1.",
+      "stage": "planned",
+      "sequence": 60,
+      "prereqs": [
+        "utp:review:kinds",
+        "utp:review:defaults",
+        "utp:review:channel",
+        "utp:review:comparisons"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The concept phase closes when the public decision record includes the outstanding answers. Other settled work can proceed independently."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:relink",
+      "projectId": "utp",
+      "title": "Keep decision history searchable after relinking",
+      "summary": "Relink two idle projects. Searches from the new project must show the old project’s decisions and reversals with their origin. Archived records stay read-only.",
+      "stage": "ready",
+      "sequence": 70,
+      "prereqs": [
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The client checks both projects and updates the checkout mapping. The existing end-to-end test covers a fresh clone. Verify refusal with open work or grants on either side."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:service",
+      "projectId": "utp",
+      "title": "Run one shared decision service",
+      "summary": "Deploy the service with persistent storage and connect clients on the intended private network. A request made on one machine can be answered on another.",
+      "stage": "ready",
+      "sequence": 80,
+      "prereqs": [
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Decision D2 selected a shared service. The automated suite starts a temporary service. An inventory found no listener on the documented port."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:recovery",
+      "projectId": "utp",
+      "title": "Verify recovery against the latest authorization",
+      "summary": "Exercise competing owners, revisions, withdrawals and narrowed answers around execution. After interruption, any new grant covers only the authorized work still outstanding.",
+      "stage": "ready",
+      "sequence": 90,
+      "prereqs": [
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The verification plan covers zero, partial, different and unknown effects, recovery fingerprints, ownership changes and the risk of a paused owner resuming."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:shared-proof",
+      "projectId": "utp",
+      "title": "Verify the shared log on all three operating systems",
+      "summary": "Run real clients against the same service on Windows, macOS and Linux. Verify checkout identity, restart recovery, concurrent writers and exactly-once retries at each crash point.",
+      "stage": "planned",
+      "sequence": 100,
+      "prereqs": [
+        "utp:core:relink",
+        "utp:core:service",
+        "utp:core:recovery"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The lifecycle criteria include NTFS, APFS and ext4 crash checks, randomized state transitions and refusal of a second writer."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:default-policy",
+      "projectId": "utp",
+      "title": "Apply the chosen rule for unanswered decisions",
+      "summary": "If D4 allows defaults, reserve an eligible default once after checking authority and preconditions. If D4 requires waiting, verify that dependent work waits.",
+      "stage": "blocked",
+      "sequence": 110,
+      "prereqs": [
+        "utp:review:defaults",
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "An answer that arrives first wins. An unused claim expires without an answer or an effect. The exact eligibility rules come from D4."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:core:late-answer",
+      "projectId": "utp",
+      "title": "Handle answers that arrive after a default",
+      "summary": "If D4 permits defaults, distinguish confirmation, correction before work starts and disagreement after an effect. Preserve both decisions and reconcile any redo.",
+      "stage": "blocked",
+      "sequence": 120,
+      "prereqs": [
+        "utp:core:default-policy"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Verify keep, redo and stale outcomes. A redo needs a fresh grant tied to the state the first action left. Close this item as inapplicable if D4 rules out defaults."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:privacy:export",
+      "projectId": "utp",
+      "title": "Export decisions safely for public review",
+      "summary": "Export selected decisions with redaction. Check fixtures and exports for generic leaks in CI and apply the private deny-list locally before publishing.",
+      "stage": "ready",
+      "sequence": 130,
+      "prereqs": [
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The lifecycle privacy contract requires redacted exports. Later project decisions should go through UTP and produce a public decision record."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:lint:classify",
+      "projectId": "utp",
+      "title": "Classify the evidence used to test review quality",
+      "summary": "Classify 60 cases as machine-detectable, policy or adapter behavior, or human judgment. Have the person confirm a sample of at least ten before writing fixtures.",
+      "stage": "ready",
+      "sequence": 140,
+      "prereqs": [],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The verification plan requires separate test methods for these groups. Only anonymized, reviewed fixtures belong in the public project."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:cards:kinds",
+      "projectId": "utp",
+      "title": "Complete templates and answers for the selected kinds",
+      "summary": "Implement D1’s selected kinds in the terminal, including scoped approvals and each kind’s required fields. Track any kinds deferred to phase 2.",
+      "stage": "blocked",
+      "sequence": 150,
+      "prereqs": [
+        "utp:review:kinds",
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Choice and approval templates already exist. Check the selected scope against manual steps, clarification, result checks, assumptions and informational notices."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:lint:rules",
+      "projectId": "utp",
+      "title": "Enforce request structure and explain heuristic warnings",
+      "summary": "Extend the structural checks by request kind. Add heuristics for missing definitions, weak evidence and unclear scope. Show each rule, fix hint and allowed waiver.",
+      "stage": "planned",
+      "sequence": 160,
+      "prereqs": [
+        "utp:cards:kinds",
+        "utp:lint:classify"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Structural rules cannot be waived. Every waived heuristic must show its reason on the card. Train rules on the designated development half."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:lint:score",
+      "projectId": "utp",
+      "title": "Measure lint on cases the rules were not trained on",
+      "summary": "Create anonymized before-and-after fixtures after sample confirmation. On the held-out set reach 80% recall and 90% specificity. Report precision and the test mix.",
+      "stage": "planned",
+      "sequence": 170,
+      "prereqs": [
+        "utp:lint:rules",
+        "utp:privacy:export"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Keep the seven successful cases and five rewritten requests as must-accept examples. Include fresh drafts from all three platforms in the evaluation."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:cards:render",
+      "projectId": "utp",
+      "title": "Show complete, consistent reviews in Markdown and the terminal",
+      "summary": "Render the review intent, dependencies, definitions, options and consequences, recommendation, waivers and kind-specific fields. Preserve IDs, revision and custom answers.",
+      "stage": "planned",
+      "sequence": 180,
+      "prereqs": [
+        "utp:cards:kinds",
+        "utp:lint:rules"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "AC4 requires every selected kind to pass renderer conformance. A channel that cannot show required content falls back to a complete rendering."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:cards:feedback",
+      "projectId": "utp",
+      "title": "Capture review feedback and timing",
+      "summary": "Save optional clarity feedback, sureness, chosen or custom answers, presentation and answer times. Measure active response time only on channels that observe it.",
+      "stage": "planned",
+      "sequence": 190,
+      "prereqs": [
+        "utp:cards:kinds"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The concept distinguishes time spent answering from time since presentation and tracks recommendation overrides by choice category."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:policy:lookup",
+      "projectId": "utp",
+      "title": "Use prior decisions when choosing whether to ask",
+      "summary": "Apply the four asking levels, show relevant reversals, cite existing authorization and save the level and reason. Verify an authorized action proceeds within its original scope.",
+      "stage": "ready",
+      "sequence": 200,
+      "prereqs": [
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "AC6 requires a prior reversal to reach the agent deciding a related question. The current engine already finds reversals by tag."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:reviews:delivery",
+      "projectId": "utp",
+      "title": "Deliver one notification for each review",
+      "summary": "Group waiting cards, show open requests in the existing open-items list and route notices with a review or the daily report. Retrying delivery must not send a second notification.",
+      "stage": "planned",
+      "sequence": 210,
+      "prereqs": [
+        "utp:core:service",
+        "utp:review:channel"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Decision D6 retained these integrations. Use the review ID to deduplicate delivery and show dependent notices with consequential decisions."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:adapters:access",
+      "projectId": "utp",
+      "title": "Provide sandbox setup and a reliable resume path",
+      "summary": "Show the network setting each platform needs and apply it after confirmation. Verify an external answer resumes the same request and an unreachable service returns exit code 32.",
+      "stage": "planned",
+      "sequence": 220,
+      "prereqs": [
+        "utp:core:service"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Phase 1c calls for Claude Code, Codex and Antigravity runs in their default restricted environments."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:adapters:answers",
+      "projectId": "utp",
+      "title": "Verify presentation and answers on the selected channels",
+      "summary": "Apply D5’s routing. Distinguish preparation from presentation and acknowledgement. Check chat quotes where available and route consequential approvals to a verified channel.",
+      "stage": "blocked",
+      "sequence": 230,
+      "prereqs": [
+        "utp:review:channel",
+        "utp:cards:render"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Bind the answer to the card and revision shown. Test ambiguous assent, intervening corrections, narrower custom approval and overlapping reviews."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:adapters:platforms",
+      "projectId": "utp",
+      "title": "Connect Claude Code, Codex and Antigravity to the CLI",
+      "summary": "Ship thin platform instructions for asking, independent work, lookup, batching, answering and resuming. Each adapter uses the same request and answer format.",
+      "stage": "planned",
+      "sequence": 240,
+      "prereqs": [
+        "utp:adapters:access",
+        "utp:adapters:answers",
+        "utp:policy:lookup",
+        "utp:core:default-policy"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Script the full lifecycle in PowerShell, Git Bash, zsh and bash over SSH, including cancellations, grant recovery and late answers where D4 permits them."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:adapters:closeout",
+      "projectId": "utp",
+      "title": "Close changed work with evidence for every goal",
+      "summary": "Produce completion reports that map each goal to evidence and include pending notices. The optional Claude Code Stop hook requests a missing report from the agent.",
+      "stage": "planned",
+      "sequence": 250,
+      "prereqs": [
+        "utp:cards:render",
+        "utp:adapters:platforms"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "AC5 requires at least three real tasks with file changes to close this way without waiting for the person to accept routine work."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:rich:page",
+      "projectId": "utp",
+      "title": "Review a batch and its previews on one page",
+      "summary": "Present all cards and previews together and save answers once. Test presentation receipts, local page access and revision binding. D5 or D1 may move this into phase 1.",
+      "stage": "blocked",
+      "sequence": 260,
+      "prereqs": [
+        "utp:review:channel",
+        "utp:review:kinds",
+        "utp:core:baseline"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Rich review includes page access checks, complete content, stable option IDs and explicit custom answers. Preserve the terminal path."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:rich:blind",
+      "projectId": "utp",
+      "title": "Support blind comparisons and the chosen migration",
+      "summary": "Hide authors and recommendations until a ballot is saved. Refuse identical candidates and a changed second ballot. Migrate the existing pages only if D6b confirms it.",
+      "stage": "planned",
+      "sequence": 270,
+      "prereqs": [
+        "utp:review:comparisons",
+        "utp:review:kinds",
+        "utp:rich:page"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "D1 sets the release phase for blind judging. D6b separately decides whether existing comparison workflows move to UTP."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:phase1:use",
+      "projectId": "utp",
+      "title": "Prove the first release on real tasks",
+      "summary": "Run at least five real tasks across all three agents. Check 80% clarity, duplicate questions, review frequency, notification counts and the waiver rate in the first 15 requests.",
+      "stage": "planned",
+      "sequence": 280,
+      "prereqs": [
+        "utp:review:record",
+        "utp:core:shared-proof",
+        "utp:core:late-answer",
+        "utp:lint:score",
+        "utp:cards:render",
+        "utp:cards:feedback",
+        "utp:reviews:delivery",
+        "utp:adapters:platforms",
+        "utp:adapters:closeout",
+        "utp:policy:lookup"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Close AC1–AC6 with evidence, including waivers at or below 10%, three completion reports and the shared-tag lookup. Add page or blind tests here if selected for phase 1."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:rich:deferred-kinds",
+      "projectId": "utp",
+      "title": "Deliver everyday request kinds deferred by D1",
+      "summary": "Complete the everyday templates, checks and renderers moved to phase 2 by D1. Record the item as satisfied if all everyday kinds shipped in phase 1.",
+      "stage": "planned",
+      "sequence": 290,
+      "prereqs": [
+        "utp:review:kinds",
+        "utp:cards:render"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "D1’s narrow option moves manual steps, clarification, acceptance and assumptions into the next release. Check the accepted scope for notices as well."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:rich:native",
+      "projectId": "utp",
+      "title": "Add native question dialogs with complete fallbacks",
+      "summary": "Map supported native dialogs to stable answer IDs. Preserve consequences and custom replies. Use Markdown or terminal review when a dialog drops content or preselects advice.",
+      "stage": "planned",
+      "sequence": 300,
+      "prereqs": [
+        "utp:cards:render",
+        "utp:adapters:platforms"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Phase 2 calls for capability checks on each platform and conformance for recommended approvals, narrower options and declined actions."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:rich:proof",
+      "projectId": "utp",
+      "title": "Verify rich review with real judgments and handoffs",
+      "summary": "Run a real blind comparison and a real manual handoff, then verify renderer conformance for every available channel and each delivered kind.",
+      "stage": "planned",
+      "sequence": 310,
+      "prereqs": [
+        "utp:rich:blind",
+        "utp:rich:native",
+        "utp:rich:deferred-kinds"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The phase 2 exit criteria require both real reviews and channel conformance."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:learning:revisit",
+      "projectId": "utp",
+      "title": "Revisit a decision when its basis changes",
+      "summary": "Present the original basis and the change. Record keep, amend or reverse, and make the revision discoverable in later lookups.",
+      "stage": "planned",
+      "sequence": 320,
+      "prereqs": [
+        "utp:policy:lookup",
+        "utp:cards:render"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "The phase 3 revisit card applies to a decision whose evidence or preconditions changed."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:learning:metrics",
+      "projectId": "utp",
+      "title": "Report observed decisions, reversals and interruptions",
+      "summary": "Compare real use with the retrospective baseline. Count silent reversals, separate open 30-day windows and report feedback, overrides, waivers, delays and scope mismatches.",
+      "stage": "planned",
+      "sequence": 330,
+      "prereqs": [
+        "utp:phase1:use",
+        "utp:cards:feedback",
+        "utp:learning:revisit"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Use the measure definitions and their observation windows. Report only measures backed by data and retain the distinction between active response time and delivery time."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:learning:retro",
+      "projectId": "utp",
+      "title": "Version templates and adopt a change from a retrospective",
+      "summary": "Present the retrospective’s proposed change as a choice. Record the accepted template or policy revision and compare later results with the earlier version.",
+      "stage": "planned",
+      "sequence": 340,
+      "prereqs": [
+        "utp:learning:metrics"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Phase 3 exits after the first accepted change. The concept also proposes testing an independent choice before showing advice on hard-to-reverse decisions."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:convenience:phone",
+      "projectId": "utp",
+      "title": "Answer reviews from the phone inbox",
+      "summary": "Connect the existing inbox to the shared log. Verify one batch notification, correct answer binding and the 24-hour text purge. Ship when real use shows it saves time.",
+      "stage": "vague",
+      "sequence": 350,
+      "prereqs": [
+        "utp:reviews:delivery",
+        "utp:adapters:answers"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Decision D6 keeps the phone inbox as a phase 4 answer channel. The service retains the durable record."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:convenience:mcp",
+      "projectId": "utp",
+      "title": "Offer reviews through the Model Context Protocol",
+      "summary": "Return answers through MCP elicitation while preserving the full card and its revision. Keep terminal fallback available and ship when a real workflow saves time.",
+      "stage": "vague",
+      "sequence": 360,
+      "prereqs": [
+        "utp:adapters:platforms",
+        "utp:cards:render"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-22T18:15:46Z",
+        "updatedAt": "2026-11-22T18:15:46Z"
+      },
+      "evidence": [
+        {
+          "entryId": "source",
+          "at": "2026-11-22T18:15:46Z",
+          "kind": "note",
+          "message": "Phase 4 is conditional on demonstrated time savings. The concept places consequences and evidence alongside the elicitation form."
+        }
+      ]
+    }
+  ]
+}
