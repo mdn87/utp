@@ -419,7 +419,7 @@
       "projectId": "utp",
       "title": "Export decisions safely for public review",
       "summary": "Export selected decisions with redaction. Check fixtures and exports for generic leaks in CI and apply the private deny-list locally before publishing.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 130,
       "prereqs": [
         "utp:core:baseline"
@@ -428,7 +428,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:56:54Z"
       },
       "evidence": [
         {
@@ -436,6 +436,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The lifecycle privacy contract requires redacted exports. Later project decisions should go through UTP and produce a public decision record."
+        },
+        {
+          "entryId": "redacted-export-verified",
+          "at": "2026-11-22T23:56:54Z",
+          "kind": "stage-change",
+          "message": "Selected decisions export with private fields omitted and known sensitive text redacted. Tests cover the deny-list and CI checks fixtures and public records."
         }
       ]
     },

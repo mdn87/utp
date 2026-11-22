@@ -291,3 +291,46 @@ test("the CLI reports an applied default and redoes an authorized late choice", 
     await svc.close();
   }
 });
+
+test("export removes private details and checks public files before publication", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-home-")) };
+  try {
+    await utp(["connect", svc.url], { ...o, input: createToken(data, "test-fixture") });
+    assert.equal((await utp(["init"], o)).code, 0);
+    writeFileSync(path.join(o.home, "deny-list.json"), JSON.stringify(["Private fixture name"]));
+    const card = path.join(o.cwd, "request.json");
+    const publicPath = path.join(o.cwd, "review.export.json");
+    const fakeToken = `utp_${"x".repeat(24)}`;
+    const privateDetails = `private fixture name alex@example.test 192.0.2.42 2001:db8::5 C:\\Users\\Example\\fixture.txt /home/example/fixture.txt ${fakeToken}`;
+    writeFileSync(card, JSON.stringify({
+      kind: "choose", question: `Select the parser for ${privateDetails}?`, why_now: "The fixture needs a parser.",
+      options: [
+        { id: "a", label: "Strict", consequence: "Reject bad rows." },
+        { id: "b", label: "Lenient", consequence: "Skip bad rows." },
+      ],
+      notes: "This internal note is omitted.",
+      stakes: { reversibility: "easy" }, level: 2, level_reason: "Easy to undo.",
+    }));
+    const asked = await utp(["ask", card, "--json"], o);
+    assert.equal(asked.code, 0, asked.stdout + asked.stderr);
+    const { id, review_id: review } = JSON.parse(asked.stdout);
+    await utp(["flush"], o);
+    await utp(["presented", review], o);
+    await utp(["answer", id, "--option", "a"], o);
+    assert.equal((await utp(["export", id, "--file", publicPath], o)).code, 1);
+    const exported = await utp(["export", id, "--redact", "--file", publicPath], o);
+    assert.equal(exported.code, 0, exported.stdout + exported.stderr);
+    const result = readFileSync(publicPath, "utf8");
+    assert.equal(JSON.parse(result).decisions[0].answer, "a");
+    assert.match(result, /Select the parser for \[redacted\]/);
+    for (const detail of [...privateDetails.split(" ").filter(part => part.length > 7), "This internal note is omitted.", id]) {
+      assert.ok(!result.includes(detail), detail);
+    }
+    assert.equal((await utp(["leak-check", publicPath], o)).code, 0);
+    assert.equal((await utp(["leak-check", card], o)).code, 20);
+  } finally {
+    await svc.close();
+  }
+});
