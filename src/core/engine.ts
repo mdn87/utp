@@ -7,9 +7,6 @@
 //
 // Request bodies are stored as content-addressed payloads; answers, grants
 // and evidence are small and travel inside their event.
-//
-// Not here yet: claim-default and the late-conflict path wait for decision
-// D4 (what an agent does while an answer is pending).
 
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -17,7 +14,7 @@ import { checkRequest } from "./check.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
 import {
-  EXIT, type Actor, type AnswerRecord, type Authorization, type Disposition, type Grant, type OpResult,
+  EXIT, type Actor, type AnswerRecord, type Authorization, type DefaultNotice, type Disposition, type Grant, type OpResult,
   type RequestBody, type Verified,
 } from "./types.js";
 
@@ -53,6 +50,9 @@ export interface Rev {
   flags: string[];
   remaining_scope?: string;
   recovery_authorization?: Authorization;
+  default_application?: { grant: string; basis: Basis };
+  default_resolution?: "keep" | "redo";
+  default_notice_pending?: boolean;
   reconciliations: { at: string; outcome: string; grant: string }[];
 }
 
@@ -70,6 +70,7 @@ export interface Review {
   status: "open" | "prepared";
   items: string[];
   presentations: { id: string; channel: string; at: string }[];
+  default_notices?: DefaultNotice[];
 }
 
 export interface DecisionLogEntry {
@@ -154,6 +155,25 @@ function sameAuthorization(a: Authorization, b: Authorization): boolean {
   return sameTarget(a, b) && a.scope === b.scope;
 }
 
+function eligibleDefault(body: RequestBody): { option: string; authorization: Authorization } | undefined {
+  const declared = body.default;
+  const eligibility = declared?.eligibility;
+  const text = (value: unknown): boolean => typeof value === "string" && value.trim().length > 0;
+  if (!declared || !eligibility || body.level !== 2 || body.stakes.reversibility !== "easy"
+      || (body.kind !== "choose" && body.kind !== "clarify")
+      || !["approach", "priority", "process"].includes(body.category ?? "")
+      || eligibility.local !== true || eligibility.scope_delta !== "none"
+      || !text(eligibility.undo) || !text(eligibility.authority)) return undefined;
+  if (eligibility.size !== "small" && (eligibility.size !== "larger-technical"
+      || eligibility.panel?.requested_by_person !== true || !text(eligibility.panel.finding))) return undefined;
+  const authorization = body.options?.find((option) => option.id === declared.option)?.authorization;
+  return authorization ? { option: declared.option, authorization } : undefined;
+}
+
+function contradictsDefault(answer: AnswerRecord | undefined, option: string): boolean {
+  return !!answer && !answer.disposition && answer.value !== option;
+}
+
 export class Engine {
   /** Emits "commit" after each committed event; the service uses it to wake waiters. */
   readonly events = new EventEmitter().setMaxListeners(0);
@@ -217,6 +237,8 @@ export class Engine {
         case "presented": return this.presented(args, actor, opId);
         case "answer": return this.answer(args, actor, opId);
         case "wait": return this.wait(args, actor, opId);
+        case "claim-default": return this.claimDefault(args, actor, opId);
+        case "resolve-late": return this.resolveLate(args, actor, opId);
         case "begin": return this.begin(args, actor, opId);
         case "applied": return this.applied(args, actor, opId);
         case "reconcile": return this.reconcile(args, actor, opId);
@@ -274,7 +296,14 @@ export class Engine {
     const review = this.openReviewId ? this.reviews.get(this.openReviewId) : undefined;
     const items = review ? review.items.filter((k) => this.revs.get(k)?.status === "queued") : [];
     if (!review || items.length === 0) return { code: EXIT.OK, review_id: null, items: [], message: "nothing is queued" };
-    return this.commit("flush", "review.flushed", actor, { review_id: review.id }, { code: EXIT.OK, review_id: review.id, items }, opId);
+    const defaults = [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
+      if (!rev.default_notice_pending || !rev.default_application) return [];
+      const grant = this.mustGrant(rev.default_application.grant);
+      return [{ request_id: rev.id, revision: rev.revision, question: rev.body.question,
+        option: grant.option, conflict: rev.status === "late_conflict" }];
+    });
+    return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults },
+      { code: EXIT.OK, review_id: review.id, items }, opId);
   }
 
   private presented(a: Args, actor: Actor, opId?: string): OpResult {
@@ -337,11 +366,15 @@ export class Engine {
     if (st === "closed") return { code: EXIT.OK, status: st, message: "a notice needs no answer" };
     const closed = this.closedResult(st);
     if (closed) return { ...closed, status: st };
-    if (st === "draft" || st === "queued" || st === "presented" || st === "hidden") return { code: EXIT.WAITING, status: st };
+    if (st === "draft" || st === "queued" || st === "presented" || st === "hidden" || st === "default_claimed") {
+      return { code: EXIT.WAITING, status: st };
+    }
     const isOwner = sameActor(req.owner, actor);
     const base = { id: rev.id, revision: rev.revision, status: st, answer: rev.answer ?? null, role: isOwner ? "owner" : "observer" };
     const last = this.lastGrant(rev);
     switch (st) {
+      case "late_conflict":
+        return { code: EXIT.LATE_CONFLICT, ...base, message: "the person answered differently after the default ran; resolve the conflict before acting" };
       case "outcome_unknown":
         return { code: EXIT.NOT_ALLOWED, ...base, message: "an earlier effect may or may not have happened; record what recovery found with utp reconcile first" };
       case "executing":
@@ -375,21 +408,85 @@ export class Engine {
       return this.commit("wait", "request.stale", actor, { id: rev.id, revision: rev.revision, changed, step: "wait" },
         { code: EXIT.STALE, ...base, status: "stale", changed, message: "a precondition changed; re-ask with utp revise" }, opId);
     }
+    return this.issueGrant(rev, actor, { option: answer.value ?? "", authorization: auth, provenance: answer.verified, from_default: false },
+      { code: EXIT.OK, ...base }, opId);
+  }
+
+  private claimDefault(a: Args, actor: Actor, opId?: string): OpResult {
+    const rev = this.resolve(str(a, "id"));
+    if (!rev) return notFound(a.id);
+    const req = this.reqOf(rev);
+    if (rev.revision !== req.current) return this.replaced(rev, req);
+    const status = this.effective(rev, this.now().toISOString());
+    const closed = this.closedResult(status);
+    if (closed) return closed;
+    const ref = { id: rev.id, revision: rev.revision, status, answer: rev.answer ?? null };
+    if (rev.answer) return { code: EXIT.ANSWER_FIRST, ...ref, message: "the person answered before the default was claimed" };
+    if (!sameActor(req.owner, actor)) {
+      return { code: EXIT.NOT_ALLOWED, ...ref, message: "only the request owner can claim its default" };
+    }
+    const last = this.lastGrant(rev);
+    if (status === "default_claimed" && last?.status === "active") return { code: EXIT.DEFAULT_CLAIMED, ...ref, grant: last };
+    const eligible = eligibleDefault(rev.body);
+    if (status !== "presented" || !eligible || this.recoveryNeedsNewScope(rev, eligible.authorization)) {
+      return { code: EXIT.NOT_ALLOWED, ...ref, message: "this request does not have an eligible default ready to claim" };
+    }
+    const changed = this.changedBasis(rev, basisArg(a.basis));
+    if (changed.length) {
+      return this.commit("claim-default", "request.stale", actor, { id: rev.id, revision: rev.revision, changed, step: "claim-default" },
+        { code: EXIT.STALE, ...ref, status: "stale", changed, message: "a precondition changed; re-ask with utp revise" }, opId);
+    }
+    return this.issueGrant(rev, actor, { ...eligible, provenance: "none", from_default: true },
+      { code: EXIT.DEFAULT_CLAIMED, ...ref }, opId);
+  }
+
+  private issueGrant(rev: Rev, actor: Actor, source: Pick<Grant, "option" | "authorization" | "provenance" | "from_default">,
+    result: OpResult, opId?: string, redoBasis?: Basis): OpResult {
+    const at = this.now().toISOString();
     const grant: Grant = {
+      ...source,
       id: newId("G", at),
       request_id: rev.id,
       revision: rev.revision,
       owner: actor,
-      epoch: req.epoch,
+      epoch: this.reqOf(rev).epoch,
       issued_at: at,
       lease_until: new Date(Date.parse(at) + GRANT_LEASE_MS).toISOString(),
-      from_default: false,
-      option: answer.value ?? "",
-      authorization: rev.remaining_scope ? { ...auth, scope: rev.remaining_scope } : { ...auth },
-      provenance: answer.verified,
+      authorization: { ...source.authorization, ...(!redoBasis && rev.remaining_scope ? { scope: rev.remaining_scope } : {}) },
       status: "active",
     };
-    return this.commit("wait", "grant.issued", actor, { grant }, { code: EXIT.OK, ...base, status: "granted", grant }, opId);
+    const op = redoBasis ? "resolve-late" : grant.from_default ? "claim-default" : "wait";
+    return this.commit(op, "grant.issued", actor, { grant, ...(redoBasis ? { redo_basis: redoBasis } : {}) },
+      { ...result, status: grant.from_default ? "default_claimed" : "granted", grant }, opId);
+  }
+
+  private resolveLate(a: Args, actor: Actor, opId?: string): OpResult {
+    const rev = this.resolve(str(a, "id"));
+    if (!rev) return notFound(a.id);
+    const req = this.reqOf(rev);
+    if (rev.revision !== req.current) return this.replaced(rev, req);
+    if (rev.status !== "late_conflict" || !rev.default_application || !sameActor(req.owner, actor)) {
+      return { code: EXIT.NOT_ALLOWED, message: "only the request owner can resolve an open late conflict" };
+    }
+    const resolution = str(a, "resolution");
+    const ref = { id: rev.id, revision: rev.revision };
+    if (resolution === "keep") {
+      return this.commit("resolve-late", "default.kept", actor, ref, { code: EXIT.OK, ...ref, status: "applied" }, opId);
+    }
+    if (resolution !== "redo") throw new UsageError("resolution must be keep or redo");
+    const answer = rev.answer;
+    const authorization = answer && this.authorizationFor(rev, answer);
+    if (!answer || !authorization) {
+      return { code: EXIT.NOT_ALLOWED, ...ref, message: "the later answer has no authorization for a redo" };
+    }
+    const basis = rev.default_application.basis;
+    const changed = this.changedBasis(rev, basisArg(a.basis), basis);
+    if (changed.length) {
+      return this.commit("resolve-late", "request.stale", actor, { ...ref, changed, step: "resolve-late" },
+        { code: EXIT.STALE, ...ref, status: "stale", changed, message: "the target changed after the default ran; re-ask with utp revise" }, opId);
+    }
+    return this.issueGrant(rev, actor, { option: answer.value ?? "", authorization, provenance: answer.verified, from_default: false },
+      { code: EXIT.OK, ...ref, answer }, opId, basis);
   }
 
   private begin(a: Args, actor: Actor, opId?: string): OpResult {
@@ -398,7 +495,7 @@ export class Engine {
     const { g, rev, req } = found;
     const refused = this.grantRefusal(g, rev, req, actor);
     if (refused) return refused;
-    if (g.status !== "active" || rev.status !== "granted" || this.lastGrant(rev)?.id !== g.id) {
+    if (g.status !== "active" || rev.status !== (g.from_default ? "default_claimed" : "granted") || this.lastGrant(rev)?.id !== g.id) {
       return { code: EXIT.NOT_ALLOWED, grant: g.id, message: "this grant was already used; a grant allows one action" };
     }
     const changed = this.changedBasis(rev, basisArg(a.basis));
@@ -427,11 +524,19 @@ export class Engine {
     const evidence = this.evidenceArg(a.evidence);
     const mismatch = (["action", "target", "scope"] as const)
       .filter((f) => normalize(String(evidence[f])) !== normalize(g.authorization[f]));
-    const result: OpResult = { code: EXIT.OK, grant: g.id, status: mismatch.length ? "outcome_unknown" : "applied", mismatch };
+    const appliedBasis = g.from_default && !mismatch.length ? this.appliedDefaultBasis(rev, a.applied_basis) : undefined;
+    const conflict = appliedBasis && contradictsDefault(rev.answer, g.option);
+    const result: OpResult = {
+      code: conflict ? EXIT.LATE_CONFLICT : EXIT.OK,
+      grant: g.id, status: mismatch.length ? "outcome_unknown" : conflict ? "late_conflict" : "applied", mismatch,
+    };
     if (mismatch.length) {
       result.message = `the reported ${mismatch.join(", ")} differ from what was authorized; the request stays outcome_unknown until utp reconcile records what happened`;
+    } else if (conflict) {
+      result.message = "the person answered differently after the default began; check the later answer before any further action";
     }
-    return this.commit("applied", "grant.applied", actor, { grant: g.id, evidence, mismatch }, result, opId);
+    return this.commit("applied", "grant.applied", actor,
+      { grant: g.id, evidence, mismatch, ...(appliedBasis ? { applied_default_basis: appliedBasis } : {}) }, result, opId);
   }
 
   private reconcile(a: Args, actor: Actor, opId?: string): OpResult {
@@ -467,7 +572,11 @@ export class Engine {
         recovery_basis: recovery, remaining_scope: remaining, recovery_authorization: current ?? started, unanticipated,
       });
     }
-    const status = this.reconcileTarget(rev, outcome, unanticipated);
+    let status = this.reconcileTarget(rev, outcome, unanticipated);
+    if (g.from_default && outcome === "completed") {
+      data.applied_default_basis = this.appliedDefaultBasis(rev, a.applied_basis);
+      if (contradictsDefault(rev.answer, g.option)) status = "late_conflict";
+    }
     return this.commit("reconcile", "grant.reconciled", actor, data, { code: EXIT.OK, grant: g.id, outcome, status }, opId);
   }
 
@@ -527,7 +636,7 @@ export class Engine {
     if (st === "outcome_unknown") return { code: EXIT.NOT_ALLOWED, message: "record what happened with utp reconcile before taking over" };
     if (TERMINAL.has(st) || st === "applied") return { code: EXIT.NOT_ALLOWED, message: `a ${st} request has nothing to take over` };
     const g = this.lastGrant(rev);
-    const active = st === "granted" && g?.status === "active" ? g : undefined;
+    const active = (st === "granted" || st === "default_claimed") && g?.status === "active" ? g : undefined;
     if (active) {
       const idle = this.now().getTime() - Date.parse(active.issued_at);
       if (idle < TAKEOVER_IDLE_MS) {
@@ -567,7 +676,8 @@ export class Engine {
       const v = this.reviews.get(ref);
       if (!v) return notFound(ref);
       const items = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined).map((r) => this.view(r));
-      return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items } };
+      return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}) } };
     }
     const rev = this.resolve(ref);
     if (!rev) return notFound(ref);
@@ -673,12 +783,17 @@ export class Engine {
         if (!v) throw new CorruptStoreError(`flush of unknown review ${String(d.review_id)}`);
         v.items = v.items.filter((k) => this.revs.get(k)?.status === "queued");
         v.status = "prepared";
+        v.default_notices = (d.default_notices as DefaultNotice[] | undefined) ?? [];
         if (this.openReviewId === v.id) this.openReviewId = undefined;
         break;
       }
       case "review.presented": {
         const v = this.reviews.get(d.review_id as string);
         if (!v) throw new CorruptStoreError(`presentation of unknown review ${String(d.review_id)}`);
+        for (const notice of v.default_notices ?? []) {
+          const rev = this.revs.get(key(notice.request_id, notice.revision));
+          if (rev && (rev.status === "late_conflict") === notice.conflict) rev.default_notice_pending = false;
+        }
         v.presentations.push({ id: d.presentation_id as string, channel: d.channel as string, at: e.at });
         for (const k of v.items) {
           const r = this.revs.get(k);
@@ -696,8 +811,11 @@ export class Engine {
         r.answer = d.answer as AnswerRecord;
         r.answer_count += 1;
         const st = this.effective(r, e.at);
-        if (st === "granted") this.revoke(r);
-        if (st === "granted" || st === "presented" || st === "hidden" || st === "answered") this.move(r, "answered", e.at);
+        if (st === "granted" || st === "default_claimed") this.revoke(r);
+        if (st === "granted" || st === "default_claimed" || st === "presented" || st === "hidden" || st === "answered") {
+          this.move(r, "answered", e.at);
+        }
+        this.checkLateConflict(r, e.at);
         break;
       }
       case "answer.withdrawn": {
@@ -732,7 +850,7 @@ export class Engine {
         if (typeof d.grant === "string") {
           const g = this.mustGrant(d.grant);
           g.status = "taken_over";
-          this.move(this.revOf(g), "answered", e.at);
+          this.move(this.revOf(g), g.from_default ? "presented" : "answered", e.at);
         }
         break;
       }
@@ -741,7 +859,13 @@ export class Engine {
         this.grants.set(g.id, g);
         const r = this.revOf(g);
         r.grants.push(g.id);
-        this.move(r, "granted", e.at);
+        if (d.redo_basis) {
+          r.expected_basis = d.redo_basis as Basis;
+          r.default_resolution = "redo";
+          delete r.remaining_scope;
+          delete r.recovery_authorization;
+        }
+        this.move(r, g.from_default ? "default_claimed" : "granted", e.at);
         break;
       }
       case "grant.begun": {
@@ -758,6 +882,13 @@ export class Engine {
         const mismatch = d.mismatch as string[];
         if (mismatch.length) r.flags.push(`effect differs from authorization: ${mismatch.join(", ")}`);
         this.move(r, mismatch.length ? "outcome_unknown" : "applied", e.at);
+        this.recordDefaultApplication(r, g, d, e.at);
+        break;
+      }
+      case "default.kept": {
+        const r = this.mustRev(d);
+        r.default_resolution = "keep";
+        this.move(r, "applied", e.at);
         break;
       }
       case "grant.lease_expired": {
@@ -768,14 +899,14 @@ export class Engine {
           this.move(r, "outcome_unknown", e.at);
         } else {
           g.status = "expired";
-          this.move(r, "answered", e.at);
+          this.move(r, g.from_default ? "presented" : "answered", e.at);
         }
         break;
       }
       case "grant.released": {
         const g = this.mustGrant(d.grant);
         g.status = "released";
-        this.move(this.revOf(g), "answered", e.at);
+        this.move(this.revOf(g), g.from_default ? "presented" : "answered", e.at);
         break;
       }
       case "grant.reconciled": {
@@ -793,6 +924,7 @@ export class Engine {
         }
         r.reconciliations.push({ at: e.at, outcome, grant: g.id });
         if (target !== r.status) this.move(r, target, e.at);
+        this.recordDefaultApplication(r, g, d, e.at);
         break;
       }
       default:
@@ -885,6 +1017,34 @@ export class Engine {
 
   private authorizationAtGrant(rev: Rev, grant: Grant): Authorization {
     return rev.body.options?.find((option) => option.id === grant.option)?.authorization ?? grant.authorization;
+  }
+
+  private appliedDefaultBasis(rev: Rev, supplied: unknown): Basis {
+    const basis = basisArg(supplied) ?? {};
+    if (Object.keys(rev.basis).some((path) => !(path in basis))) {
+      throw new UsageError("record the basis fingerprints for the state the default left");
+    }
+    return basis;
+  }
+
+  private recordDefaultApplication(rev: Rev, grant: Grant, data: Args, at: string): void {
+    if (!data.applied_default_basis) return;
+    rev.default_application = { grant: grant.id, basis: data.applied_default_basis as Basis };
+    rev.default_notice_pending = true;
+    rev.flags.push("applied by default: change?");
+    this.checkLateConflict(rev, at);
+  }
+
+  private checkLateConflict(rev: Rev, at: string): void {
+    if (!rev.default_application || rev.default_resolution) return;
+    const option = this.mustGrant(rev.default_application.grant).option;
+    if (rev.status === "applied" && contradictsDefault(rev.answer, option)) {
+      rev.flags.push("late answer conflicts with the applied default");
+      rev.default_notice_pending = true;
+      this.move(rev, "late_conflict", at);
+    } else if (rev.status === "late_conflict" && rev.answer?.value === option) {
+      this.move(rev, "applied", at);
+    }
   }
 
   private recoveryNeedsNewScope(rev: Rev, current: Authorization): boolean {
@@ -988,11 +1148,11 @@ export class Engine {
     return out;
   }
 
-  private changedBasis(r: Rev, supplied: Basis | undefined): string[] {
-    const paths = Object.keys(r.expected_basis);
+  private changedBasis(r: Rev, supplied: Basis | undefined, expected = r.expected_basis): string[] {
+    const paths = Object.keys(expected);
     if (paths.length === 0) return [];
     if (!supplied) throw new UsageError("this request has basis files; pass their current fingerprints (the utp client does this)");
-    return paths.filter((p) => supplied[p] !== r.expected_basis[p]);
+    return paths.filter((p) => supplied[p] !== expected[p]);
   }
 
   private authorizationFor(r: Rev, a: AnswerRecord): Authorization | undefined {

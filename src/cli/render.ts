@@ -1,6 +1,6 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
-import type { AnswerRecord, Grant, OpResult, RequestBody } from "../core/types.js";
+import type { AnswerRecord, DefaultNotice, Grant, OpResult, RequestBody } from "../core/types.js";
 
 export interface RequestView {
   id: string;
@@ -10,6 +10,12 @@ export interface RequestView {
   body: RequestBody;
   answer: AnswerRecord | null;
   flags: string[];
+}
+
+export interface ReviewView {
+  id: string;
+  items: RequestView[];
+  default_notices?: DefaultNotice[];
 }
 
 const UNDO: Record<string, string> = { easy: "easy to undo", costly: "costly to undo", one_way: "can't be undone" };
@@ -52,9 +58,15 @@ export function answerText(a: AnswerRecord): string {
   return `${what} (through ${a.channel}${a.verified === "none" ? ", unverified" : `, verified by ${a.verified}`})`;
 }
 
-export function reviewMarkdown(review: { id: string; items: RequestView[] }): string {
+export function defaultNoticeMarkdown(notice: DefaultNotice): string {
+  const status = notice.conflict ? "Late answer conflicts with the applied default" : "Applied by default: change?";
+  return `- **${status}** ${notice.question} Option **${notice.option}**. Request \`${notice.request_id}@${notice.revision}\`.`;
+}
+
+export function reviewMarkdown(review: ReviewView): string {
   const cards = review.items.filter((v) => v.current && v.status !== "cancelled");
   const out = [`## Review ${review.id}: ${cards.length} card${cards.length === 1 ? "" : "s"}`, ""];
+  if (review.default_notices?.length) out.push(...review.default_notices.map(defaultNoticeMarkdown), "");
   if (cards.some((c) => c.body.kind !== "notice")) {
     out.push("Reply with the card letter and your choice, for example \"A: b\". Your own words work too.", "");
   }

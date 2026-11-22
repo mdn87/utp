@@ -76,6 +76,136 @@ const approve = (over: Partial<RequestBody> = {}): RequestBody => ({
 const H1 = { "exports/list.txt": "sha-1" };
 const EVIDENCE = { action: "delete", target: "exports/", scope: "the ten listed files", effect: "ten files removed" };
 
+const defaultBasis = { "fixtures/parser.json": "before" };
+const defaultEvidence = {
+  action: "update", target: "fixtures/parser.json", scope: "the local parser fixture", effect: "parser fixture updated",
+};
+const technicalDefault = (over: Partial<RequestBody> = {}): RequestBody => choose({
+  category: "approach",
+  options: [
+    { id: "a", label: "Strict", consequence: "Use strict parsing.", authorization: defaultEvidence },
+    { id: "b", label: "Lenient", consequence: "Skip bad rows.", authorization: defaultEvidence },
+  ],
+  default: {
+    option: "a", consequence: "Use strict parsing for this fixture.",
+    eligibility: {
+      local: true, scope_delta: "none", undo: "Restore the previous fixture in one edit.",
+      authority: "The person authorized updating the fixture.", size: "small",
+    },
+  },
+  basis: { files: Object.keys(defaultBasis) },
+  ...over,
+});
+
+test("a stated default is claimed once by the owner, and a timely answer revokes it", () => {
+  const h = new Harness();
+  const id = h.present(technicalDefault(), defaultBasis);
+  const claim = { id, basis: defaultBasis };
+  assert.equal(h.run("claim-default", claim, OTHER).code, 19);
+  const result = h.run("claim-default", claim, AGENT, "one-default");
+  assert.equal(result.code, 15);
+  assert.deepEqual(h.run("claim-default", claim, AGENT, "one-default"), result);
+  assert.equal(h.status(id), "default_claimed");
+  assert.equal(h.run("wait", { id }, OTHER).code, 10);
+  const g = result.grant as Grant;
+  assert.equal(g.from_default, true);
+  h.ok("answer", { id, value: "b", channel: "terminal-review" }, PERSON);
+  assert.equal(h.run("begin", { grant: g.id, basis: defaultBasis }).code, 17);
+  const first = h.run("claim-default", claim);
+  assert.equal(first.code, 16);
+  assert.equal((first.answer as { value: string }).value, "b");
+});
+
+test("default claims recheck preconditions and return to waiting when unused", () => {
+  const h = new Harness();
+  const id = h.present(technicalDefault(), defaultBasis);
+  const claim = { id, basis: defaultBasis };
+  const first = h.run("claim-default", claim).grant as Grant;
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  assert.equal(h.status(id), "presented");
+  const next = h.run("claim-default", claim).grant as Grant;
+  assert.notEqual(next.id, first.id);
+  h.ok("release", { grant: next.id });
+  assert.equal(h.status(id), "presented");
+  assert.equal(h.run("claim-default", { id, basis: { "fixtures/parser.json": "changed" } }).code, 11);
+});
+
+test("design defaults and larger technical defaults without panel advice must wait", () => {
+  const h = new Harness();
+  const body = technicalDefault();
+  const declared = body.default?.eligibility;
+  assert.ok(declared && body.default);
+  const design = h.present({ ...body, category: "design" }, defaultBasis);
+  assert.equal(h.run("claim-default", { id: design, basis: defaultBasis }).code, 19);
+  const larger = h.present({ ...body, default: { ...body.default, eligibility: { ...declared, size: "larger-technical" } } }, defaultBasis);
+  assert.equal(h.run("claim-default", { id: larger, basis: defaultBasis }).code, 19);
+  const backed = h.present({ ...body, default: { ...body.default, eligibility: {
+    ...declared, size: "larger-technical", panel: { requested_by_person: true, finding: "Panel confirms the local approach." },
+  } } }, defaultBasis);
+  assert.equal(h.run("claim-default", { id: backed, basis: defaultBasis }).code, 15);
+});
+
+const appliedDefaultBasis = { "fixtures/parser.json": "after-default" };
+function useDefault(h: Harness) {
+  const id = h.present(technicalDefault(), defaultBasis);
+  const grant = h.run("claim-default", { id, basis: defaultBasis }).grant as Grant;
+  h.ok("begin", { grant: grant.id, basis: defaultBasis });
+  return { id, grant: grant.id };
+}
+
+test("a late answer can redo a default only against the state it left", () => {
+  const h = new Harness();
+  const { id, grant } = useDefault(h);
+  h.ok("applied", { grant, evidence: defaultEvidence, applied_basis: appliedDefaultBasis });
+  h.ok("answer", { id, value: "b", channel: "terminal-review" }, PERSON);
+  assert.equal(h.run("wait", { id }).code, 14);
+  h.engine = h.reopen();
+  assert.equal(h.status(id), "late_conflict");
+  const redo = h.ok("resolve-late", { id, resolution: "redo", basis: appliedDefaultBasis }).grant as Grant;
+  assert.equal(redo.option, "b");
+  assert.equal(redo.from_default, false);
+  h.ok("begin", { grant: redo.id, basis: appliedDefaultBasis });
+  h.ok("applied", { grant: redo.id, evidence: defaultEvidence });
+  assert.equal(h.status(id), "applied");
+});
+
+test("an answer after begin can flag a conflict, and keeping the default issues no grant", () => {
+  const h = new Harness();
+  const { id, grant } = useDefault(h);
+  h.ok("answer", { id, value: "b", channel: "terminal-review" }, PERSON);
+  const applied = h.run("applied", { grant, evidence: defaultEvidence, applied_basis: appliedDefaultBasis });
+  assert.equal(applied.code, 14);
+  const kept = h.ok("resolve-late", { id, resolution: "keep" });
+  assert.equal(kept.status, "applied");
+  assert.equal(kept.grant, undefined);
+  assert.equal(h.run("resolve-late", { id, resolution: "redo", basis: appliedDefaultBasis }).code, 19);
+});
+
+test("late agreement keeps the applied default, and unrelated target changes prevent redo", () => {
+  const h = new Harness();
+  const { id, grant } = useDefault(h);
+  h.ok("applied", { grant, evidence: defaultEvidence, applied_basis: appliedDefaultBasis });
+  h.ok("answer", { id, value: "a", channel: "terminal-review" }, PERSON);
+  assert.equal(h.status(id), "applied");
+  h.ok("answer", { id, value: "b", channel: "terminal-review" }, PERSON);
+  assert.equal(h.run("resolve-late", { id, resolution: "redo", basis: { "fixtures/parser.json": "other-change" } }).code, 11);
+  assert.equal(h.status(id), "stale");
+});
+
+test("reconciliation after an interrupted default uses the person's answer when no effect occurred", () => {
+  const h = new Harness();
+  const { id, grant } = useDefault(h);
+  h.ok("answer", { id, value: "b", channel: "terminal-review" }, PERSON);
+  h.advance(GRANT_LEASE_MS + MINUTE);
+  assert.equal(h.run("wait", { id, basis: defaultBasis }).code, 19);
+  assert.equal(h.ok("reconcile", { grant, outcome: "not-performed", evidence: { checked: true } }).status, "answered");
+  const current = h.ok("wait", { id, basis: defaultBasis }).grant as Grant;
+  assert.equal(current.option, "b");
+  assert.equal(current.from_default, false);
+  h.ok("begin", { grant: current.id, basis: defaultBasis });
+  assert.equal((h.ok("show", { id }).request as { answers: number }).answers, 1);
+});
+
 /** Presents an approval, records a terminal-review yes, and returns the grant. */
 function granted(h: Harness): { id: string; grant: string } {
   const id = h.present(approve(), H1);

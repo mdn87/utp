@@ -8,12 +8,12 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { checkRequest } from "../core/check.js";
 import type { DecisionLogEntry } from "../core/engine.js";
-import { EXIT, type OpResult, type RequestBody } from "../core/types.js";
+import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types.js";
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
 import { call, CliError, readConfig, utpHome, writeConfig } from "./client.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
-import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView } from "./render.js";
+import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
 import { runReview } from "./review.js";
 
 const HELP = `utp: hand a person structured decisions, and get structured answers back.
@@ -37,7 +37,9 @@ Answers     review
             answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
                         [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
             wait <id> [--timeout <seconds>]
-Execution   begin <grant>
+Execution   claim-default <id>
+            resolve-late <id> --resolution keep|redo
+            begin <grant>
             applied <grant> --evidence <file>
             reconcile <grant> --outcome <outcome> --evidence <file>
             release <grant>
@@ -47,7 +49,8 @@ Changes     revise <id> <file>
             reverse <id> --file <reason.json>
 
 Exit codes: 0 done or answered, 10 still waiting, 11 stale, 12 cancelled, 13 expired,
-17 revoked, 18 the answer lacks the provenance its action needs, 19 not allowed now,
+14 late conflict, 15 default claimed, 16 person answered first, 17 revoked,
+18 the answer lacks the provenance its action needs, 19 not allowed now,
 20 check failed, 30 store busy, 31 lease epoch outdated, 32 can't reach the service,
 40 not found, 1 anything else. The specification is docs/concept/lifecycle.md.
 `;
@@ -73,6 +76,7 @@ const OPTIONS = {
   timeout: { type: "string" },
   evidence: { type: "string" },
   outcome: { type: "string" },
+  resolution: { type: "string" },
   tags: { type: "string" },
   related: { type: "string" },
   text: { type: "string" },
@@ -253,7 +257,7 @@ async function main(argv: string[]): Promise<number> {
       const r = await call("flush", {}, { project, opId });
       if (r.code !== EXIT.OK || !r.review_id || flags.json) return out(r);
       const shown = await call("show", { id: r.review_id }, { project });
-      const review = shown.review as { id: string; items: RequestView[] };
+      const review = shown.review as ReviewView;
       return out(r, `${reviewMarkdown(review)}\n\nAfter this review appears in your message to the person, run: `
         + `utp presented ${review.id} --channel conversation`);
     }
@@ -265,7 +269,7 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       const r = await call("show", { id: need(rest[0], "an id") }, { project });
       if (r.code !== EXIT.OK || flags.json) return out(r);
-      if (r.review) return out(r, reviewMarkdown(r.review as { id: string; items: RequestView[] }));
+      if (r.review) return out(r, reviewMarkdown(r.review as ReviewView));
       if (r.grant) return out(r, `${grantText(r.grant as never)}\n\n${cardMarkdown(r.request as RequestView)}`);
       return out(r, cardMarkdown(r.request as RequestView));
     }
@@ -324,6 +328,16 @@ async function main(argv: string[]): Promise<number> {
         if (r.code !== EXIT.WAITING || Date.now() >= deadline) return out(r, r.code === EXIT.WAITING ? `Still waiting (${String(r.status)}).` : undefined);
       }
     }
+    case "claim-default":
+    case "resolve-late": {
+      const { project, root } = projectFor();
+      const id = need(rest[0], "a request id");
+      const shown = await call("show", { id }, { project });
+      if (shown.code !== EXIT.OK) return out(shown);
+      const files = (shown.request as { basis_files: string[] }).basis_files;
+      const args = { id, basis: fingerprints(root, files), resolution: flags.resolution };
+      return out(await call(verb, args, { project, opId }));
+    }
     case "begin": {
       const { project, root } = projectFor();
       const grant = need(rest[0], "a grant id");
@@ -334,20 +348,32 @@ async function main(argv: string[]): Promise<number> {
       return out(r, r.code === EXIT.OK ? `Go ahead: ${grantText((shown.grant as never))}. Run utp applied ${grant} --evidence <file> afterwards.` : undefined);
     }
     case "applied": {
-      const { project } = projectFor();
-      return out(await call("applied", { grant: need(rest[0], "a grant id"), evidence: readJson(flags.evidence, "evidence") }, { project, opId }));
+      const { project, root } = projectFor();
+      const grant = need(rest[0], "a grant id");
+      const evidence = readJson(flags.evidence, "evidence");
+      const shown = await call("show", { id: grant }, { project });
+      if (shown.code !== EXIT.OK) return out(shown);
+      const files = (shown.request as { basis_files: string[] }).basis_files;
+      return out(await call("applied", { grant, evidence,
+        ...((shown.grant as Grant | undefined)?.from_default ? { applied_basis: fingerprints(root, files) } : {}),
+      }, { project, opId }));
     }
     case "reconcile": {
       const { project, root } = projectFor();
       const grant = need(rest[0], "a grant id");
       const evidence = readJson(flags.evidence, "evidence");
       const args: Record<string, unknown> = { grant, outcome: need(flags.outcome, "--outcome"), evidence };
-      if (flags.outcome === "partial") {
+      if (flags.outcome === "partial" || flags.outcome === "completed") {
         const shown = await call("show", { id: grant }, { project });
         if (shown.code !== EXIT.OK) return out(shown);
-        args.recovery_basis = fingerprints(root, (shown.request as { basis_files: string[] }).basis_files);
-        args.remaining_scope = evidence.remaining_scope;
-        args.unanticipated = evidence.unanticipated === true;
+        const files = (shown.request as { basis_files: string[] }).basis_files;
+        if (flags.outcome === "partial") {
+          args.recovery_basis = fingerprints(root, files);
+          args.remaining_scope = evidence.remaining_scope;
+          args.unanticipated = evidence.unanticipated === true;
+        } else if ((shown.grant as Grant | undefined)?.from_default) {
+          args.applied_basis = fingerprints(root, files);
+        }
       }
       return out(await call("reconcile", args, { project, opId }));
     }
