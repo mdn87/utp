@@ -276,7 +276,7 @@
       "projectId": "utp",
       "title": "Verify recovery against the latest authorization",
       "summary": "Exercise competing owners, revisions, withdrawals and narrowed answers around execution. After interruption, any new grant covers only the authorized work still outstanding.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 90,
       "prereqs": [
         "utp:core:baseline"
@@ -285,7 +285,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:38:12Z"
       },
       "evidence": [
         {
@@ -293,6 +293,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The verification plan covers zero, partial, different and unknown effects, recovery fingerprints, ownership changes and the risk of a paused owner resuming."
+        },
+        {
+          "entryId": "latest-authorization-verified",
+          "at": "2026-11-22T23:38:12Z",
+          "kind": "stage-change",
+          "message": "Tests cover withdrawal, narrowed scope, old records and takeover. Partial recovery must match the current authorization before another grant can issue."
         }
       ]
     },
@@ -302,7 +308,7 @@
       "projectId": "utp",
       "title": "Verify the shared log on all three operating systems",
       "summary": "Run real clients against the same service on Windows, macOS and Linux. Verify checkout identity, restart recovery, concurrent writers and exactly-once retries at each crash point.",
-      "stage": "planned",
+      "stage": "ready",
       "sequence": 100,
       "prereqs": [
         "utp:core:relink",
@@ -313,7 +319,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:38:12Z"
       },
       "evidence": [
         {
@@ -321,6 +327,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The lifecycle criteria include NTFS, APFS and ext4 crash checks, randomized state transitions and refusal of a second writer."
+        },
+        {
+          "entryId": "shared-proof-prereqs-complete",
+          "at": "2026-11-22T23:38:12Z",
+          "kind": "stage-change",
+          "message": "Relinking, direct client access and recovery are verified. The combined shared-log workflow and crash checks can now run."
         }
       ]
     },

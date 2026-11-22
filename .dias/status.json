@@ -11,8 +11,8 @@
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
   "currentMilestone": "Prove the shared decision log and a complete choice workflow across Windows, macOS and Linux. The CLI, event store and execution grants passed CI on all three.",
-  "remainingSummary": "Verify that recovery respects the latest authorization, then prove shared-log recovery. Windows, macOS and Linux clients reached the persistent service.",
-  "nextChipId": "utp:core:recovery",
+  "remainingSummary": "Prove the shared workflow and crash retries across Windows, macOS and Linux. The persistent service and latest-authorization recovery are verified.",
+  "nextChipId": "utp:core:shared-proof",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-22"
