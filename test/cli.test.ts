@@ -164,6 +164,65 @@ test("a second clone with the same remote is pointed at the existing project and
   }
 });
 
+test("relink keeps a searchable, read-only snapshot with the original project after restart", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));
+  let svc = await startServer({ dataDir: data, port: 0 });
+  const home = mkdtempSync(path.join(tmpdir(), "utp-home-"));
+  const source = { cwd: repo(), home };
+  const destination = { cwd: repo(), home };
+  const token = createToken(data, "laptop");
+  const run = async (args: string[], opts: Parameters<typeof utp>[1] = source) => {
+    const result = await utp(args, opts);
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+    return result.stdout;
+  };
+  const json = async (args: string[], opts = source) => JSON.parse(await run([...args, "--json"], opts));
+  try {
+    await run(["connect", svc.url], { ...source, input: token });
+    const { project: from } = await json(["init"]);
+    const { project: to } = await json(["init"], destination);
+    const requestPath = path.join(source.cwd, "request.json");
+    await run(["new", "choose", "--file", requestPath]);
+    const body = JSON.parse(readFileSync(requestPath, "utf8"));
+    writeFileSync(requestPath, JSON.stringify({
+      ...body, question: "Choose an import parser", notes: "Archived search term", related: ["earlier-choice"],
+    }));
+    const { id, review_id: review } = await json(["ask", requestPath]);
+    await run(["flush"]);
+    await run(["presented", review]);
+    await run(["answer", id, "--option", "b"]);
+    const reasonPath = path.join(source.cwd, "reason.json");
+    writeFileSync(reasonPath, JSON.stringify({ reason: "A later check found missing rows", tags: ["import"] }));
+    await run(["reverse", id, "--file", reasonPath]);
+
+    await run(["link", to, "--op-id", "relink-source"], source);
+    const args = ["log", "--tags", "import", "--kind", "choose", "--related", "earlier-choice", "--text", "archived search term"];
+    const { entries } = await json(args);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].id, id);
+    assert.equal(entries[0].answer, "b");
+    assert.equal(entries[0].origin_project, from);
+    assert.equal(entries[0].archived, true);
+    assert.equal(entries[0].reversals[0].reason, "A later check found missing rows");
+    assert.match(await run(args), new RegExp(`archived from ${from}`));
+    assert.equal((await utp(["answer", id, "--option", "a"], source)).code, 40);
+    assert.equal((await utp(["wait", id], source)).code, 40);
+    writeFileSync(reasonPath, JSON.stringify({ reason: "A newer source-only reversal" }));
+    await run(["reverse", id, "--file", reasonPath], { ...source, env: { UTP_PROJECT: from } });
+
+    await svc.close();
+    svc = await startServer({ dataDir: data, port: 0 });
+    await run(["connect", svc.url], { ...source, input: token });
+    assert.deepEqual((await json(args)).entries, entries);
+
+    const { project: next } = await json(["init"], { cwd: repo(), home });
+    await run(["link", next]);
+    assert.deepEqual((await json(args)).entries, entries);
+  } finally {
+    await svc.close();
+  }
+});
+
 test("every command fails with exit code 32 when the service is down", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));
   const svc = await startServer({ dataDir: data, port: 0 });

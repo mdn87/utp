@@ -127,3 +127,40 @@ test("projects are found by remote whichever way the remote is spelled", async (
     await s.svc.close();
   }
 });
+
+test("relink refuses queued work or an active grant in either project", async () => {
+  const s = await service();
+  try {
+    const { project } = await s.agent("project.create");
+    const to = (project as { id: string }).id;
+    const target = (op: string, args: Record<string, unknown> = {}) =>
+      call(op, args, { config: s.agentCfg, project: to });
+    const relink = () => call("project.relink", { from: s.project, to }, { config: s.agentCfg, opId: "test-relink" });
+
+    const queued = await s.agent("ask", { body: body() });
+    const sourceBusy = await relink();
+    assert.equal(sourceBusy.code, 19);
+    assert.equal(sourceBusy.project, s.project);
+    assert.equal((await s.agent("cancel", { id: queued.id })).code, 0);
+
+    const action = body();
+    const option = action.options?.[0];
+    assert.ok(option);
+    option.authorization = { action: "refresh", target: "fixtures", scope: "one fixture" };
+    const pending = await target("ask", { body: action });
+    const flushed = await target("flush");
+    await target("presented", { review: flushed.review_id, channel: "conversation" });
+    await target("answer", { id: pending.id, value: "a", channel: "cli" });
+    assert.equal((await target("wait", { id: pending.id })).status, "granted");
+    const targetBusy = await relink();
+    assert.equal(targetBusy.code, 19);
+    assert.equal(targetBusy.project, to);
+    assert.equal((await target("cancel", { id: pending.id })).code, 0);
+
+    assert.deepEqual(await relink(), { code: 0, project: to });
+    await s.agent("ask", { body: body("A later request in the source project") });
+    assert.deepEqual(await relink(), { code: 0, project: to });
+  } finally {
+    await s.svc.close();
+  }
+});

@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { checkRequest } from "../core/check.js";
+import type { DecisionLogEntry } from "../core/engine.js";
 import { EXIT, type OpResult, type RequestBody } from "../core/types.js";
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
@@ -208,19 +209,12 @@ async function main(argv: string[]): Promise<number> {
       const project = need(rest[0], "a project id");
       const co = checkout();
       if (!co) throw new CliError(EXIT.OTHER, "utp link runs inside a Git checkout");
-      const info = await call("project.info", { project });
-      if (info.code !== EXIT.OK) return out(info);
       const current = readRegistry().checkouts[co.commonDir];
+      const linked = current && current !== project
+        ? await call("project.relink", { from: current, to: project }, { opId })
+        : await call("project.info", { project });
+      if (linked.code !== EXIT.OK) return out(linked);
       if (current === project) return out({ code: EXIT.OK, project }, `This checkout is already linked to ${project}.`);
-      if (current) {
-        for (const p of [current, project]) {
-          const s = await call("status", {}, { project: p });
-          if ((s.requests as unknown[] | undefined)?.length) {
-            return out({ code: EXIT.NOT_ALLOWED, project: p }, `Project ${p} has open requests; a checkout can move to another `
-              + "project only while neither has open requests or grants.");
-          }
-        }
-      }
       register(co.commonDir, project);
       return out({ code: EXIT.OK, project }, `Linked this checkout to project ${project}.`);
     }
@@ -289,9 +283,10 @@ async function main(argv: string[]): Promise<number> {
         related: flags.related, text: flags.text, kind: flags.kind,
       }, { project });
       if (r.code !== EXIT.OK || flags.json) return out(r);
-      const entries = r.entries as { id: string; status: string; answer: string | null; question: string; reversals: unknown[] }[];
+      const entries = r.entries as DecisionLogEntry[];
       return out(r, entries.length ? entries.map((e) => `${e.id}  ${e.status}  ${e.answer ?? "-"}  ${e.question}`
-        + (e.reversals.length ? `  (reversed ${e.reversals.length}x)` : "")).join("\n") : "No matching decisions.");
+        + (e.reversals.length ? `  (reversed ${e.reversals.length}x)` : "")
+        + (e.archived ? `  (archived from ${e.origin_project})` : "")).join("\n") : "No matching decisions.");
     }
     case "review": {
       const { project } = projectFor();

@@ -42,7 +42,7 @@ export class Service {
   }
 
   /** Runs a service-level operation, or returns undefined when op belongs to a project. */
-  global(op: string, args: Record<string, unknown>, actor: Actor): OpResult | undefined {
+  global(op: string, args: Record<string, unknown>, actor: Actor, opId?: string): OpResult | undefined {
     switch (op) {
       case "ping":
         return { code: EXIT.OK, machine: actor.machine };
@@ -66,6 +66,17 @@ export class Service {
         const id = typeof args.project === "string" ? args.project : "";
         const info = this.info(id);
         return info ? { code: EXIT.OK, project: info } : { code: EXIT.NOT_FOUND, message: `no project ${id} on this service` };
+      }
+      case "project.relink": {
+        const { from, to } = args;
+        if (typeof from !== "string" || typeof to !== "string" || from === to) {
+          return { code: EXIT.OTHER, message: "relink needs two different project IDs" };
+        }
+        const source = this.engine(from);
+        if (!(source instanceof Engine)) return source;
+        const target = this.engine(to);
+        if (!(target instanceof Engine)) return target;
+        return target.relinkFrom(source, from, to, actor, opId);
       }
       default:
         return undefined;
