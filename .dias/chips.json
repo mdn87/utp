@@ -308,7 +308,7 @@
       "projectId": "utp",
       "title": "Verify the shared log on all three operating systems",
       "summary": "Run real clients against the same service on Windows, macOS and Linux. Verify checkout identity, restart recovery, concurrent writers and exactly-once retries at each crash point.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 100,
       "prereqs": [
         "utp:core:relink",
@@ -319,7 +319,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:38:12Z"
+        "updatedAt": "2026-11-22T23:41:58Z"
       },
       "evidence": [
         {
@@ -333,6 +333,12 @@
           "at": "2026-11-22T23:38:12Z",
           "kind": "stage-change",
           "message": "Relinking, direct client access and recovery are verified. The combined shared-log workflow and crash checks can now run."
+        },
+        {
+          "entryId": "shared-log-across-platforms",
+          "at": "2026-11-22T23:41:58Z",
+          "kind": "stage-change",
+          "message": "All three clients read the same records after restart. A repeated operation wrote once. Isolated tests passed at all three crash points on each OS."
         }
       ]
     },
