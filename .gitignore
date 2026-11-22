@@ -1,0 +1,6 @@
+# Private evidence: never commit
+private/
+.roundtable/
+__pycache__/
+*.pyc
+.venv/
