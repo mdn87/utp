@@ -153,7 +153,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:10:41Z"
       },
       "evidence": [
         {
@@ -161,6 +161,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The concept phase closes when the public decision record includes the outstanding answers. Other settled work can proceed independently."
+        },
+        {
+          "entryId": "review-0002-terminal-presented",
+          "at": "2026-11-22T23:10:41Z",
+          "kind": "note",
+          "message": "UTP presented D4, D5 and D6b together in the terminal. Publishing waits for those answers. D1 was recorded in conversation."
         }
       ]
     },
@@ -196,7 +202,7 @@
       "projectId": "utp",
       "title": "Run one shared decision service",
       "summary": "Deploy the service with persistent storage and connect clients on the intended private network. A request made on one machine can be answered on another.",
-      "stage": "ready",
+      "stage": "active",
       "sequence": 80,
       "prereqs": [
         "utp:core:baseline"
@@ -205,7 +211,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:10:41Z"
       },
       "evidence": [
         {
@@ -213,6 +219,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Decision D2 selected a shared service. The automated suite starts a temporary service. An inventory found no listener on the documented port."
+        },
+        {
+          "entryId": "persistent-review-service",
+          "at": "2026-11-22T23:10:41Z",
+          "kind": "stage-change",
+          "message": "UTP runs on the home server and reloads reviews after restart. SSH terminal access works. Direct cross-machine clients still need verification."
         }
       ]
     },
