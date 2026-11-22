@@ -206,7 +206,7 @@
       "projectId": "utp",
       "title": "Keep decision history searchable after relinking",
       "summary": "Relink two idle projects. Searches from the new project must show the old project’s decisions and reversals with their origin. Archived records stay read-only.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 70,
       "prereqs": [
         "utp:core:baseline"
@@ -215,7 +215,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-22T23:25:20Z"
       },
       "evidence": [
         {
@@ -223,6 +223,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The client checks both projects and updates the checkout mapping. The existing end-to-end test covers a fresh clone. Verify refusal with open work or grants on either side."
+        },
+        {
+          "entryId": "relink-archive-verified",
+          "at": "2026-11-22T23:25:20Z",
+          "kind": "stage-change",
+          "message": "Relinking preserves searchable decisions and reversals with their origin after restart. Archives are read-only, and open work on either side prevents relinking."
         }
       ]
     },

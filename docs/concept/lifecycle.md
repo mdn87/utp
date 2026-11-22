@@ -51,9 +51,12 @@ share a project. Read [the concept](concept.md) first.
   then UTP refuses to queue requests for it, and `utp init` there points out
   a registered project with the same remote. A checkout already registered
   to a different project can be relinked only while neither project has open
-  requests or active grants; the old project's records stay searchable from
-  the new one as a read-only archive, labeled with their origin, and nothing
-  in them can be answered, granted, or applied. Forks and unrelated
+  requests or active grants. Answered decisions with no authorized action
+  are settled for this check. The service snapshots the old project's log
+  and its prior archives before the client updates the checkout mapping.
+  Search labels each archived result with its original project. Archived
+  requests cannot be answered, granted, or applied from the new project.
+  Forks and unrelated
   repositories stay separate unless linked. History is never used as the
   identity, so shallow clones, repositories with several roots, and new
   repositories need no special handling.

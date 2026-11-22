@@ -129,7 +129,8 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     }
     const session = typeof body.session === "string" && body.session.trim() ? body.session.trim().slice(0, 200) : "default";
     const actor: Actor = { machine, session };
-    const global = service.global(body.op, args, actor);
+    const opId = typeof body.op_id === "string" ? body.op_id : undefined;
+    const global = service.global(body.op, args, actor, opId);
     if (global) {
       send(res, 200, global);
       return;
@@ -143,7 +144,6 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       send(res, 200, engine);
       return;
     }
-    const opId = body.op_id as string | undefined;
     if (body.op === "wait") {
       const gone = new AbortController();
       res.on("close", () => {

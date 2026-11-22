@@ -71,6 +71,33 @@ export interface Review {
   presentations: { id: string; channel: string; at: string }[];
 }
 
+export interface DecisionLogEntry {
+  id: string;
+  revision: number;
+  kind: RequestBody["kind"];
+  level: RequestBody["level"];
+  question: string;
+  status: State;
+  answer: string | null;
+  tags: string[];
+  related: string[];
+  reversals: Req["reversals"];
+  asked_at: string;
+  origin_project?: string;
+  archived?: true;
+}
+
+interface SearchableDecision {
+  entry: DecisionLogEntry;
+  searchText: string;
+}
+
+interface DecisionArchive {
+  origin: string;
+  sequence: number;
+  decisions: SearchableDecision[];
+}
+
 const SYSTEM: Actor = { machine: "service", session: "sweep" };
 const key = (id: string, revision: number) => `${id}@${revision}`;
 const sameActor = (a: Actor, b: Actor) => a.machine === b.machine && a.session === b.session;
@@ -125,6 +152,7 @@ export class Engine {
   private readonly revs = new Map<string, Rev>();
   private readonly reviews = new Map<string, Review>();
   private readonly grants = new Map<string, Grant>();
+  private readonly archives = new Map<string, DecisionArchive>();
   private openReviewId: string | undefined;
 
   constructor(
@@ -135,6 +163,31 @@ export class Engine {
   /** Rebuilds the projection from the log. Call once, after store.open(). */
   load(): void {
     for (const e of this.store.all()) this.apply(e);
+  }
+
+  /** Snapshots the source and its prior archives without exposing them to write operations. */
+  relinkFrom(source: Engine, from: string, to: string, actor: Actor, opId?: string): OpResult {
+    const previous = opId ? this.store.findOp(opId) : undefined;
+    if (previous) {
+      if (previous.data.op === "project.relink" && previous.data.from === from) return previous.result as OpResult;
+      return { code: EXIT.OTHER, message: `operation id ${opId} was already used for a different operation` };
+    }
+    source.sweep();
+    this.sweep();
+    for (const [id, engine] of [[from, source], [to, this]] as const) {
+      if (engine.hasRelinkWork()) {
+        return { code: EXIT.NOT_ALLOWED, project: id, message: `Project ${id} has open requests or grants; finish them before relinking.` };
+      }
+    }
+
+    const inherited = [...source.archives.values(), {
+      origin: from, sequence: source.store.all().length, decisions: source.logEntries(),
+    }];
+    const archives = inherited.filter((archive) =>
+      archive.origin !== to && archive.sequence > (this.archives.get(archive.origin)?.sequence ?? -1));
+    const result = { code: EXIT.OK, project: to };
+    if (!opId && archives.length === 0) return result;
+    return this.commit("project.relink", "project.archived", actor, { from }, result, opId, { archives });
   }
 
   run(op: string, args: Args, actor: Actor, opId?: string): OpResult {
@@ -516,27 +569,46 @@ export class Engine {
     const related = optStr(a, "related");
     const text = optStr(a, "text")?.toLowerCase();
     const kind = optStr(a, "kind");
+    const candidates = this.logEntries();
+    for (const archive of this.archives.values()) {
+      for (const { entry, searchText } of archive.decisions) {
+        candidates.push({ entry: { ...entry, origin_project: archive.origin, archived: true }, searchText });
+      }
+    }
+    const entries = candidates.filter(({ entry, searchText }) => {
+      const allTags = [...entry.tags, ...entry.reversals.flatMap((r) => r.tags)];
+      return (!kind || entry.kind === kind)
+        && (!tags.length || allTags.some((tag) => tags.includes(tag)))
+        && (!related || entry.id === related || entry.related.includes(related))
+        && (!text || searchText.includes(text));
+    }).map(({ entry }) => entry);
+    return { code: EXIT.OK, entries };
+  }
+
+  private logEntries(): SearchableDecision[] {
     const at = this.now().toISOString();
-    const entries = [];
-    for (const req of this.reqs.values()) {
+    return [...this.reqs.values()].map((req) => {
       const rev = this.current(req);
       const b = rev.body;
-      if (kind && b.kind !== kind) continue;
-      const allTags = [...(b.tags ?? []), ...req.reversals.flatMap((r) => r.tags)];
-      if (tags.length && !allTags.some((t) => tags.includes(t))) continue;
-      if (related && req.id !== related && !(b.related ?? []).includes(related)) continue;
-      if (text) {
-        const hay = [b.question, b.why_now, b.notes ?? "", rev.answer?.custom ?? "", rev.answer?.note ?? "",
-          ...req.reversals.map((r) => r.reason)].join(" ").toLowerCase();
-        if (!hay.includes(text)) continue;
-      }
-      entries.push({
-        id: req.id, revision: rev.revision, kind: b.kind, level: b.level, question: b.question,
-        status: this.effective(rev, at), answer: rev.answer?.value ?? rev.answer?.disposition ?? null,
-        tags: b.tags ?? [], related: b.related ?? [], reversals: req.reversals, asked_at: rev.asked_at,
-      });
-    }
-    return { code: EXIT.OK, entries };
+      return {
+        entry: {
+          id: req.id, revision: rev.revision, kind: b.kind, level: b.level, question: b.question,
+          status: this.effective(rev, at), answer: rev.answer?.value ?? rev.answer?.disposition ?? null,
+          tags: b.tags ?? [], related: b.related ?? [], reversals: req.reversals, asked_at: rev.asked_at,
+        },
+        searchText: [b.question, b.why_now, b.notes ?? "", rev.answer?.custom ?? "", rev.answer?.note ?? "",
+          ...req.reversals.map((r) => r.reason)].join(" ").toLowerCase(),
+      };
+    });
+  }
+
+  private hasRelinkWork(): boolean {
+    if ([...this.grants.values()].some((grant) => grant.status === "active" || grant.status === "used")) return true;
+    return [...this.reqs.values()].some((req) => {
+      const rev = this.current(req);
+      if (rev.status === "answered" && rev.answer && !this.authorizationFor(rev, rev.answer)) return false;
+      return this.isOpen(rev);
+    });
   }
 
   // ---- event application --------------------------------------------------
@@ -544,6 +616,14 @@ export class Engine {
   private apply(e: StoredEvent): void {
     const d = e.data;
     switch (e.type) {
+      case "project.archived": {
+        const payload = e.payloads?.archives;
+        if (!payload) throw new CorruptStoreError(`archive event ${e.seq} has no snapshot`);
+        for (const archive of this.store.getPayload<DecisionArchive[]>(payload)) {
+          this.archives.set(archive.origin, archive);
+        }
+        break;
+      }
       case "request.asked": {
         const id = d.id as string;
         this.reqs.set(id, { id, current: d.revision as number, owner: d.owner as Actor, epoch: 1, observers: [], reversals: [] });
