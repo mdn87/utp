@@ -28,6 +28,8 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             link <project-id>
 Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
             check <file>
+            consider <decision.json>
+            decide <decision.json>
             ask <file>
             flush
             page <review-id>
@@ -40,7 +42,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
 Answers     review [--feedback]
             answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
                         [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
-            wait <id> [--timeout <seconds>]
+            wait <id> [--timeout <seconds>] [--authority-file <decision.json>]
 Execution   claim-default <id>
             resolve-late <id> --resolution keep|redo
             begin <grant>
@@ -89,6 +91,7 @@ const OPTIONS = {
   redact: { type: "boolean" },
   generic: { type: "boolean" },
   feedback: { type: "boolean" },
+  "authority-file": { type: "string" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -293,6 +296,26 @@ async function main(argv: string[]): Promise<number> {
       const r: OpResult = { code: failures.length ? EXIT.CHECK_FAILED : EXIT.OK, failures };
       return out(r, failures.length ? resultText(r) : "No problems found.");
     }
+    case "consider":
+    case "decide": {
+      const draft = readJson(rest[0], "decision");
+      const { project, root } = projectFor();
+      const body = draft.body as RequestBody | undefined;
+      const files = body?.basis?.files;
+      const basis = verb === "decide" && draft.level !== 0 && Array.isArray(files) && files.every((name) => typeof name === "string")
+        ? fingerprints(root, files) : {};
+      const r = await call(verb, { ...draft, basis }, { project, opId });
+      if (flags.json) return out(r);
+      if (r.level === 0) return out(r, `Routine ${String(r.category)} decisions recorded: ${String(r.count)}.`);
+      const reversals = (r.reversals as DecisionLogEntry[] | undefined) ?? [];
+      const lines = [r.code === EXIT.OK ? `Asking level ${String(r.level)}.` : resultText(r)];
+      for (const prior of reversals) {
+        for (const reversal of prior.reversals) lines.push(`Earlier reversal of ${prior.id}: ${reversal.reason}`);
+      }
+      if (r.code === EXIT.OK && r.id) lines.push(`Queued ${String(r.id)} in review ${String(r.review_id)}.`);
+      if (r.code === EXIT.OK && r.use_request) lines.push(`Existing approval is recorded on ${String(r.use_request)}. Use utp wait with --authority-file for this decision.`);
+      return out(r, lines.join("\n"));
+    }
     case "ask":
     case "revise": {
       const file = verb === "ask" ? rest[0] : rest[1];
@@ -420,6 +443,15 @@ async function main(argv: string[]): Promise<number> {
     case "wait": {
       const { project, root } = projectFor();
       const id = need(rest[0], "a request id");
+      const draft = flags["authority-file"] && readJson(flags["authority-file"], "decision");
+      const authority = draft ? draft.authority as { decision_id?: unknown; authorization?: unknown } | undefined : undefined;
+      if (draft && (!authority?.authorization || typeof authority.decision_id !== "string" || ![1, 2, 3].includes(draft.level as number))) {
+        throw new CliError(EXIT.OTHER, "the authority file needs the proposed level, the cited decision id and the exact authorization");
+      }
+      if (typeof authority?.decision_id === "string" && (authority.decision_id.includes("@") ? authority.decision_id !== id
+        : !id.startsWith(authority.decision_id + "@"))) {
+        throw new CliError(EXIT.OTHER, "use the cited decision and revision returned by utp decide");
+      }
       const timeoutS = flags.timeout ? Number(flags.timeout) : 0;
       if (!Number.isFinite(timeoutS) || timeoutS < 0) throw new CliError(EXIT.OTHER, "--timeout takes a number of seconds");
       const shown = await call("show", { id }, { project });
@@ -428,7 +460,8 @@ async function main(argv: string[]): Promise<number> {
       const deadline = Date.now() + timeoutS * 1000;
       for (;;) {
         const remaining = Math.max(0, deadline - Date.now());
-        const r = await call("wait", { id, timeout_s: Math.ceil(remaining / 1000), basis: fingerprints(root, files) },
+        const r = await call("wait", { id, timeout_s: Math.ceil(remaining / 1000), basis: fingerprints(root, files),
+          ...(authority && draft ? { authority: authority.authorization, authority_level: draft.level } : {}) },
           { project, opId, timeoutMs: remaining + 60_000 });
         if (r.code !== EXIT.WAITING || Date.now() >= deadline) return out(r, r.code === EXIT.WAITING ? `Still waiting (${String(r.status)}).` : undefined);
       }

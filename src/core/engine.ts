@@ -55,6 +55,7 @@ export interface Rev {
   default_resolution?: "keep" | "redo";
   default_notice_pending?: boolean;
   reconciliations: { at: string; outcome: string; grant: string }[];
+  policy?: PolicyRecord;
 }
 
 export interface Req {
@@ -63,7 +64,7 @@ export interface Req {
   owner: Actor;
   epoch: number;
   observers: Actor[];
-  reversals: { at: string; reason: string; tags: string[] }[];
+  reversals: { at: string; reason: string; tags: string[]; revision?: number }[];
 }
 
 export interface Review {
@@ -91,6 +92,8 @@ export interface DecisionLogEntry {
   revision: number;
   kind: RequestBody["kind"];
   level: RequestBody["level"];
+  level_reason?: string;
+  policy?: PolicyRecord;
   question: string;
   status: State;
   answer: string | null;
@@ -111,6 +114,12 @@ interface DecisionArchive {
   origin: string;
   sequence: number;
   decisions: SearchableDecision[];
+}
+
+interface PolicyRecord {
+  reversal_ids: string[];
+  reversal_reason?: string;
+  authority?: { decision_id: string; revision: number; authorization: Authorization } | { instruction: string };
 }
 
 const SYSTEM: Actor = { machine: "service", session: "sweep" };
@@ -134,6 +143,25 @@ function optStr(a: Args, name: string): string | undefined {
   if (v === undefined || v === null) return undefined;
   if (typeof v !== "string") throw new UsageError(`${name} must be text`);
   return v;
+}
+
+function textList(value: unknown, field: string): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every((s) => typeof s === "string" && s.trim())) {
+    throw new UsageError(`${field} must be a list of nonempty strings`);
+  }
+  return value;
+}
+
+function exactAuthorization(a: Authorization, b: Authorization): boolean {
+  return sameAuthorization(a, b) && a.expected_effect === b.expected_effect;
+}
+
+function effectArg(input: unknown): Authorization {
+  if (!input || typeof input !== "object") throw new UsageError("supply the action, target and scope to reuse an answer");
+  const a = input as Args;
+  return { action: str(a, "action"), target: str(a, "target"), scope: str(a, "scope"),
+    ...(a.expected_effect === undefined ? {} : { expected_effect: str(a, "expected_effect") }) };
 }
 
 function basisArg(v: unknown): Basis | undefined {
@@ -199,6 +227,7 @@ export class Engine {
   private readonly reviews = new Map<string, Review>();
   private readonly grants = new Map<string, Grant>();
   private readonly archives = new Map<string, DecisionArchive>();
+  private readonly routineCounts = new Map<string, number>();
   private openReviewId: string | undefined;
 
   constructor(
@@ -276,6 +305,8 @@ export class Engine {
       this.sweep();
       switch (op) {
         case "ask": return this.ask(args, actor, opId);
+        case "consider": return this.decide(args, actor, false);
+        case "decide": return this.decide(args, actor, true, opId);
         case "flush": return this.flush(actor, opId);
         case "presented": return this.presented(args, actor, opId);
         case "answer": return this.answer(args, actor, opId);
@@ -304,7 +335,66 @@ export class Engine {
 
   // ---- operations -------------------------------------------------------
 
-  private ask(a: Args, actor: Actor, opId?: string): OpResult {
+  private decide(a: Args, actor: Actor, record: boolean, opId?: string): OpResult {
+    const proposed = a.level;
+    if (proposed === 0) {
+      const category = str(a, "category");
+      if (!/^[a-z][a-z0-9_-]{0,39}$/.test(category)) throw new UsageError("use a short category such as formatting");
+      const result = { code: EXIT.OK, level: 0, category, count: (this.routineCounts.get(category) ?? 0) + Number(record) };
+      return record ? this.commit("decide", "policy.routine", actor, { category }, result, opId) : result;
+    }
+    if (proposed !== 1 && proposed !== 2 && proposed !== 3) throw new UsageError("level must be 0, 1, 2 or 3");
+    const input = a.body as RequestBody | undefined;
+    const tags = [...new Set([...textList(input?.tags, "body.tags"), ...textList(a.tags, "tags")])];
+    const related = [...new Set([...textList(input?.related, "body.related"), ...textList(a.related, "related")])];
+    const entries = this.decisionHistory().map(({ entry }) => entry);
+    const reversals = entries.filter((e) => e.reversals.length && (related.includes(e.id) || e.related.some((id) => related.includes(id))
+      || [...e.tags, ...e.reversals.flatMap((r) => r.tags)].some((tag) => tags.includes(tag))));
+    const reversal_reason = optStr(a, "reversal_reason")?.trim();
+    const policy: PolicyRecord = { reversal_ids: [...new Set(reversals.map((e) => e.id))],
+      ...(reversal_reason ? { reversal_reason } : {}) };
+    let level = proposed;
+    let useRequest: string | undefined;
+    if (a.authority !== undefined) {
+      if (!a.authority || typeof a.authority !== "object" || Array.isArray(a.authority)) throw new UsageError("authority must be an object");
+      const citation = a.authority as Args;
+      const denied = { code: EXIT.NOT_ALLOWED, level, reversals };
+      if (citation.decision_id !== undefined) {
+        const source = this.resolve(str(citation, "decision_id"));
+        const wanted = effectArg(citation.authorization);
+        if (!source || !source.answer || !this.isCurrentRev(source) || !["answered", "granted"].includes(source.status)
+          || (source.body.expires_at && Date.parse(source.body.expires_at) <= this.now().getTime())
+          || this.wasReversed(source) || !sameActor(this.reqOf(source).owner, actor)) {
+          return { ...denied, message: "the cited answer is unavailable to this session for execution" };
+        }
+        const authorization = this.authorizationFor(source, source.answer);
+        if (!authorization || this.recoveryNeedsNewScope(source, authorization)
+          || !exactAuthorization({ ...authorization, scope: source.remaining_scope ?? authorization.scope }, wanted)) {
+          return { ...denied, message: "the cited answer does not authorize this exact effect" };
+        }
+        if ((proposed === 3 || source.body.level === 3) && !strongProvenance(source.answer)) {
+          return { ...denied, code: EXIT.PROVENANCE, message: "the cited answer lacks proof for a level-3 effect" };
+        }
+        policy.authority = { decision_id: source.id, revision: source.revision, authorization: wanted };
+        useRequest = source.key;
+      } else {
+        policy.authority = { instruction: str(citation, "instruction") };
+      }
+      level = 1;
+    }
+    const result = { code: EXIT.OK, level, reversals, ...(useRequest ? { use_request: useRequest } : {}) };
+    if (!record) return result;
+    if (!reversal_reason && reversals.some((prior) => prior.level >= level)) {
+      return { ...result, code: EXIT.NOT_ALLOWED, message: "raise the asking level or record why the prior reversal does not change it" };
+    }
+    if (!input || (level === 1) !== (input.kind === "notice")) {
+      throw new UsageError(level === 1 ? "level 1 needs a notice with a consequence" : "levels 2 and 3 need a request to answer");
+    }
+    const body = { ...input, tags, related, level };
+    return this.ask({ body, basis: a.basis }, actor, opId, { policy, result });
+  }
+
+  private ask(a: Args, actor: Actor, opId?: string, decision?: { policy: PolicyRecord; result: OpResult }): OpResult {
     const body = a.body as RequestBody;
     const failures = checkRequest(body);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
@@ -315,24 +405,28 @@ export class Engine {
       for (const req of this.reqs.values()) {
         const rev = this.current(req);
         if (rev.body.dedupe_key !== body.dedupe_key || !this.isOpen(rev)) continue;
-        if (contentKey(rev.body, rev.basis) !== ck) {
+        if (rev.body.level !== body.level || contentKey(rev.body, rev.basis) !== ck) {
           near = req.id;
           continue;
         }
-        const result = { code: EXIT.OK, id: req.id, revision: rev.revision, review_id: rev.review_id, attached: true };
-        if (sameActor(req.owner, actor)) return { ...result, role: "owner" };
-        if (req.observers.some((o) => sameActor(o, actor))) return { ...result, role: "observer" };
-        return this.commit("ask", "request.attached", actor, { id: req.id, observer: actor }, { ...result, role: "observer" }, opId);
+        const role = sameActor(req.owner, actor) ? "owner" : "observer";
+        const observer = role === "observer" && !req.observers.some((o) => sameActor(o, actor)) ? actor : undefined;
+        const result = { ...(decision?.result ?? { code: EXIT.OK }), id: req.id, revision: rev.revision,
+          review_id: rev.review_id, attached: true, role };
+        if (!decision && !observer) return result;
+        return this.commit(decision ? "decide" : "ask", "request.attached", actor,
+          { id: req.id, observer, ...(decision ? { policy: decision.policy, level: body.level, level_reason: body.level_reason } : {}) }, result, opId);
       }
     }
     const at = this.now().toISOString();
     const id = newId("R", at);
     const review_id = this.openReviewId ?? newId("V", at);
     const result = {
-      code: EXIT.OK, id, revision: 1, review_id, role: "owner", attached: false,
+      ...(decision?.result ?? { code: EXIT.OK }), id, revision: 1, review_id, role: "owner", attached: false,
       ...(near ? { near_duplicate: near } : {}),
     };
-    return this.commit("ask", "request.asked", actor, { id, revision: 1, basis, review_id, owner: actor }, result, opId, { body });
+    return this.commit(decision ? "decide" : "ask", "request.asked", actor,
+      { id, revision: 1, basis, review_id, owner: actor, ...(decision ? { policy: decision.policy } : {}) }, result, opId, { body });
   }
 
   private flush(actor: Actor, opId?: string): OpResult {
@@ -415,6 +509,21 @@ export class Engine {
     const isOwner = sameActor(req.owner, actor);
     const base = { id: rev.id, revision: rev.revision, status: st, answer: rev.answer ?? null, role: isOwner ? "owner" : "observer" };
     const last = this.lastGrant(rev);
+    if (["answered", "granted"].includes(st) && this.wasReversed(rev)) {
+      return { code: EXIT.REVOKED, ...base, message: "this decision was reversed; get a current answer before acting" };
+    }
+    if (a.authority !== undefined) {
+      const wanted = effectArg(a.authority);
+      const authorized = st === "granted" ? last?.authorization : rev.answer && this.authorizationFor(rev, rev.answer);
+      if (!isOwner || !["answered", "granted"].includes(st) || !authorized
+        || (rev.body.expires_at && Date.parse(rev.body.expires_at) <= Date.parse(at))
+        || !exactAuthorization({ ...authorized, scope: rev.remaining_scope ?? authorized.scope }, wanted)) {
+        return { code: EXIT.NOT_ALLOWED, ...base, message: "this session has no current authorization for that exact effect" };
+      }
+      if ((a.authority_level === 3 || rev.body.level === 3) && (!rev.answer || !strongProvenance(rev.answer))) {
+        return { code: EXIT.PROVENANCE, ...base, message: "reused authorization for a level-3 effect needs a verified answer" };
+      }
+    }
     switch (st) {
       case "late_conflict":
         return { code: EXIT.LATE_CONFLICT, ...base, message: "the person answered differently after the default ran; resolve the conflict before acting" };
@@ -538,6 +647,9 @@ export class Engine {
     const { g, rev, req } = found;
     const refused = this.grantRefusal(g, rev, req, actor);
     if (refused) return refused;
+    if (g.status === "active" && this.wasReversed(rev)) {
+      return { code: EXIT.REVOKED, grant: g.id, message: "this decision was reversed; get a current answer before acting" };
+    }
     if (g.status !== "active" || rev.status !== (g.from_default ? "default_claimed" : "granted") || this.lastGrant(rev)?.id !== g.id) {
       return { code: EXIT.NOT_ALLOWED, grant: g.id, message: "this grant was already used; a grant allows one action" };
     }
@@ -749,12 +861,7 @@ export class Engine {
     const related = optStr(a, "related");
     const text = optStr(a, "text")?.toLowerCase();
     const kind = optStr(a, "kind");
-    const candidates = this.logEntries();
-    for (const archive of this.archives.values()) {
-      for (const { entry, searchText } of archive.decisions) {
-        candidates.push({ entry: { ...entry, origin_project: archive.origin, archived: true }, searchText });
-      }
-    }
+    const candidates = this.decisionHistory();
     const entries = candidates.filter(({ entry, searchText }) => {
       const allTags = [...entry.tags, ...entry.reversals.flatMap((r) => r.tags)];
       return (!kind || entry.kind === kind)
@@ -765,6 +872,16 @@ export class Engine {
     return { code: EXIT.OK, entries };
   }
 
+  private decisionHistory(): SearchableDecision[] {
+    const candidates = this.logEntries();
+    for (const archive of this.archives.values()) {
+      for (const { entry, searchText } of archive.decisions) {
+        candidates.push({ entry: { ...entry, origin_project: archive.origin, archived: true }, searchText });
+      }
+    }
+    return candidates;
+  }
+
   private logEntries(): SearchableDecision[] {
     const at = this.now().toISOString();
     return [...this.reqs.values()].map((req) => {
@@ -772,9 +889,10 @@ export class Engine {
       const b = rev.body;
       return {
         entry: {
-          id: req.id, revision: rev.revision, kind: b.kind, level: b.level, question: b.question,
+          id: req.id, revision: rev.revision, kind: b.kind, level: b.level, level_reason: b.level_reason, question: b.question,
           status: this.effective(rev, at), answer: rev.answer?.value ?? rev.answer?.disposition ?? null,
           tags: b.tags ?? [], related: b.related ?? [], reversals: req.reversals, asked_at: rev.asked_at,
+          ...(rev.policy ? { policy: rev.policy } : {}),
         },
         searchText: [b.question, b.why_now, b.notes ?? "", rev.answer?.custom ?? "", rev.answer?.note ?? "",
           ...Object.values(rev.answer?.details ?? {}), ...req.reversals.map((r) => r.reason)].join(" ").toLowerCase(),
@@ -796,6 +914,11 @@ export class Engine {
   private apply(e: StoredEvent): void {
     const d = e.data;
     switch (e.type) {
+      case "policy.routine": {
+        const category = d.category as string;
+        this.routineCounts.set(category, (this.routineCounts.get(category) ?? 0) + 1);
+        break;
+      }
       case "project.archived": {
         const payload = e.payloads?.archives;
         if (!payload) throw new CorruptStoreError(`archive event ${e.seq} has no snapshot`);
@@ -811,7 +934,7 @@ export class Engine {
         break;
       }
       case "request.attached":
-        this.reqs.get(d.id as string)?.observers.push(d.observer as Actor);
+        if (d.observer) this.reqs.get(d.id as string)?.observers.push(d.observer as Actor);
         break;
       case "request.revised": {
         const req = this.mustReq(d.id);
@@ -885,7 +1008,7 @@ export class Engine {
         break;
       }
       case "request.reversed":
-        this.mustReq(d.id).reversals.push({ at: e.at, reason: d.reason as string, tags: d.tags as string[] });
+        this.mustReq(d.id).reversals.push({ at: e.at, reason: d.reason as string, tags: d.tags as string[], revision: d.revision as number });
         break;
       case "request.taken_over": {
         const req = this.mustReq(d.id);
@@ -1025,6 +1148,7 @@ export class Engine {
       key: key(id, revision), id, revision, body: this.store.getPayload<RequestBody>(sha), body_sha: sha,
       status: "queued", basis, expected_basis: { ...basis }, review_id, asked_at: e.at,
       answer_count: 0, grants: [], flags: [], reconciliations: [],
+      ...(e.data.policy ? { policy: e.data.policy as PolicyRecord } : {}),
     };
     this.revs.set(r.key, r);
     let v = this.reviews.get(review_id);
@@ -1249,6 +1373,7 @@ export class Engine {
       grants: r.grants.map((g) => this.grants.get(g)), flags: r.flags, review_id: r.review_id, asked_at: r.asked_at,
       presented_at: r.presented_at ?? null, hide_until: r.hide_until ?? null, remaining_scope: r.remaining_scope ?? null,
       reconciliations: r.reconciliations, reversals: req.reversals, owner: req.owner, observers: req.observers.length,
+      ...(r.policy ? { policy: r.policy } : {}),
       epoch: req.epoch,
     };
   }
@@ -1273,6 +1398,10 @@ export class Engine {
 
   private isCurrentRev(r: Rev): boolean {
     return this.reqs.get(r.id)?.current === r.revision;
+  }
+
+  private wasReversed(r: Rev): boolean {
+    return this.reqOf(r).reversals.some((entry) => entry.revision === r.revision);
   }
 
   private isOpen(r: Rev): boolean {

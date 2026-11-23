@@ -633,7 +633,7 @@
       "projectId": "utp",
       "title": "Use prior decisions when choosing whether to ask",
       "summary": "Apply the four asking levels, show relevant reversals, cite existing authorization and save the level and reason. Verify an authorized action proceeds within its original scope.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 200,
       "prereqs": [
         "utp:core:baseline"
@@ -642,7 +642,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T00:35:10.316Z"
       },
       "evidence": [
         {
@@ -650,6 +650,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "AC6 requires a prior reversal to reach the agent deciding a related question. The current engine already finds reversals by tag."
+        },
+        {
+          "entryId": "asking-policy-reuse-verified",
+          "at": "2026-11-23T00:35:10.316Z",
+          "kind": "stage-change",
+          "message": "Lookup finds related reversals and records the asking level. Tests used a prior verified answer within its exact scope and refused a wider effect."
         }
       ]
     },
