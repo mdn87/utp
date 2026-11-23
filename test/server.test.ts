@@ -265,7 +265,8 @@ test("a browser batch presents previews and saves only its displayed revisions",
       for (const name of ["First", "Second", "Third"]) {
         cards.push(await s.agent("ask", { body: { ...body(name), previews: [{ label: "Text preview", text: "<b>Example output</b>" }] } }));
       }
-      const flushed = await s.agent("flush");
+      const flushed = await s.agent("flush", { intent: { asked: "Compare the <spring> entries.",
+        doing: "Select the catalogue order.", scope_delta: "none" } });
       const prep = await s.agent("review-page.prepare", { review: flushed.review_id });
       assert.equal(prep.code, 0, prep.message);
       const url = String(prep.url);
@@ -288,6 +289,7 @@ test("a browser batch presents previews and saves only its displayed revisions",
       assert.match(html, /Second/);
       assert.match(html, /Third/);
       assert.match(html, /How sure are you/);
+      assert.match(html, /Compare the &lt;spring&gt; entries/);
       assert.match(html, /Wrong options/);
       const cookie = page.headers.get("set-cookie")?.split(";")[0];
       const token = /name="presentation" value="([a-zA-Z0-9_-]+)"/.exec(html)?.[1];
@@ -317,7 +319,20 @@ test("a browser batch presents previews and saves only its displayed revisions",
     current.form.set("feedback-1", "unknown");
     assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 400);
     current.form.set("feedback-1", "needed_more");
-    assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 200);
+    const custom = "  Put <maps> first.\nKeep the last two together.  ";
+    current.form.set("custom-2", custom);
+    const posted = await current.save({ origin: current.origin, cookie: current.cookie });
+    assert.equal(posted.status, 200);
+    const receipt = await posted.text();
+    assert.match(receipt, /Compare the &lt;spring&gt; entries/);
+    assert.ok(receipt.includes(custom.replace("<maps>", "&lt;maps&gt;")));
+    assert.ok(receipt.includes(current.cards[2]!.id + "@1"));
+    assert.equal((await (await fetch(current.url, { headers: { cookie: current.cookie } })).text()), receipt);
+    const customCard = (await s.agent("show", { id: current.cards[2]!.id })).request as { answer: { custom: string } };
+    assert.equal(customCard.answer.custom, custom);
+    assert.equal((await s.agent("answer", { id: current.cards[2]!.id, channel: "terminal-piped", custom: "A later correction." })).code, 0);
+    const originalReceipt = await fetch(current.url, { headers: { cookie: current.cookie } });
+    assert.equal(await originalReceipt.text(), receipt);
     const saved = await s.agent("show", { id: current.cards[1]?.id });
     const request = saved.request as { presented_at: string; answer: Record<string, unknown> };
     assert.equal(request.answer.value, "b");

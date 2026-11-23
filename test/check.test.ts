@@ -95,6 +95,7 @@ test("a reasoned waiver travels with its revision to the terminal and the escape
   const card: RequestView = { id: "example", revision: 1, current: true, status: "presented", body, answer: null, flags: [] };
   assert.match(cardMarkdown(card), /Waived H01-definition.*RSL.*The printed label reads <RSL>/);
   const html = reviewHtml({ id: "sample", items: [card] }, "form");
+  assert.match(html, /saved without a stated purpose or scope/);
   assert.match(html, /Waived H01-definition.*RSL.*The printed label reads &lt;RSL&gt;/);
   assert(!html.includes("reads <RSL>"));
 });

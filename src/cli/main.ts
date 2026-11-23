@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { checkDocument, checkRequest } from "../core/check.js";
+import { checkDocument, checkRequest, intentFailure, reviewRequestsHash, validReviewIntent } from "../core/check.js";
 import { waiverNotes } from "../core/quality.js";
 import type { DeliveryAdapter } from "../core/delivery-adapter.js";
 import type { DecisionLogEntry, NoticeDigest } from "../core/engine.js";
@@ -37,7 +37,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             consider <decision.json>
             decide <decision.json>
             ask <file>
-            flush
+            flush [<review-id>] [--intent <intent-or-review.json>]
             page <review-id>
             presented <review> [--channel <name>]
             show <id>
@@ -79,6 +79,7 @@ const OPTIONS = {
   name: { type: "string" },
   new: { type: "boolean" },
   file: { type: "string" },
+  intent: { type: "string" },
   channel: { type: "string" },
   option: { type: "string" },
   "from-chat": { type: "boolean" },
@@ -373,7 +374,22 @@ async function main(argv: string[]): Promise<number> {
     }
     case "flush": {
       const { project } = projectFor();
-      const r = await call("flush", {}, { project, opId });
+      const args: Record<string, unknown> = {};
+      if (rest[0]) args.review = rest[0];
+      if (flags.intent !== undefined) {
+        const document = readJson(flags.intent, "review intent");
+        if (Object.hasOwn(document, "review") && !Object.hasOwn(document, "kind")) {
+          const failures = checkDocument(document);
+          if (failures.length) return out({ code: EXIT.CHECK_FAILED, failures });
+          const batch = document.review as { intent: unknown; requests: unknown[] };
+          args.intent = batch.intent;
+          args.requests_hash = reviewRequestsHash(batch.requests);
+        } else {
+          args.intent = document;
+        }
+        if (!validReviewIntent(args.intent)) return out({ code: EXIT.CHECK_FAILED, failures: [intentFailure] });
+      }
+      const r = await call("flush", args, { project, opId });
       if (r.code !== EXIT.OK || !r.review_id || flags.json) return out(r);
       if (r.digest === true) return out(r, "These notices are queued for the morning report.");
       const shown = await call("show", { id: r.review_id }, { project });
@@ -394,7 +410,7 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       const r = await call("show", { id: need(rest[0], "an id") }, { project });
       if (r.code !== EXIT.OK || flags.json) return out(r);
-      if (r.review) return out(r, reviewMarkdown(r.review as ReviewView));
+      if (r.review) return out(r, reviewMarkdown(r.review as ReviewView, "history"));
       if (r.grant) return out(r, `${grantText(r.grant as never)}\n\n${cardMarkdown(r.request as RequestView)}`);
       return out(r, cardMarkdown(r.request as RequestView));
     }

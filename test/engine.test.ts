@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Engine, GRANT_LEASE_MS, TAKEOVER_IDLE_MS } from "../src/core/engine.js";
 import { EventStore } from "../src/core/store.js";
+import { reviewRequestsHash } from "../src/core/check.js";
 import type { Actor, Grant, OpResult, RequestBody } from "../src/core/types.js";
 
 const AGENT: Actor = { machine: "laptop", session: "s1" };
@@ -60,6 +61,31 @@ const choose = (over: Partial<RequestBody> = {}): RequestBody => ({
     { id: "b", label: "Lenient", consequence: "Bad rows are skipped and listed." },
   ],
   stakes: { reversibility: "easy" }, level: 2, level_reason: "Easy to switch later.", ...over,
+});
+
+test("flushing keeps the author's intent with the selected revisions after replay", () => {
+  const h = new Harness();
+  try {
+    const body = choose();
+    const first = h.ok("ask", { body });
+    const intent = { asked: "Prepare the catalogue.", doing: "Choose how to read entries.",
+      scope_delta: { narrowed: [], deferred: [{ item: "Indexing", reason: "It can follow the import." }], added: [] } };
+    const reordered = Object.fromEntries(Object.entries(body).reverse());
+    const args = { review: first.review_id, intent, requests_hash: reviewRequestsHash([reordered]) };
+    assert.equal(h.run("flush", { ...args, intent: { ...intent, scope_delta: null } }).code, 20);
+    assert.equal(h.run("flush", { ...args, requests_hash: reviewRequestsHash([choose({ question: "A different question?" })]) }).code, 19);
+    assert.equal(h.run("flush", args, AGENT, "flush-with-intent").code, 0);
+    const next = h.ok("ask", { body });
+    h.engine = h.reopen();
+    assert.equal(h.run("flush", args, AGENT, "flush-with-intent").review_id, first.review_id);
+    assert.equal(h.run("flush", args).code, 19);
+    assert.deepEqual((h.ok("show", { id: first.review_id }).review as { intent: unknown }).intent, intent);
+    assert.equal(h.ok("flush").review_id, next.review_id);
+    assert.equal((h.ok("show", { id: next.review_id }).review as { intent?: unknown }).intent, undefined);
+    assert.equal(h.run("flush", { intent }).code, 19);
+  } finally {
+    h.store.close();
+  }
 });
 
 const approve = (over: Partial<RequestBody> = {}): RequestBody => ({
@@ -391,6 +417,8 @@ test("an equivalent request attaches as an observer, which receives the answer b
   const different = h.ok("ask", { body: approve({ dedupe_key: "old-exports", question: "Delete all exports?" }), basis: H1 }, OTHER);
   assert.notEqual(different.id, owner.id);
   assert.equal(different.near_duplicate, owner.id);
+  const linked = h.ok("ask", { body: { ...body, depends_on: [different.id] }, basis: H1 }, OTHER);
+  assert.notEqual(linked.id, owner.id, "a different dependency needs its own request");
   h.ok("presented", { review: h.ok("flush").review_id, channel: "conversation" });
   h.ok("answer", { id: owner.id, value: "yes", channel: "terminal-review" }, PERSON);
   const seen = h.ok("wait", { id: owner.id, basis: H1 }, OTHER);

@@ -1,6 +1,7 @@
 // Queuing and revising use the same checks as the standalone command.
 
-import { KINDS, type RequestBody } from "./types.js";
+import { createHash } from "node:crypto";
+import { KINDS, type RequestBody, type ReviewIntent } from "./types.js";
 import { hasDatedEvidence, QUALITY_RULES, qualityWarnings } from "./quality.js";
 
 export interface CheckFailure {
@@ -171,23 +172,36 @@ export function checkRequest(body: unknown): CheckFailure[] {
   return out;
 }
 
-/** The file form of a batch carries its author's intent alongside the request bodies. */
-export function checkDocument(input: Record<string, unknown>): CheckFailure[] {
-  if (!Object.hasOwn(input, "review") || Object.hasOwn(input, "kind")) return checkRequest(input);
-  const review = input.review as { intent?: Record<string, unknown>; requests?: unknown[] } | null;
-  const problems: CheckFailure[] = [];
-  const intent = review?.intent;
-  const scope = intent?.scope_delta;
+export const intentFailure: CheckFailure = { rule: "S28-intent", waivable: false,
+  message: "State what was asked, what you are doing, and the scope changes with reasons (or none)." };
+
+/** Match the ordered draft without resending large previews. Object key order is immaterial. */
+export function reviewRequestsHash(requests: readonly unknown[]): string {
+  const json = JSON.stringify(requests, (_key, value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]]));
+  });
+  return createHash("sha256").update(json).digest("hex");
+}
+
+export function validReviewIntent(value: unknown): value is ReviewIntent {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const intent = value as Record<string, unknown>;
+  if (!nonEmpty(intent.asked) || !nonEmpty(intent.doing)) return false;
+  const scope = intent.scope_delta;
   const changes = ["narrowed", "deferred", "added"] as const;
-  const hasScope = scope === "none" || (!!scope && typeof scope === "object" && !Array.isArray(scope)
+  return scope === "none" || (!!scope && typeof scope === "object" && !Array.isArray(scope)
     && changes.every(k => {
       const entries = (scope as Record<string, unknown>)[k];
       return Array.isArray(entries) && entries.every(entry => nonEmpty(entry?.item) && nonEmpty(entry?.reason));
     }));
-  if (!nonEmpty(intent?.asked) || !nonEmpty(intent?.doing) || !hasScope) {
-    problems.push({ rule: "S28-intent", waivable: false,
-      message: "State what was asked, what you are doing, and the scope changes with reasons (or none)." });
-  }
+}
+
+/** The file form of a batch carries its author's intent alongside the request bodies. */
+export function checkDocument(input: Record<string, unknown>): CheckFailure[] {
+  if (!Object.hasOwn(input, "review") || Object.hasOwn(input, "kind")) return checkRequest(input);
+  const review = input.review as { intent?: unknown; requests?: unknown[] } | null;
+  const problems: CheckFailure[] = validReviewIntent(review?.intent) ? [] : [intentFailure];
   if (!Array.isArray(review?.requests) || !review.requests.length) {
     return [...problems, { rule: "S00-shape", waivable: false, message: "Include at least one request in the review." }];
   }

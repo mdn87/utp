@@ -10,13 +10,13 @@
 
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { checkRequest } from "./check.js";
+import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent } from "./check.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
 import {
   CLARITY_FEEDBACK, EXIT, SURENESS, type Actor, type AnswerRecord, type Authorization, type ClarificationRequest, type DefaultNotice, type Disposition, type Grant, type OpResult,
-  type RequestBody, type Verified,
+  type RequestBody, type ReviewIntent, type Verified,
 } from "./types.js";
 
 export const GRANT_LEASE_MS = 24 * 60 * 60 * 1000;
@@ -72,6 +72,7 @@ export interface Review {
   id: string;
   status: "open" | "prepared";
   items: string[];
+  intent?: ReviewIntent;
   presentations: { id: string; channel: string; at: string }[];
   page_response_ms?: number;
   delivery?: { questions: number; state: "pending" | "sent" | "resolved" };
@@ -101,6 +102,12 @@ export interface BrowserAnswer {
   sureness?: string;
   feedback?: string;
 }
+
+export type RecordedBrowserAnswer = {
+  id: string;
+  revision: number;
+  answer: AnswerRecord;
+};
 
 export interface DecisionLogEntry {
   id: string;
@@ -192,10 +199,14 @@ function contentKey(body: RequestBody, basis: Basis): string {
   const sorted = (o: object | undefined) => (o ? Object.entries(o).sort(([a], [b]) => a.localeCompare(b)) : null);
   return JSON.stringify({
     kind: body.kind,
+    draft_id: body.id ?? null,
+    depends_on: body.depends_on ?? [],
     category: body.category ?? null,
     question: normalize(body.question),
+    why_now: normalize(body.why_now),
     summary: body.summary ? normalize(body.summary) : null,
     notes: body.notes ?? null,
+    previews: Array.isArray(body.previews) ? body.previews.map(sorted) : [],
     evidence: body.evidence?.map(sorted) ?? [],
     glossary: sorted(body.glossary),
     recommendation: sorted(body.recommendation),
@@ -304,9 +315,9 @@ export class Engine {
   }
 
   /** A link's receipt and answers are committed in the same event. */
-  browserAnswerReceipt(reviewId: string, opId: string): number | undefined {
+  browserAnswerReceipt(reviewId: string, opId: string): RecordedBrowserAnswer[] | undefined {
     const event = this.store.findOp(opId);
-    if (event?.data.op === "review-page.save" && event.data.review_id === reviewId) return Number((event.result as OpResult).saved);
+    if (event?.data.op === "review-page.save" && event.data.review_id === reviewId) return event.data.answers as RecordedBrowserAnswer[];
     return undefined;
   }
 
@@ -316,7 +327,7 @@ export class Engine {
     const review = this.reviews.get(reviewId);
     if (!review || review.status !== "prepared") return notFound(reviewId);
     const at = this.now().toISOString();
-    const answers: { id: string; revision: number; answer: AnswerRecord }[] = [];
+    const answers: RecordedBrowserAnswer[] = [];
     try {
       for (const input of inputs) {
         const rev = this.revs.get(key(input.id, input.revision));
@@ -502,7 +513,17 @@ export class Engine {
   private flush(actor: Actor, opId: string | undefined, delivery: Args): OpResult {
     const review = this.openReviewId ? this.reviews.get(this.openReviewId) : undefined;
     const items = review ? review.items.filter((k) => this.revs.get(k)?.status === "queued") : [];
-    if (!review || items.length === 0) return { code: EXIT.OK, review_id: null, items: [], message: "nothing is queued" };
+    if (delivery.intent !== undefined && !validReviewIntent(delivery.intent)) {
+      return { code: EXIT.CHECK_FAILED, failures: [intentFailure] };
+    }
+    if ((delivery.review !== undefined && delivery.review !== review?.id)
+        || (delivery.requests_hash !== undefined && delivery.requests_hash !== reviewRequestsHash(items.map(k => this.revs.get(k)!.body)))) {
+      return { code: EXIT.NOT_ALLOWED, message: "The queued review has changed. Check its cards before attaching this context." };
+    }
+    if (!review || items.length === 0) {
+      if (delivery.intent) return { code: EXIT.NOT_ALLOWED, message: "Queue the cards before attaching their review context." };
+      return { code: EXIT.OK, review_id: null, items: [], message: "nothing is queued" };
+    }
     const questions = items.filter((k) => this.revs.get(k)?.body.kind !== "notice").length;
     const digest = questions === 0 && delivery.digest === true;
     const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
@@ -513,7 +534,8 @@ export class Engine {
     });
     return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults,
       ...(delivery.notify === true && questions ? { notify_questions: questions } : {}), ...(digest ? { digest: true } : {}) },
-      { code: EXIT.OK, review_id: review.id, items, ...(digest ? { digest: true } : {}) }, opId);
+      { code: EXIT.OK, review_id: review.id, items, ...(digest ? { digest: true } : {}) }, opId,
+      delivery.intent ? { intent: delivery.intent } : {});
   }
 
   private presented(a: Args, actor: Actor, opId?: string, digestDelivered = false): OpResult {
@@ -927,6 +949,7 @@ export class Engine {
       if (!v) return notFound(ref);
       const items = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined).map((r) => this.view(r));
       return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.intent ? { intent: v.intent } : {}),
         ...(v.delivery ? { delivery: v.delivery.state } : {}),
         ...(v.page_response_ms !== undefined ? { page_response_ms: v.page_response_ms } : {}),
         ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}) } };
@@ -1045,6 +1068,7 @@ export class Engine {
         const v = this.reviews.get(d.review_id as string);
         if (!v) throw new CorruptStoreError(`flush of unknown review ${String(d.review_id)}`);
         v.items = v.items.filter((k) => this.revs.get(k)?.status === "queued");
+        if (e.payloads?.intent) v.intent = this.store.getPayload<ReviewIntent>(e.payloads.intent);
         v.status = "prepared";
         v.default_notices = (d.default_notices as DefaultNotice[] | undefined) ?? [];
         if (typeof d.notify_questions === "number") v.delivery = { questions: d.notify_questions, state: "pending" };
@@ -1098,7 +1122,7 @@ export class Engine {
       case "review.answered": {
         const review = this.reviews.get(d.review_id as string);
         if (review && typeof d.page_response_ms === "number") review.page_response_ms = d.page_response_ms;
-        for (const answer of d.answers as Array<{ id: string; revision: number; answer: AnswerRecord }>) {
+        for (const answer of d.answers as RecordedBrowserAnswer[]) {
           this.recordAnswer(this.mustRev(answer), answer.answer, e.at);
         }
         break;

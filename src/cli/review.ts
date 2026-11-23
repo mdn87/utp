@@ -7,7 +7,7 @@ import readline from "node:readline";
 import { itemPrompts, type ItemPrompt } from "../core/items.js";
 import { CLARITY_FEEDBACK, EXIT, SURENESS } from "../core/types.js";
 import { call } from "./client.js";
-import { cardMarkdown, defaultNoticeMarkdown, letter, type ReviewView } from "./render.js";
+import { cardMarkdown, contextMarkdown, defaultNoticeMarkdown, letter, reviewMarkdown, type ReviewView } from "./render.js";
 
 export interface ReviewIO {
   input: NodeJS.ReadableStream;
@@ -22,7 +22,7 @@ function tomorrowMorning(): string {
   return d.toISOString();
 }
 
-async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise<string | null>, write: (text: string) => void):
+async function readItems(prompts: ItemPrompt[], ask: (prompt: string, verbatim?: boolean) => Promise<string | null>, write: (text: string) => void):
   Promise<{ items: Record<string, string>; details: Record<string, string> } | { custom: string } | { clarify: true } | null | undefined> {
   const items = new Map<string, string>();
   const details = new Map<string, string>();
@@ -33,17 +33,17 @@ async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise
       if (!value) return undefined;
       if (value === "?") return { clarify: true };
       if (value === "/") {
-        const custom = await ask("Your answer for this card: ");
-        return custom === null ? null : custom ? { custom } : undefined;
+        const custom = await ask("Your answer for this card: ", true);
+        return custom === null ? null : custom.trim() ? { custom } : undefined;
       }
       if (!prompt.choices.includes(value)) {
         write(`Choose ${prompt.choices.join(", ")}.`);
         continue;
       }
       if (prompt.detailsFor.includes(value)) {
-        const detail = await ask(`${prompt.detailLabel ?? "Details"}: `);
+        const detail = await ask(`${prompt.detailLabel ?? "Details"}: `, true);
         if (detail === null) return null;
-        if (!detail) {
+        if (!detail.trim()) {
           write("This answer needs the result or replacement text.");
           continue;
         }
@@ -58,16 +58,17 @@ async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise
 
 export async function runReview(project: string, io: ReviewIO, withFeedback = false, reviewId?: string): Promise<number> {
   const write = (text: string) => io.output.write(`${text}\n`);
-  const status = await call("status", {}, { project });
-  const reviews = (status.reviews as { id: string; status: string }[])
-    .filter((v) => v.status === "prepared" && (!reviewId || reviewId === v.id));
+  const reviews = reviewId ? [{ id: reviewId }]
+    : ((await call("status", {}, { project })).reviews as { id: string; status: string }[]).filter(v => v.status === "prepared");
   const channel = io.interactive ? "terminal-review" : "terminal-piped";
   const rl = readline.createInterface({ input: io.input, terminal: false });
   const lines = rl[Symbol.asyncIterator]();
-  const ask = async (prompt: string): Promise<string | null> => {
+  const ask = async (prompt: string, verbatim = false): Promise<string | null> => {
     io.output.write(prompt);
     const next = await lines.next();
-    return next.done ? null : String(next.value).trim();
+    if (next.done) return null;
+    const text = String(next.value);
+    return verbatim ? text : text.trim();
   };
   const optionalRating = async (question: string, allowed: readonly string[]): Promise<string | undefined> => {
     for (;;) {
@@ -105,10 +106,14 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
   try {
     outer: for (const v of reviews) {
       const shown = await call("show", { id: v.id }, { project });
-      const review = shown.review as ReviewView;
+      const review = shown.review as (ReviewView & { status: string }) | undefined;
+      if (review?.status !== "prepared") continue;
       const items = review.items
         .filter((i) => i.current && (i.status === "queued" || i.status === "presented"));
-      if (items.length === 0) continue;
+      if (items.length === 0) {
+        if (reviewId) write(reviewMarkdown(review, "history"));
+        continue;
+      }
       const receipt = await call("presented", { review: v.id, channel }, { project });
       if (receipt.code !== EXIT.OK) {
         write(`Couldn't record that review ${v.id} was shown: ${String(receipt.message ?? receipt.code)}`);
@@ -116,9 +121,10 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
       }
       shownAny = true;
       write(`\n## Review ${v.id}\n`);
+      write(contextMarkdown(review.intent) + "\n");
       for (const notice of review.default_notices ?? []) write(defaultNoticeMarkdown(notice));
       for (const [n, item] of items.entries()) {
-        write(`${cardMarkdown(item, letter(n))}\n`);
+        write(`${cardMarkdown(item, letter(n), review)}\n`);
         if (item.body.kind === "notice") continue;
         if (item.clarification) continue;
         const shownAt = performance.now();
@@ -147,8 +153,8 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
           if (reply === "?") {
             args = { clarify: true };
           } else if (reply === "/") {
-            const words = await ask("Your answer: ");
-            if (!words) {
+            const words = await ask("Your answer: ", true);
+            if (!words?.trim()) {
               skipped += 1;
               break;
             }

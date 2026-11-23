@@ -61,6 +61,9 @@ p, dl { margin: .5rem 0; }
 .muted, dd { color: var(--soft); }
 dt { font-weight: 600; }
 dd { margin: 0 0 .5rem; }
+.review-context { margin: 0 0 1rem; padding-inline-start: .875rem; border-inline-start: 2px solid var(--cyan-edge); }
+.review-context dt { color: var(--text); }
+.card-reference { margin: 1rem 0; color: var(--soft); font-size: .875rem; }
 .preserve, pre { white-space: pre-wrap; }
 article, .empty {
   margin: 0 0 1rem;
