@@ -458,7 +458,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T01:39:55.775Z"
+        "updatedAt": "2026-11-23T01:49:05.188Z"
       },
       "evidence": [
         {
@@ -478,6 +478,12 @@
           "at": "2026-11-23T01:39:55.775Z",
           "kind": "note",
           "message": "Rewrote the ten-example review in plain language after the reviewer found it unclear. The revised question still needs an answer."
+        },
+        {
+          "entryId": "classification-sample-v2-verified",
+          "at": "2026-11-23T01:49:05.188Z",
+          "kind": "note",
+          "message": "Verified 60 cases. Of these, 21 are machine-detectable, 23 test policy or adapter behavior, and 16 need human judgment. The revised ten-case sample awaits confirmation."
         }
       ]
     },
