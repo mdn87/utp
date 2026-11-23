@@ -1,5 +1,6 @@
 import type { ReviewView } from "../cli/render.js";
 import { itemPrompts } from "../core/items.js";
+import { waiverNotes } from "../core/quality.js";
 import { CLARITY_FEEDBACK, SURENESS } from "../core/types.js";
 
 const css = `
@@ -73,6 +74,8 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     }
     for (const assumption of Array.isArray(b.assumptions) ? b.assumptions : []) parts.push(notice(`${assumption.statement}. ${assumption.consequence}`));
     if (b.notes) parts.push(notice(b.notes));
+    if (b.narrowing_reason) parts.push(notice("Why the action cannot be split: " + b.narrowing_reason));
+    for (const explanation of waiverNotes(b)) parts.push(notice(explanation));
     for (const evidence of b.evidence ?? []) parts.push(notice(`${evidence.claim} (${evidence.kind}, ${evidence.source}, ${evidence.date})`));
     if (b.recommendation) {
       const rec = b.recommendation;

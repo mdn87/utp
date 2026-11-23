@@ -1,0 +1,512 @@
+[
+  {
+    "id": "case-02",
+    "rule": "S14-default",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which checks should run before we issue the seed catalog?",
+      "why_now": "The printer needs an answer before the proof is due.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Check packet counts",
+          "consequence": "The proof can go out today with counts verified."
+        },
+        {
+          "id": "b",
+          "label": "Check counts and names",
+          "consequence": "The proof waits until tomorrow while staff compare the names."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "default": {
+        "option": "a"
+      }
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which checks should run before we issue the seed catalog?",
+      "why_now": "The printer needs an answer before the proof is due.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Check packet counts",
+          "consequence": "The proof can go out today with counts verified."
+        },
+        {
+          "id": "b",
+          "label": "Check counts and names",
+          "consequence": "The proof waits until tomorrow while staff compare the names."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "default": {
+        "option": "a",
+        "consequence": "Names will go unverified until the next proof."
+      }
+    }
+  },
+  {
+    "id": "case-05",
+    "rule": "S17-handoff",
+    "before": {
+      "kind": "handoff",
+      "question": "Does the label printer show all three test marks?",
+      "why_now": "The remote operator cannot see the printed strip.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Label station by the cabinet",
+          "command": "Press Print test strip once.",
+          "tested": true,
+          "why_person": "Someone at the station must inspect the strip."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    },
+    "after": {
+      "kind": "handoff",
+      "question": "Does the label printer show all three test marks?",
+      "why_now": "The remote operator cannot see the printed strip.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Label station by the cabinet",
+          "shell": "Printer control panel",
+          "command": "Press Print test strip once.",
+          "expected_result": "Three registration marks appear in one row.",
+          "tested": true,
+          "why_person": "Someone at the station must inspect the strip."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    }
+  },
+  {
+    "id": "case-06",
+    "rule": "S17-handoff",
+    "before": {
+      "kind": "handoff",
+      "question": "Can you read the room counter from the doorway?",
+      "why_now": "The sign position depends on the reading.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "shell": "Counter display",
+          "command": "Stand at the marked entrance and read the display.",
+          "expected_result": "Report the visible count or which digit is obscured.",
+          "tested": false
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    },
+    "after": {
+      "kind": "handoff",
+      "question": "Can you read the room counter from the doorway?",
+      "why_now": "The sign position depends on the reading.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "West room counter",
+          "shell": "Counter display",
+          "command": "Stand at the marked entrance and read the display.",
+          "expected_result": "Report the visible count or which digit is obscured.",
+          "tested": false,
+          "why_person": "Only someone in the room can see the viewing angle."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    }
+  },
+  {
+    "id": "case-07",
+    "rule": "S10-consequence",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which catalog correction should the bindery make first?",
+      "why_now": "Two edits compete for today's proof slot.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Fix the index",
+          "consequence": "Readers can find the planting table by its new page number."
+        },
+        {
+          "id": "b",
+          "label": "Fix the cover"
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which catalog correction should the bindery make first?",
+      "why_now": "Two edits compete for today's proof slot.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Fix the index",
+          "consequence": "Readers can find the planting table by its new page number."
+        },
+        {
+          "id": "b",
+          "label": "Fix the cover",
+          "consequence": "The cover shows the correct season, and the index waits for tomorrow."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "case-09",
+    "rule": "H02-status",
+    "before": {
+      "kind": "notice",
+      "question": "The binder is ready.",
+      "why_now": "The reprint is complete.",
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 1,
+      "level_reason": "The coordinator needs the result for the next shift."
+    },
+    "after": {
+      "kind": "notice",
+      "question": "The binder is ready.",
+      "why_now": "The reprint is complete.",
+      "evidence": [
+        {
+          "claim": "Both replacement pages fit the binder; the folding chart still needs a separate check.",
+          "kind": "observed",
+          "source": "Bindery proof sheet",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 1,
+      "level_reason": "The coordinator needs the result for the next shift."
+    }
+  },
+  {
+    "id": "case-11",
+    "rule": "H06-scope",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which map should be used at the west entrance?",
+      "why_now": "The sign crew needs to mount a map before opening.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Keep the existing map",
+          "consequence": "Visitors follow the older path through the courtyard."
+        },
+        {
+          "id": "b",
+          "label": "Fit the revised map",
+          "consequence": "The crew spends twenty minutes changing the sign before visitors arrive."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "default": {
+        "option": "a",
+        "consequence": "Make changes as needed."
+      }
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which map should be used at the west entrance?",
+      "why_now": "The sign crew needs to mount a map before opening.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Keep the existing map",
+          "consequence": "Visitors follow the older path through the courtyard."
+        },
+        {
+          "id": "b",
+          "label": "Fit the revised map",
+          "consequence": "The crew spends twenty minutes changing the sign before visitors arrive."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "default": {
+        "option": "a",
+        "consequence": "Visitors take the longer courtyard path for the first shift."
+      }
+    }
+  },
+  {
+    "id": "case-13",
+    "rule": "H06-scope",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How far should the catalog review go this afternoon?",
+      "why_now": "The print slot closes in two hours.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Check both indexes",
+          "consequence": "Repeat the review until satisfied."
+        },
+        {
+          "id": "b",
+          "label": "Check the first index",
+          "consequence": "One editor spends twenty minutes now and checks the second tomorrow."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How far should the catalog review go this afternoon?",
+      "why_now": "The print slot closes in two hours.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Check both indexes",
+          "consequence": "One editor spends forty minutes checking the index entries."
+        },
+        {
+          "id": "b",
+          "label": "Check the first index",
+          "consequence": "One editor spends twenty minutes now and checks the second tomorrow."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "case-14",
+    "rule": "S17-handoff",
+    "before": {
+      "kind": "handoff",
+      "question": "Can you verify the receipt printer's margin?",
+      "why_now": "The result decides which roll to order.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Front counter printer",
+          "shell": "Printer panel",
+          "command": "Print a receipt sample.",
+          "tested": true,
+          "why_person": "Only someone at the counter can inspect the paper."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    },
+    "after": {
+      "kind": "handoff",
+      "question": "Can you verify the receipt printer's margin?",
+      "why_now": "The result decides which roll to order.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Front counter printer",
+          "shell": "Printer panel",
+          "command": "Print a receipt sample.",
+          "expected_result": "Look at the right edge and report whether the last price is fully visible.",
+          "tested": true,
+          "why_person": "Only someone at the counter can inspect the paper."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    }
+  },
+  {
+    "id": "case-20",
+    "rule": "S23-narrower",
+    "before": {
+      "kind": "approve",
+      "question": "May the library replace the labels on the return shelf?",
+      "why_now": "The shelf is being rearranged before opening.",
+      "options": [
+        {
+          "id": "all",
+          "label": "Use the full list",
+          "consequence": "All twelve labels change before opening.",
+          "authorization": {
+            "action": "replace labels",
+            "target": "Return shelf",
+            "scope": "All twelve labels change before opening."
+          }
+        },
+        {
+          "id": "keep",
+          "label": "Keep the labels",
+          "consequence": "The existing labels stay on display."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Twelve labels were counted, three on the first shelf.",
+          "kind": "observed",
+          "source": "Shelf inventory",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "Replacing displayed labels takes staff time to reverse."
+    },
+    "after": {
+      "kind": "approve",
+      "question": "May the library replace the labels on the return shelf?",
+      "why_now": "The shelf is being rearranged before opening.",
+      "options": [
+        {
+          "id": "all",
+          "label": "Use the full list",
+          "consequence": "All twelve labels change before opening.",
+          "authorization": {
+            "action": "replace labels",
+            "target": "Return shelf",
+            "scope": "All twelve labels change before opening."
+          }
+        },
+        {
+          "id": "few",
+          "narrower_than": "all",
+          "label": "Try the first shelf",
+          "consequence": "Only the three labels on the first shelf change.",
+          "authorization": {
+            "action": "replace labels",
+            "target": "Return shelf",
+            "scope": "Only the three labels on the first shelf change."
+          }
+        },
+        {
+          "id": "keep",
+          "label": "Keep the labels",
+          "consequence": "The existing labels stay on display."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Twelve labels were counted, three on the first shelf.",
+          "kind": "observed",
+          "source": "Shelf inventory",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "Replacing displayed labels takes staff time to reverse."
+    }
+  },
+  {
+    "id": "case-21",
+    "rule": "H03-evidence",
+    "before": {
+      "kind": "notice",
+      "question": "Possible cause of the missing tray counts",
+      "why_now": "The list may have been copied before the final trays arrived.",
+      "evidence": [
+        {
+          "claim": "The timing suggests the final delivery missed the count.",
+          "kind": "certain",
+          "source": "Receiving log compared with the count sheet",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 1,
+      "level_reason": "The coordinator needs the result for the next shift."
+    },
+    "after": {
+      "kind": "notice",
+      "question": "Possible cause of the missing tray counts",
+      "why_now": "The list may have been copied before the final trays arrived.",
+      "evidence": [
+        {
+          "claim": "The timing suggests the final delivery missed the count.",
+          "kind": "inferred",
+          "source": "Receiving log compared with the count sheet",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 1,
+      "level_reason": "The coordinator needs the result for the next shift."
+    }
+  }
+]

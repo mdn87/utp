@@ -538,7 +538,7 @@
       "projectId": "utp",
       "title": "Enforce request structure and explain heuristic warnings",
       "summary": "Extend the structural checks by request kind. Add heuristics for missing definitions, weak evidence and unclear scope. Show each rule, fix hint and allowed waiver.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 160,
       "prereqs": [
         "utp:cards:kinds",
@@ -548,7 +548,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T04:36:46.248Z"
       },
       "evidence": [
         {
@@ -556,6 +556,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Structural rules cannot be waived. Every waived heuristic must show its reason on the card. Train rules on the designated development half."
+        },
+        {
+          "entryId": "request-rules-and-waivers-verified",
+          "at": "2026-11-23T04:36:46.248Z",
+          "kind": "stage-change",
+          "message": "The checker caught all ten development cases and accepted their repairs. The terminal and review page show the rule and reason for a waiver."
         }
       ]
     },
@@ -565,7 +571,7 @@
       "projectId": "utp",
       "title": "Measure lint on cases the rules were not trained on",
       "summary": "Create anonymized before-and-after fixtures after sample confirmation. On the held-out set reach 80% recall and 90% specificity. Report precision and the test mix.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 170,
       "prereqs": [
         "utp:lint:rules",
@@ -575,7 +581,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T04:39:48.818Z"
       },
       "evidence": [
         {
@@ -583,6 +589,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Keep the seven successful cases and five rewritten requests as must-accept examples. Include fresh drafts from all three platforms in the evaluation."
+        },
+        {
+          "entryId": "held-out-review-quality-measured",
+          "at": "2026-11-23T04:39:48.818Z",
+          "kind": "stage-change",
+          "message": "The frozen checker caught 9 of 11 held-out defects. All 12 good requests passed, and 14 of 15 flags were correct across a mix including six platform drafts."
         }
       ]
     },

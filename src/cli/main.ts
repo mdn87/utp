@@ -7,7 +7,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { checkRequest } from "../core/check.js";
+import { checkDocument, checkRequest } from "../core/check.js";
+import { waiverNotes } from "../core/quality.js";
 import type { DeliveryAdapter } from "../core/delivery-adapter.js";
 import type { DecisionLogEntry, NoticeDigest } from "../core/engine.js";
 import { leakKinds, redactedDecisions } from "../core/redact.js";
@@ -180,7 +181,7 @@ const TEMPLATES: Record<string, RequestBody> = {
     options: [
       { id: "yes", label: "Do it", consequence: "The exact effect.",
         authorization: { action: "the action", target: "what it acts on", scope: "exactly how much", expected_effect: "the state after" } },
-      { id: "narrow", label: "Approve the smaller scope", consequence: "What the smaller action changes.",
+      { id: "narrow", narrower_than: "yes", label: "Approve the smaller scope", consequence: "What the smaller action changes.",
         authorization: { action: "the action", target: "what it acts on", scope: "the smaller scope", expected_effect: "the state after" } },
       { id: "no", label: "Don't", consequence: "What happens instead." },
     ],
@@ -324,9 +325,15 @@ async function main(argv: string[]): Promise<number> {
       return EXIT.OK;
     }
     case "check": {
-      const failures = checkRequest(readJson(rest[0], "request"));
-      const r: OpResult = { code: failures.length ? EXIT.CHECK_FAILED : EXIT.OK, failures };
-      return out(r, failures.length ? resultText(r) : "No problems found.");
+      const body = readJson(rest[0], "request");
+      const failures = checkDocument(body);
+      if (failures.length) return out({ code: EXIT.CHECK_FAILED, failures });
+      const batch = !Object.hasOwn(body, "kind") ? body.review as { requests: RequestBody[] } | undefined : undefined;
+      const cards = batch?.requests ?? [body as unknown as RequestBody];
+      const waivers = cards.flatMap((card, i) => (card.waivers ?? []).map(w => batch ? { request: i + 1, ...w } : w));
+      const notes = cards.flatMap((card, i) => waiverNotes(card).map(note => batch ? `Request ${i + 1}. ${note}` : note));
+      return out({ code: EXIT.OK, failures, ...(waivers.length ? { waivers } : {}) },
+        notes.length ? notes.join("\n") : "No problems found.");
     }
     case "consider":
     case "decide": {

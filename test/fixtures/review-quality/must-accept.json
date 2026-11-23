@@ -1,0 +1,421 @@
+[
+  {
+    "id": "success-01",
+    "group": "went-well",
+    "body": {
+      "kind": "clarify",
+      "question": "Does the inventory cover the front room or the whole building?",
+      "why_now": "The room schedule depends on how much counting you intended.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Front room only",
+          "consequence": "One volunteer can count the trays before lunch."
+        },
+        {
+          "id": "b",
+          "label": "Whole building",
+          "consequence": "The team includes the storage room during the afternoon shift."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "success-02",
+    "group": "went-well",
+    "body": {
+      "kind": "clarify",
+      "question": "Does rotate the display mean turn the stand or exchange the books?",
+      "why_now": "The two readings change what visitors see.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Turn the stand",
+          "consequence": "The current books face the doorway."
+        },
+        {
+          "id": "b",
+          "label": "Exchange the books",
+          "consequence": "Visitors see a different selection on the same stand."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "success-03",
+    "group": "went-well",
+    "body": {
+      "kind": "approve",
+      "question": "Did you authorize sharing the lending guide with visitors?",
+      "why_now": "A volunteer relayed permission. The coordinator can confirm the intended release.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Release both sections",
+          "consequence": "Visitors can take the main guide and its appendix.",
+          "authorization": {
+            "action": "release",
+            "target": "Lending guide",
+            "scope": "Guide and appendix"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Release the guide alone",
+          "consequence": "Visitors receive the main guide while the appendix stays at the desk.",
+          "authorization": {
+            "action": "release",
+            "target": "Lending guide",
+            "scope": "Main guide"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "The desk copy contains a main guide and a separate appendix.",
+          "kind": "observed",
+          "source": "Print assembly list",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    }
+  },
+  {
+    "id": "success-04",
+    "group": "went-well",
+    "body": {
+      "kind": "approve",
+      "question": "May we make the planting diagrams public in the visitor booklet?",
+      "why_now": "The booklet goes to print before the spring opening.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Publish all diagrams",
+          "consequence": "Readers may keep and share every planting diagram in the booklet.",
+          "authorization": {
+            "action": "publish",
+            "target": "Planting diagrams",
+            "scope": "Six diagrams"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Publish one diagram",
+          "consequence": "Only the entrance layout becomes public.",
+          "authorization": {
+            "action": "publish",
+            "target": "Planting diagrams",
+            "scope": "Entrance layout"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "The proof contains six planting diagrams.",
+          "kind": "observed",
+          "source": "Booklet proof",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    }
+  },
+  {
+    "id": "success-05",
+    "group": "went-well",
+    "body": {
+      "kind": "approve",
+      "question": "May staff clear last season's duplicate packs?",
+      "why_now": "The packing bench needs shelf space.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Clear all duplicates",
+          "consequence": "Staff remove thirty packets weighing two kilograms.",
+          "authorization": {
+            "action": "discard",
+            "target": "Last season's duplicate packs",
+            "scope": "Thirty duplicate packets"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Clear the empty packets",
+          "consequence": "Staff discard eight empty packets and retain the filled ones.",
+          "authorization": {
+            "action": "discard",
+            "target": "Last season's duplicate packs",
+            "scope": "Eight empty packets"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "A trial count found thirty duplicates, including eight empty packets, weighing two kilograms in total.",
+          "kind": "observed",
+          "source": "Packing bench count",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    }
+  },
+  {
+    "id": "success-06",
+    "group": "went-well",
+    "body": {
+      "kind": "approve",
+      "question": "May the desk replace the room signs?",
+      "why_now": "The coordinator controls changes to printed directions.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Replace all room signs",
+          "consequence": "Every doorway uses the new visitor directions.",
+          "authorization": {
+            "action": "replace",
+            "target": "Visitor room signs",
+            "scope": "Four doorways"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Replace the entrance sign",
+          "consequence": "Only the directions at the entrance change.",
+          "authorization": {
+            "action": "replace",
+            "target": "Visitor room signs",
+            "scope": "Entrance doorway"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Four doorways have replaceable sign holders.",
+          "kind": "observed",
+          "source": "Room walk-through",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    }
+  },
+  {
+    "id": "success-07",
+    "group": "went-well",
+    "body": {
+      "kind": "clarify",
+      "question": "By the return box, did you mean the wooden chest or the wire basket?",
+      "why_now": "The move list mentions a return box without a material or location.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Wooden chest",
+          "consequence": "Staff move the chest from the reading room."
+        },
+        {
+          "id": "b",
+          "label": "Wire basket",
+          "consequence": "Staff move the basket beside the stairs."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "evidence": [
+        {
+          "claim": "The chest may be the intended box because it has a return label.",
+          "kind": "inferred",
+          "source": "Room sketch",
+          "date": "2026-02-06"
+        }
+      ]
+    }
+  },
+  {
+    "id": "rewrite-01",
+    "group": "rewritten",
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the desk accept the new counting sheet as a source for its weekly total?",
+      "why_now": "The next weekly report needs a source for walk-in counts.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Accept the sheet",
+          "consequence": "The total includes the new desk counts."
+        },
+        {
+          "id": "b",
+          "label": "Keep the old sources",
+          "consequence": "Walk-in counts stay separate for this issue."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "rewrite-02",
+    "group": "rewritten",
+    "body": {
+      "kind": "handoff",
+      "question": "Can you prepare a sample ticket with identifying marks covered?",
+      "why_now": "The print crew needs a sample it can show at a public workshop.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Ticket desk copier",
+          "shell": "Copier panel",
+          "command": "Cover the identifying boxes and copy one ticket.",
+          "expected_result": "The copy shows the ticket layout and blank identifying boxes.",
+          "tested": false,
+          "why_person": "Only the desk coordinator can handle the original ticket."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    }
+  },
+  {
+    "id": "rewrite-03",
+    "group": "rewritten",
+    "body": {
+      "kind": "handoff",
+      "question": "Can you clear the expired reservation on the proof rack?",
+      "why_now": "The printer is waiting for a rack that still displays yesterday's reservation.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Proof rack at the desk",
+          "shell": "Reservation board",
+          "command": "Check that the dated reservation has ended, then turn its marker to Available.",
+          "expected_result": "The rack shows Available and can receive today's proof.",
+          "tested": false,
+          "why_person": "A person at the desk must check the physical reservation tag."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    }
+  },
+  {
+    "id": "rewrite-04",
+    "group": "rewritten",
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How should the main workbench receive the new assembly instructions?",
+      "why_now": "The workbench has local notes that staff still use.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Replace the instruction set",
+          "consequence": "The main bench uses the complete new edition after its notes are saved."
+        },
+        {
+          "id": "b",
+          "label": "Transfer the changed pages",
+          "consequence": "Staff keep their local notes and replace the two revised pages."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "rewrite-05",
+    "group": "rewritten",
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How should the second workshop get the new booking slips?",
+      "why_now": "Its binder has local inserts and the new slips must reach it before opening.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Exchange the binder",
+          "consequence": "The second workshop starts with a fresh copy and files the local inserts separately."
+        },
+        {
+          "id": "b",
+          "label": "Send the slips alone",
+          "consequence": "The second workshop clips the new slips into its current binder."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  }
+]

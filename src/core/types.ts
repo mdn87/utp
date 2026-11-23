@@ -15,6 +15,7 @@ export interface OptionSpec {
   label: string;
   consequence: string;
   authorization?: Authorization;
+  narrower_than?: string;
 }
 
 export interface EvidenceItem {
@@ -80,6 +81,8 @@ export interface RequestBody {
   recommendation?: { option: string; because: string; preserves?: string; bolder_alternative?: string };
   default?: { option: string; consequence: string; eligibility?: DefaultEligibility };
   glossary?: Record<string, string>;
+  waivers?: { rule: string; reason: string }[];
+  narrowing_reason?: string;
   evidence?: EvidenceItem[];
   steps?: HandoffStep[];
   goals?: AcceptanceGoal[];

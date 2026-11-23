@@ -54,7 +54,7 @@ class Harness {
 }
 
 const choose = (over: Partial<RequestBody> = {}): RequestBody => ({
-  kind: "choose", question: "Which parser should the import use?", why_now: "The import step needs one.",
+  kind: "choose", category: "approach", question: "Which parser should the import use?", why_now: "The import step needs one.",
   options: [
     { id: "a", label: "Strict", consequence: "Bad rows stop the import." },
     { id: "b", label: "Lenient", consequence: "Bad rows are skipped and listed." },
@@ -64,6 +64,8 @@ const choose = (over: Partial<RequestBody> = {}): RequestBody => ({
 
 const approve = (over: Partial<RequestBody> = {}): RequestBody => ({
   kind: "approve", question: "Delete the ten old exports?", why_now: "They block the release build.",
+  narrowing_reason: "The release uses this export set as one unit.",
+  evidence: [{ claim: "The manifest lists ten exports.", kind: "observed", source: "Release manifest", date: "2026-11-22" }],
   options: [
     { id: "yes", label: "Delete them", consequence: "The ten files are gone for good.",
       authorization: { action: "delete", target: "exports/", scope: "the ten listed files" } },
@@ -75,6 +77,20 @@ const approve = (over: Partial<RequestBody> = {}): RequestBody => ({
 
 const H1 = { "exports/list.txt": "sha-1" };
 const EVIDENCE = { action: "delete", target: "exports/", scope: "the ten listed files", effect: "ten files removed" };
+
+test("the service checks warnings on direct asks and revisions and preserves each valid waiver", () => {
+  const h = new Harness();
+  const draft = choose({ question: "Use the RSL bins?", dedupe_key: "bins" });
+  assert.equal(h.run("ask", { body: draft }).code, 20);
+  const body = { ...draft, waivers: [{ rule: "H01-definition", reason: "The coordinator knows the printed label." }] };
+  const queued = h.ok("ask", { body });
+  assert.equal(h.run("revise", { id: queued.id, body: draft }).code, 20);
+  const view = h.ok("show", { id: queued.id }).request as { revision: number; body: RequestBody };
+  assert.equal(view.revision, 1);
+  assert.deepEqual(view.body.waivers, body.waivers);
+  const other = h.ok("ask", { body: { ...body, waivers: [{ rule: "H01-definition", reason: "A different sign is already posted." }] } });
+  assert.notEqual(other.id, queued.id);
+});
 
 test("the asking policy records counts and brings relevant reversals into the next decision", () => {
   const h = new Harness();

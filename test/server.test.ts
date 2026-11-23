@@ -11,7 +11,7 @@ import { createToken } from "../src/server/tokens.js";
 import type { OpResult, RequestBody } from "../src/core/types.js";
 
 const body = (question = "Which parser should the import use?"): RequestBody => ({
-  kind: "choose", question, why_now: "The import step needs one.",
+  kind: "choose", category: "approach", question, why_now: "The import step needs one.",
   options: [
     { id: "a", label: "Strict", consequence: "Bad rows stop the import." },
     { id: "b", label: "Lenient", consequence: "Bad rows are skipped and listed." },
