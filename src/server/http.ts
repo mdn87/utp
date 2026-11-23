@@ -10,6 +10,7 @@ import { Engine } from "../core/engine.js";
 import { EXIT, type Actor, type OpResult } from "../core/types.js";
 import { Service } from "./service.js";
 import { ReviewPages } from "./review-page.js";
+import { checkReviewerSocket, handleReviewerInbox } from "./reviewer-inbox.js";
 import { ReviewDeliveries, type NotificationOptions } from "./review-delivery.js";
 import { TokenBook, tokenFile } from "./tokens.js";
 
@@ -21,6 +22,7 @@ export interface ServeOptions {
   host?: string;
   port?: number;
   reviewOrigin?: string;
+  reviewInboxSocket?: string;
   notifications?: NotificationOptions;
   inboxDir?: string;
   formatInboxItem?: DeliveryAdapter["formatInboxItem"];
@@ -99,6 +101,7 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       || reviewOrigin.search || reviewOrigin.hash || reviewOrigin.username || reviewOrigin.password)) {
     throw new Error("review origin must be a bare HTTP or HTTPS origin");
   }
+  if (opts.reviewInboxSocket) checkReviewerSocket(opts.reviewInboxSocket, reviewOrigin);
   const service = new Service(opts.dataDir, opts.now);
   const tokens = new TokenBook(tokenFile(opts.dataDir));
   const limitMs = opts.maxWaitMs ?? 5 * 60 * 1000;
@@ -108,15 +111,15 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     ? new ReviewDeliveries(service, log, opts.notifications, opts.inboxDir, opts.formatInboxItem) : undefined;
   let pages: ReviewPages | undefined;
 
-  const server = http.createServer((req, res) => {
-    handle(req, res).catch((e: unknown) => {
+  const listener = (handler: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>) =>
+    http.createServer((req, res) => handler(req, res).catch((e: unknown) => {
       log(`error: ${e instanceof Error ? e.stack ?? e.message : String(e)}`);
       if (!res.headersSent) send(res, 500, { code: EXIT.OTHER, message: "the service hit an internal error; see its log" });
-    });
-  });
+    }));
+  const server = listener(handle);
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    if (pages && req.url?.startsWith("/review/")) {
+    if (!opts.reviewInboxSocket && pages && req.url?.startsWith("/review/")) {
       await pages.handle(req, res, readBody);
       return;
     }
@@ -180,7 +183,7 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       return;
     }
     if (body.op === "review-page.prepare" && pages) {
-      send(res, 200, pages.prepare(engine, actor, args.review));
+      send(res, 200, pages.prepare(body.project, actor, args.review));
       return;
     }
     if (body.op === "wait") {
@@ -205,19 +208,31 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   const addr = server.address() as AddressInfo;
   const host = addr.family === "IPv6" ? `[${addr.address}]` : addr.address;
   const pageHost = addr.address === "0.0.0.0" ? "127.0.0.1" : addr.address === "::" ? "[::1]" : host;
-  pages = new ReviewPages(reviewOrigin ?? new URL(`http://${pageHost}:${addr.port}`));
+  pages = new ReviewPages(reviewOrigin ?? new URL(`http://${pageHost}:${addr.port}`), service,
+    opts.now ? () => opts.now!().getTime() : Date.now, !!opts.reviewInboxSocket);
+  const reviewer = opts.reviewInboxSocket ? listener((req, res) => handleReviewerInbox(req, res, service, pages!, readBody)) : undefined;
+  if (reviewer) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        reviewer.once("error", reject);
+        reviewer.listen(opts.reviewInboxSocket, resolve);
+      });
+    } catch (error) {
+      server.close();
+      service.close();
+      throw error;
+    }
+  }
   deliveries?.start();
   return {
     url: `http://${host}:${addr.port}`,
     service,
     close: async () => {
       const closingDeliveries = deliveries?.close();
-      await new Promise<void>((resolve) => {
-        server.close(() => {
-          resolve();
-        });
-        server.closeAllConnections();
-      });
+      await Promise.all([server, ...(reviewer ? [reviewer] : [])].map((s) => new Promise<void>((resolve) => {
+        s.close(() => resolve());
+        s.closeAllConnections();
+      })));
       await closingDeliveries;
       service.close();
     },
