@@ -341,8 +341,12 @@ test("a browser batch presents previews and saves only its displayed revisions",
     assert.equal(request.answer.feedback, "needed_more");
     assert.ok(!("active_response_ms" in request.answer));
     assert.ok(Date.parse(request.presented_at) <= Date.parse(String(request.answer.at)));
-    const review = (await s.agent("show", { id: current.reviewId })).review as { page_response_ms: number };
+    const review = (await s.agent("show", { id: current.reviewId })).review as { page_response_ms: number;
+      presentations: { id: string; items: string[]; acknowledged_at?: string }[] };
     assert.ok(Number.isSafeInteger(review.page_response_ms) && review.page_response_ms >= 0);
+    const presentation = review.presentations.find(p => p.id === request.answer.presentation_id);
+    assert.ok(presentation?.acknowledged_at);
+    assert.deepEqual(presentation.items, current.cards.map(c => c.id + "@1"));
 
     const stale = await makeBatch();
     await s.agent("revise", { id: stale.cards[0]?.id, body: body("Changed since presentation") });

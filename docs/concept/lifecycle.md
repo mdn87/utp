@@ -372,10 +372,10 @@ to map the UTP item into the report reader's required JSON format.
 | `utp flush [<review-id>] [--intent <file>]` | Prepares the queued review and saves its authored purpose and scope with those revisions. A complete draft must match the queued cards in order. Queues one notification when configured |
 | `utp report-import --inbox <directory>` | Imports notice-only batches into the morning report's existing inbox |
 | `utp page <review-id>` | Prepares a browser link for the review. Opening the page records presentation and one save records the batch |
-| `utp presented <review>` | Records a presentation receipt (adapters call it) |
+| `utp presented <review>` | Records the displayed card revisions and checks the visible message when the service has the native transcript |
 | `utp show <id>` | Renders a request or review as Markdown or JSON |
 | `utp review [<review-id>]` | Interactive review in the person's own terminal, with `?` to ask for a clearer question |
-| `utp answer <id>` | Records or revises an answer; `--from-chat` takes a verbatim quote and checks it against the session transcript |
+| `utp answer <id@revision>` | Records or revises an answer. With `--from-chat --presentation <id> --quote-file <file>` it binds the person's full turn to the displayed revision |
 | `utp wait <id> --timeout <s>` | Waits for an answer and issues an execution grant when it authorizes an action |
 | `utp claim-default <id>` | Reserves the default and issues a grant, or returns the answer that already won |
 | `utp resolve-late <id> --resolution keep\|redo` | Records a decision to keep an applied default, or issues a fresh grant under the later answer after checking the state the default left |

@@ -6,6 +6,8 @@ import path from "node:path";
 import { Engine, GRANT_LEASE_MS, TAKEOVER_IDLE_MS } from "../src/core/engine.js";
 import { EventStore } from "../src/core/store.js";
 import { reviewRequestsHash } from "../src/core/check.js";
+import { reviewMarkdown, type ReviewView } from "../src/cli/render.js";
+import type { ChatTurn } from "../src/core/conversation.js";
 import type { Actor, Grant, OpResult, RequestBody } from "../src/core/types.js";
 
 const AGENT: Actor = { machine: "laptop", session: "s1" };
@@ -102,6 +104,45 @@ const approve = (over: Partial<RequestBody> = {}): RequestBody => ({
 });
 
 const H1 = { "exports/list.txt": "sha-1" };
+
+test("overlapping conversations bind an explicit reply and reject a superseded revision", () => {
+  const h = new Harness();
+  const turns: ChatTurn[] = [];
+  try {
+    const present = (label: string) => {
+      const r = h.ok("ask", { body: approve({ question: `Delete the ${label} exports?` }), basis: H1 });
+      const view = h.ok("flush").review_id;
+      turns.push({ id: label, role: "assistant", text: reviewMarkdown(h.ok("show", { id: view }).review as ReviewView) });
+      assert.equal(h.engine.run("presented", { review: view, channel: "conversation" }, AGENT, undefined, turns).code, 0);
+      return r.id as string;
+    };
+    const first = present("spring"), second = present("autumn");
+    const answer = (id: string, quote: string) => h.engine.run("answer", { id: id + "@1", quote, channel: "conversation" }, AGENT, undefined, turns);
+    turns.push({ id: "ambiguous", role: "user", text: "yes" });
+    assert.equal(answer(second, "yes").outcome, "unsure");
+    const explicit = first + "@1: yes";
+    turns.push({ id: "explicit", role: "user", text: explicit });
+    assert.equal(answer(first, explicit).code, 0);
+    assert.equal(h.status(second), "presented");
+    h.ok("revise", { id: second, body: approve({ question: "Delete the revised exports?" }), basis: H1 });
+    assert.equal(answer(second, "yes").code, 17);
+  } finally { h.store.close(); }
+});
+
+test("routing counts questions and preparing a page never presents the cards", () => {
+  const h = new Harness();
+  try {
+    for (const count of [1, 2, 3]) {
+      const notice = h.ok("ask", { body: { kind: "notice", level: 1, question: "Catalogue update",
+        why_now: "The catalogue contains spring entries.", stakes: { reversibility: "easy" }, level_reason: "An update." } });
+      for (let i = 0; i < count; i++) h.ok("ask", { body: choose({ question: `Which parser for entry ${i}?` }) });
+      const result = h.ok("flush");
+      assert.equal(result.route, count < 3 ? "conversation" : "review-page");
+      assert.deepEqual((h.ok("show", { id: result.review_id }).review as { presentations: unknown[] }).presentations, []);
+      assert.equal(h.status(notice.id as string), "queued");
+    }
+  } finally { h.store.close(); }
+});
 const EVIDENCE = { action: "delete", target: "exports/", scope: "the ten listed files", effect: "ten files removed" };
 
 test("the service checks warnings on direct asks and revisions and preserves each valid waiver", () => {
@@ -155,7 +196,7 @@ test("existing approval stays bound to its original scope and provenance", () =>
   const notice = { kind: "notice", question: "Use the existing approval.", why_now: "Continue the approved release.",
     stakes: { reversibility: "easy" }, level: 1, level_reason: "Existing authority covers these files." };
   const use = { level: 3, body: notice, authority: { decision_id: source, authorization } };
-  h.ok("answer", { id: source, channel: "conversation", value: "yes" }, PERSON);
+  h.ok("answer", { id: source, channel: "terminal-piped", value: "yes" }, PERSON);
   assert.equal(h.run("decide", use).code, 18);
   h.ok("answer", { id: source, channel: "terminal-review", value: "yes" }, PERSON);
   assert.equal(h.run("decide", { ...use, authority: { decision_id: source,
@@ -200,6 +241,47 @@ const technicalDefault = (over: Partial<RequestBody> = {}): RequestBody => choos
   },
   basis: { files: Object.keys(defaultBasis) },
   ...over,
+});
+
+test("a late chat approval for a subset conflicts with a wider applied default under the same option", () => {
+  const h = new Harness();
+  try {
+    const broad = { ...defaultEvidence, scope: "A, B, C" };
+    const id = h.present(technicalDefault({ options: [
+      { id: "a", label: "Update entries", consequence: "The fixture changes.", authorization: broad },
+      { id: "b", label: "Leave entries", consequence: "The fixture stays as it was." }] }), defaultBasis);
+    const reserved = h.run("claim-default", { id, basis: defaultBasis });
+    assert.equal(reserved.code, 15);
+    const grant = reserved.grant as Grant;
+    h.ok("begin", { grant: grant.id, basis: defaultBasis });
+    h.ok("applied", { grant: grant.id, evidence: broad, applied_basis: defaultBasis });
+    h.ok("answer", { id: id + "@1", channel: "conversation", quote: "approve updating only A and B" });
+    assert.equal(h.run("wait", { id, basis: defaultBasis }).code, 14);
+    h.engine = h.reopen();
+    assert.equal(h.status(id), "late_conflict");
+    h.ok("answer", { id, channel: "terminal-review", value: "a" });
+    assert.equal(h.status(id), "applied");
+  } finally { h.store.close(); }
+});
+
+test("partial recovery keeps the person's enumerated approval after replay", () => {
+  const h = new Harness();
+  try {
+    const id = h.present(technicalDefault({ options: [
+      { id: "a", label: "Update entries", consequence: "The fixture changes.", authorization: { ...defaultEvidence, scope: "A, B, C" } },
+      { id: "b", label: "Keep entries", consequence: "The fixture stays local." }] }), defaultBasis);
+    h.ok("answer", { id: id + "@1", channel: "conversation", quote: "approve updating only A and B" });
+    const first = h.ok("wait", { id, basis: defaultBasis }).grant as Grant;
+    h.ok("begin", { grant: first.id, basis: defaultBasis });
+    h.advance(GRANT_LEASE_MS + MINUTE);
+    const recovery = { grant: first.id, outcome: "partial", recovery_basis: defaultBasis, evidence: { observed: "A changed." } };
+    assert.equal(h.run("reconcile", { ...recovery, remaining_scope: "B, C" }).code, 19);
+    h.ok("reconcile", { ...recovery, remaining_scope: "B" });
+    h.engine = h.reopen();
+    const remaining = h.ok("wait", { id, basis: defaultBasis }).grant as Grant;
+    assert.equal(remaining.authorization.scope, "B");
+    assert.equal(remaining.base_authorization?.scope, "A, B");
+  } finally { h.store.close(); }
 });
 
 test("asking for clarification cancels an unused default and persists after restart", () => {
@@ -344,7 +426,7 @@ test("a choose request goes from ask to answer, and wait returns the answer with
   const flushed = h.ok("flush");
   assert.deepEqual(flushed.items, [`${id}@1`]);
   h.ok("presented", { review: flushed.review_id, channel: "conversation" });
-  h.ok("answer", { id, value: "b", channel: "conversation", quote: "b, lenient", addressed: true }, PERSON);
+  h.ok("answer", { id: id + "@1", value: "b", channel: "conversation", quote: "A: b" });
   const w = h.ok("wait", { id });
   assert.equal((w.answer as { value: string }).value, "b");
   assert.equal(w.grant, null);
@@ -364,8 +446,8 @@ test("presenting before a flush is refused, and an unknown option is a usage err
 test("a level-3 effect needs an answer from a channel the agent doesn't control", () => {
   const h = new Harness();
   const id = h.present(approve(), H1);
-  h.ok("answer", { id, value: "yes", channel: "conversation", quote: "yes delete them" }, PERSON);
-  assert.equal(h.run("wait", { id, basis: H1 }).code, 18);
+  assert.equal(h.run("answer", { id, value: "yes", channel: "conversation", quote: "yes delete them" }, PERSON).code, 18);
+  assert.equal(h.run("wait", { id, basis: H1 }).code, 10);
   h.ok("answer", { id, value: "yes", channel: "terminal-review" }, PERSON);
   const w = h.ok("wait", { id, basis: H1 });
   const grant = w.grant as { id: string; provenance: string; epoch: number; authorization: { scope: string } };

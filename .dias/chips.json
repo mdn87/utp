@@ -790,7 +790,7 @@
       "projectId": "utp",
       "title": "Verify presentation and answers on the selected channels",
       "summary": "Apply D5’s routing. Distinguish preparation from presentation and acknowledgement. Check chat quotes where available and route consequential approvals to a verified channel.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 230,
       "prereqs": [
         "utp:review:channel",
@@ -801,7 +801,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-23T23:30:43Z"
       },
       "evidence": [
         {
@@ -815,6 +815,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "note",
           "message": "D5 requires proof that batches of three or more use the review page."
+        },
+        {
+          "entryId": "native-chat-page-receipts",
+          "at": "2026-11-23T23:30:43Z",
+          "kind": "stage-change",
+          "message": "Small reviews use chat and batches use one page. Native quotes bind to displayed revisions. Corrections stop grants and limited approvals keep their stated scope."
         }
       ]
     },

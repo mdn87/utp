@@ -113,6 +113,7 @@ export interface ClarificationRequest {
   at: string;
   channel: string;
   note?: string;
+  outcome?: "unsure" | "needs_clarification";
 }
 
 /** How sure UTP is that an answer came from the person. */
@@ -142,6 +143,10 @@ export interface AnswerRecord {
   quote?: string;
   /** The reply named the card or the action, so it can't land on the wrong card. */
   addressed?: boolean;
+  presentation_id?: string;
+  source_turn?: string;
+  /** A person's explicitly enumerated subset of an offered authorization. */
+  authorization?: Authorization;
   channel: string;
   verified: Verified;
   machine: string;
@@ -162,6 +167,7 @@ export interface Grant {
   from_default: boolean;
   option: string;
   authorization: Authorization;
+  base_authorization?: Authorization;
   provenance: Verified;
   status: GrantStatus;
   used_at?: string;

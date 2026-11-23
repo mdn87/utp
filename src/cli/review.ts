@@ -82,10 +82,11 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
   let skipped = 0;
   let clarified = 0;
   let shownAny = false;
+  let presentation: string | undefined;
   const save = async (id: string, args: Record<string, unknown>, shownAt: number): Promise<void> => {
     if (args.clarify) {
       const note = await ask("What should the agent explain? Enter to send without a note: ");
-      const result = await call("answer", { id, channel, clarify: true, note: note || undefined }, { project });
+      const result = await call("answer", { id, channel, presentation, clarify: true, note: note || undefined }, { project });
       if (result.code === EXIT.OK) {
         clarified += 1;
         write("Clarification requested. The agent will see it when it checks this question.");
@@ -99,7 +100,7 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
         args.feedback = await optionalRating("How clear was this card?", Object.keys(CLARITY_FEEDBACK));
       }
     }
-    const r = await call("answer", { id, channel, ...args }, { project });
+    const r = await call("answer", { id, channel, presentation, ...args }, { project });
     if (r.code === EXIT.OK) saved += 1;
     else write(`Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
   };
@@ -114,19 +115,21 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
         if (reviewId) write(reviewMarkdown(review, "history"));
         continue;
       }
-      const receipt = await call("presented", { review: v.id, channel }, { project });
+      write(`\n## Review ${v.id}\n`);
+      write(contextMarkdown(review.intent) + "\n");
+      for (const notice of review.default_notices ?? []) write(defaultNoticeMarkdown(notice));
+      items.forEach((item, n) => write(`${cardMarkdown(item, letter(n), review)}\n`));
+      const receipt = await call("presented", { review: v.id, channel, items: items.map(i => `${i.id}@${i.revision}`) }, { project });
       if (receipt.code !== EXIT.OK) {
         write(`Couldn't record that review ${v.id} was shown: ${String(receipt.message ?? receipt.code)}`);
         continue;
       }
       shownAny = true;
-      write(`\n## Review ${v.id}\n`);
-      write(contextMarkdown(review.intent) + "\n");
-      for (const notice of review.default_notices ?? []) write(defaultNoticeMarkdown(notice));
+      presentation = String(receipt.presentation_id);
       for (const [n, item] of items.entries()) {
-        write(`${cardMarkdown(item, letter(n), review)}\n`);
         if (item.body.kind === "notice") continue;
-        if (item.clarification) continue;
+        if (item.clarification && item.clarification.outcome !== "unsure") continue;
+        write(`${letter(n)}. ${item.body.question}`);
         const shownAt = performance.now();
         const id = `${item.id}@${item.revision}`;
         const prompts = itemPrompts(item.body);

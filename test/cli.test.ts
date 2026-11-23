@@ -539,14 +539,17 @@ test("all seven templates keep their review context and decision content across 
         deferred: [{ item: "Cover design", reason: "The title is still open." }],
         added: [{ item: "Index proof", reason: "The printer asked for a sample." }] } };
     writeFileSync(path.join(o.cwd, "batch.json"), JSON.stringify({ review: { intent, requests } }));
-    const markdown = await utp(["flush", reviewId, "--intent", "batch.json"], o);
-    assert.equal(markdown.code, 0, markdown.stdout + markdown.stderr);
+    const flushed = await utp(["flush", reviewId, "--intent", "batch.json"], o);
+    assert.equal(flushed.code, 0, flushed.stdout + flushed.stderr);
+    assert.match(flushed.stdout, /review page to answer the batch in one save/);
+    const url = flushed.stdout.trim().split("\n").at(-1)!;
     const reopened = await utp(["show", reviewId], o);
-    const link = await utp(["page", reviewId, "--json"], o);
-    assert.equal(link.code, 0, link.stdout + link.stderr);
+    assert.equal(reopened.code, 0);
+    const prepared = JSON.parse((await utp(["show", reviewId, "--json"], o)).stdout).review;
+    assert.deepEqual(prepared.presentations, []);
     const terminal = await utp(["review", reviewId], { ...o, input: "\n".repeat(6) });
     assert.equal(terminal.code, 0, terminal.stdout + terminal.stderr);
-    const response = await fetch(JSON.parse(link.stdout).url);
+    const response = await fetch(url);
     assert.equal(response.status, 200);
     const html = await response.text();
     const browser = html.replace(/<style>[\s\S]*?<\/style>|<[^>]+>/g, " ").replaceAll("&#39;", "'");
@@ -560,7 +563,7 @@ test("all seven templates keep their review context and decision content across 
       "the person", "where to run it", "the shell to use", "what success looks like", "needs a shell check",
       "step-1", "goal-1", "partly covered", "Describe what you observed.", "Where to verify it", "observed",
       "assumption-1", "What it changes in the plan.", ...Object.values(ids).map(id => id + "@1")];
-    for (const [surface, output] of Object.entries({ markdown: markdown.stdout, reopened: reopened.stdout, terminal: terminal.stdout, browser })) {
+    for (const [surface, output] of Object.entries({ markdown: reopened.stdout, terminal: terminal.stdout, browser })) {
       for (const detail of required) assert.ok(output.includes(detail), `${surface} omitted ${detail}`);
       assert.ok(output.indexOf(intent.asked) < output.indexOf(requests[0]!.question), surface);
       assert.ok(output.includes(`order (${ids.choose}@1) · ${requests[0]!.question}`), surface + " omitted a named dependency");

@@ -105,7 +105,8 @@ export class ReviewPages {
     if (request.method === "GET") {
       const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: this.now() };
       const html = reviewHtml(view, browser.form);
-      const presented = engine.run("presented", { review: view.id, channel: "review-page" }, entry.actor, `review-page-${linkKey(id)}`);
+      const presented = engine.run("presented", { review: view.id, channel: "review-page",
+        items: view.items.map(card => `${card.id}@${card.revision}`) }, entry.actor, `review-page-${linkKey(id)}`);
       if (presented.code !== EXIT.OK) return denied();
       const remainingSeconds = Math.ceil((entry.expiresAt - this.now()) / 1000);
       const cookie = entry.browser ? undefined
@@ -121,6 +122,7 @@ export class ReviewPages {
       if (!card) return denied();
       const result = engine.run("answer", {
         id: `${card.id}@${card.revision}`, channel: "review-page", clarify: true,
+        presentation: engine.browserPresentation(view.id, `review-page-${linkKey(id)}`),
         note: form.get(`clarify-note-${requested}`)?.trim(),
       }, entry.actor);
       if (result.code !== EXIT.OK) {
@@ -130,7 +132,8 @@ export class ReviewPages {
       return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form));
     }
     const answers = choices(view, form);
-    const result = engine.saveBrowserAnswers(view.id, answers, entry.actor, Math.max(0, this.now() - entry.browser.openedAt), saveId);
+    const result = engine.saveBrowserAnswers(view.id, answers, entry.actor, Math.max(0, this.now() - entry.browser.openedAt), saveId,
+      `review-page-${linkKey(id)}`);
     if (result.code !== EXIT.OK) {
       return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
         reviewHtml(view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
