@@ -2,37 +2,7 @@ import type { ReviewView } from "../cli/render.js";
 import { itemPrompts } from "../core/items.js";
 import { waiverNotes } from "../core/quality.js";
 import { CLARITY_FEEDBACK, SURENESS } from "../core/types.js";
-
-const css = `
-:root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; color: #183028; background: #f1f5f0; }
-body { margin: 0; }
-main { max-width: 56rem; margin: auto; padding: 3rem clamp(1rem, 5vw, 3.5rem); }
-h1 { font-size: clamp(2rem, 6vw, 3.7rem); margin: 0 0 .25rem; letter-spacing: -.045em; }
-h2 { font-size: clamp(1.3rem, 4vw, 1.9rem); line-height: 1.25; margin: 0; }
-h3 { font-size: 1rem; margin-bottom: .4rem; }
-p, dl { margin: .65rem 0; }
-dd { margin: 0 0 .45rem; }
-dt { font-weight: 700; }
-article { background: white; border: 1px solid #cbd8cd; border-radius: 1rem; padding: clamp(1rem, 4vw, 2rem); margin: 1rem 0; }
-.muted { color: #4c675b; }
-.preserve { white-space: pre-wrap; overflow-wrap: anywhere; }
-figure { margin: 1rem 0; }
-figcaption { font-weight: 700; margin-bottom: .4rem; }
-pre { padding: 1rem; border-radius: .65rem; background: #eef3ee; white-space: pre-wrap; overflow-wrap: anywhere; }
-img { max-width: 100%; max-height: 36rem; object-fit: contain; border-radius: .65rem; }
-fieldset { border: 0; padding: 0; margin: 1rem 0; }
-legend { padding: 0; font-weight: 700; }
-.option { display: flex; align-items: start; gap: .65rem; border: 1px solid #cbd8cd; border-radius: .6rem; padding: .75rem; margin: .5rem 0; }
-.option:has(input:checked) { border-color: #1c6c4a; background: #eaf5ed; }
-input { accent-color: #1c6c4a; margin-top: .3rem; }
-textarea { font: inherit; width: 100%; box-sizing: border-box; margin: .35rem 0; border: 1px solid #9fb5a6; border-radius: .45rem; padding: .6rem; }
-.ratings { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; }
-.ratings label { display: grid; gap: .25rem; }
-select { font: inherit; color: inherit; background: white; border: 1px solid #9fb5a6; border-radius: .45rem; padding: .4rem; }
-button { color: white; background: #175c40; border: 0; border-radius: .55rem; padding: .8rem 1.25rem; font: inherit; font-weight: 700; }
-button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #27714e; outline-offset: 2px; }
-.error { border-left: .25rem solid #a23822; padding-left: .8rem; }
-`;
+import { reviewStyle, themeColor } from "./review-style.js";
 
 export function escapeText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -116,13 +86,17 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
   });
   const defaults = (review.default_notices ?? []).map((item) => notice(
     `${item.conflict ? "Late answer conflicts with the applied default" : "Applied by default: change?"} ${item.question} Option ${item.option}.`));
-  return page("Review", `<h1>Review</h1><p class="muted">${review.items.length} requests</p>
+  const count = review.items.length;
+  return page("Review", `<h1>Review</h1><p class="count">${count} ${count === 1 ? "request" : "requests"}</p>
     ${defaults.join("")}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}
     <form method="post"><input type="hidden" name="presentation" value="${escapeText(token)}">
     ${cards.join("")}<button type="submit">Save answers</button></form>`);
 }
 
 export function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>${escapeText(title)} · UTP</title><style>${css}</style></head><body><main>${body}</main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <meta name="theme-color" content="${themeColor}">
+    <title>${escapeText(title)} · UTP</title><style>${reviewStyle}</style></head>
+    <body><main><div class="brand">UTP</div>${body}</main></body></html>`;
 }

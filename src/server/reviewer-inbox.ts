@@ -48,12 +48,13 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
       }
       for (const [review, questions] of groups) {
         const items = questions.map((q) => `<li>${escapeText(q)}</li>`).join("");
-        sections.push(`<article><h2>${escapeText(project.name ?? project.id)}</h2><ul>${items}</ul>
+        sections.push(`<article class="inbox-review"><h2>${escapeText(project.name ?? project.id)}</h2><ul>${items}</ul>
           <form method="post" action="/open/${encodeURIComponent(project.id)}/${encodeURIComponent(review)}">
           <button type="submit">Open review</button></form></article>`);
       }
     }
-    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${sections.join("") || "<p>No questions are waiting.</p>"}`));
+    const empty = '<p class="empty"><span class="check" aria-hidden="true">✓</span>No questions are waiting.</p>';
+    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${sections.join("") || empty}`));
   }
   const open = /^\/open\/(prj-[a-f0-9]{12})\/(V-[A-Za-z0-9-]+)$/.exec(path);
   if (open && req.method === "POST") {

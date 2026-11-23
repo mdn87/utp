@@ -885,7 +885,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T00:18:27Z"
+        "updatedAt": "2026-11-23T06:01:53Z"
       },
       "evidence": [
         {
@@ -905,6 +905,12 @@
           "at": "2026-11-23T00:18:27Z",
           "kind": "stage-change",
           "message": "Chrome rendered three cards and an image preview at two widths and saved one batch. Tests cover Host, Origin, token and stale revision checks."
+        },
+        {
+          "entryId": "browser-phone-theme",
+          "at": "2026-11-23T06:01:53Z",
+          "kind": "note",
+          "message": "The inbox and answer form use the Sessions theme. Chromium and WebKit fit long questions at 320 pixels and accepted clarification and answers by touch."
         }
       ]
     },
