@@ -698,7 +698,7 @@
       "projectId": "utp",
       "title": "Provide sandbox setup and a reliable resume path",
       "summary": "Show the network setting each platform needs and apply it after confirmation. Verify an external answer resumes the same request and an unreachable service returns exit code 32.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 220,
       "prereqs": [
         "utp:core:service"
@@ -707,7 +707,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T01:13:50.748Z"
       },
       "evidence": [
         {
@@ -715,6 +715,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Phase 1c calls for Claude Code, Codex and Antigravity runs in their default restricted environments."
+        },
+        {
+          "entryId": "sandbox-access-and-resume-verified",
+          "at": "2026-11-23T01:13:50.748Z",
+          "kind": "stage-change",
+          "message": "Codex, Claude sandbox runtime and Antigravity reached the private service. A separate terminal answered and the original request resumed."
         }
       ]
     },

@@ -19,6 +19,7 @@ import { call, CliError, readConfig, utpHome, writeConfig } from "./client.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
 import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
 import { runReview } from "./review.js";
+import { launchSetup, setupPlan } from "./setup.js";
 
 const HELP = `utp: hand a person structured decisions, and get structured answers back.
 
@@ -27,6 +28,7 @@ Usage: utp <verb> [arguments] [--json] [--op-id <id>]
 Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <url>]
             token create <machine> [--data <dir>]
             connect <server-url>        (reads the token from standard input)
+            setup <codex|claude|antigravity> [--apply] [-- <agent arguments>]
             init [--name <name>] [--new]
             link <project-id>
 Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
@@ -97,6 +99,8 @@ const OPTIONS = {
   feedback: { type: "boolean" },
   "authority-file": { type: "string" },
   inbox: { type: "string" },
+  apply: { type: "boolean" },
+  launcher: { type: "string" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -232,6 +236,11 @@ async function main(argv: string[]): Promise<number> {
   const dataDir = flags.data ?? process.env.UTP_DATA ?? path.join(utpHome(), "data");
 
   switch (verb) {
+    case "setup": {
+      const plan = setupPlan(need(rest[0], "a platform"));
+      if (flags.apply) return launchSetup(plan, rest.slice(1), flags.launcher);
+      return out({ code: EXIT.OK, ...plan }, `${plan.access}\nAdd --apply to start the session with this setting.`);
+    }
     case "serve": {
       const port = flags.port ? Number(flags.port) : DEFAULT_PORT;
       const adapter = await deliveryAdapter();

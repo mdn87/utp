@@ -22,6 +22,8 @@ every test. In a synced or backed-up folder, keep `node_modules` and build
 output elsewhere: set `UTP_TOOLING_DIR` to a folder whose `node_modules` holds
 `typescript` and `@types/node`, and `UTP_BUILD_DIR` to the build folder, for
 both `node scripts/build.mjs` and `node scripts/test.mjs`.
+If the shell uses an HTTP proxy, install the project's dependencies in the
+tooling directory and keep `UTP_TOOLING_DIR` set when running the CLI.
 
 ## Public repository
 
