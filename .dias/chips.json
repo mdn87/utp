@@ -699,7 +699,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T00:50:19.796Z"
+        "updatedAt": "2026-11-23T04:07:09.595Z"
       },
       "evidence": [
         {
@@ -713,6 +713,12 @@
           "at": "2026-11-23T00:50:19.796Z",
           "kind": "note",
           "message": "Retry and report import tests passed. Live delivery waits for a verified answer covering credential access and the installed morning report."
+        },
+        {
+          "entryId": "review-notification-frequency-confirmed",
+          "at": "2026-11-23T04:07:09.595Z",
+          "kind": "note",
+          "message": "Decision D6 set one notification per review. The reviewer confirmed that choice and requested one lasting link to all open questions."
         }
       ]
     },

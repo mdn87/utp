@@ -11,7 +11,7 @@
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
   "currentMilestone": "Finish first-release verification. The shared service, everyday requests, batch review, and clarification are working.",
-  "remainingSummary": "Build request checks and warnings. The reviewer requested one page for all open questions. Notification delivery still needs a choice. Blind comparisons follow the first release.",
+  "remainingSummary": "Build request checks and warnings. One notification per review is settled. Set up delivery and a lasting page for open questions. Blind comparisons follow the first release.",
   "nextChipId": "utp:lint:rules",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
