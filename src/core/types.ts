@@ -102,14 +102,23 @@ export type Verified = "channel" | "transcript" | "none";
 
 export type Disposition = "answered_elsewhere" | "no_longer_matters";
 
+export const SURENESS = ["sure", "leaning", "unsure"] as const;
+export const CLARITY_FEEDBACK = {
+  clear: "Clear",
+  needed_more: "Needed more",
+  too_much: "Too much",
+  wrong_options: "Wrong options",
+} as const;
+
 export interface AnswerRecord {
   value: string | null;
   custom?: string;
   items?: Record<string, string>;
   details?: Record<string, string>;
   disposition?: Disposition;
-  sureness?: "sure" | "leaning" | "unsure";
+  sureness?: (typeof SURENESS)[number];
   feedback?: string;
+  active_response_ms?: number;
   note?: string;
   /** The person's words, quoted verbatim, when the answer came from the conversation. */
   quote?: string;

@@ -196,23 +196,36 @@ test("a browser batch presents previews and saves only its displayed revisions",
       assert.match(html, /First/);
       assert.match(html, /Second/);
       assert.match(html, /Third/);
+      assert.match(html, /How sure are you/);
+      assert.match(html, /Wrong options/);
       const cookie = page.headers.get("set-cookie")?.split(";")[0];
       const token = /name="presentation" value="([a-zA-Z0-9_-]+)"/.exec(html)?.[1];
       assert.ok(cookie && token);
       assert.ok(!url.includes(token));
       const origin = new URL(url).origin;
-      const form = new URLSearchParams({ presentation: token, "choice-0": "a", "choice-1": "b", "choice-2": "a" });
+      const form = new URLSearchParams({ presentation: token, "choice-0": "a", "choice-1": "b", "choice-2": "a",
+        "sureness-1": "leaning", "feedback-1": "needed_more" });
       const save = (headers: Record<string, string>) => fetch(url, { method: "POST", headers, body: form });
-      return { cards, url, save, origin, cookie };
+      return { cards, url, save, origin, cookie, form, reviewId: flushed.review_id };
     };
 
     const current = await makeBatch();
     assert.equal((await current.save({ origin: "https://elsewhere.invalid", cookie: current.cookie })).status, 403);
     assert.equal((await current.save({ origin: current.origin })).status, 403);
+    current.form.set("feedback-1", "unknown");
+    assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 400);
+    current.form.set("feedback-1", "needed_more");
     assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 200);
     const saved = await s.agent("show", { id: current.cards[1]?.id });
-    assert.deepEqual((saved.request as { answer: { value: string; verified: string } }).answer.value, "b");
-    assert.equal((saved.request as { answer: { verified: string } }).answer.verified, "channel");
+    const request = saved.request as { presented_at: string; answer: Record<string, unknown> };
+    assert.equal(request.answer.value, "b");
+    assert.equal(request.answer.verified, "channel");
+    assert.equal(request.answer.sureness, "leaning");
+    assert.equal(request.answer.feedback, "needed_more");
+    assert.ok(!("active_response_ms" in request.answer));
+    assert.ok(Date.parse(request.presented_at) <= Date.parse(String(request.answer.at)));
+    const review = (await s.agent("show", { id: current.reviewId })).review as { page_response_ms: number };
+    assert.ok(Number.isSafeInteger(review.page_response_ms) && review.page_response_ms >= 0);
 
     const stale = await makeBatch();
     await s.agent("revise", { id: stale.cards[0]?.id, body: body("Changed since presentation") });
@@ -221,6 +234,17 @@ test("a browser batch presents previews and saves only its displayed revisions",
     assert.equal((unaffected.request as { answer: unknown }).answer, null);
     const spoofed = await s.agent("answer", { id: stale.cards[1]?.id, value: "a", channel: "review-page" });
     assert.equal((spoofed.answer as { verified: string }).verified, "none");
+    await s.svc.close();
+    const restarted = await startServer({ dataDir: s.dataDir, port: 0 });
+    try {
+      const options = { config: { ...s.agentCfg, server: restarted.url }, project: s.project };
+      const restored = await call("show", { id: current.reviewId }, options);
+      assert.equal((restored.review as { page_response_ms: number }).page_response_ms, review.page_response_ms);
+      const restoredCard = await call("show", { id: current.cards[1]?.id }, options);
+      assert.deepEqual((restoredCard.request as { answer: unknown }).answer, request.answer);
+    } finally {
+      await restarted.close();
+    }
   } finally {
     await s.svc.close();
   }

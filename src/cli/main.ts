@@ -37,7 +37,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             log [--tags a,b] [--related <id>] [--text <words>] [--kind <kind>]
             export <id>... --redact --file <output>
             leak-check <file>... [--generic]
-Answers     review
+Answers     review [--feedback]
             answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
                         [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
             wait <id> [--timeout <seconds>]
@@ -88,6 +88,7 @@ const OPTIONS = {
   kind: { type: "string" },
   redact: { type: "boolean" },
   generic: { type: "boolean" },
+  feedback: { type: "boolean" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -398,7 +399,8 @@ async function main(argv: string[]): Promise<number> {
     case "review": {
       const { project } = projectFor();
       readConfig();
-      return runReview(project, { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) });
+      return runReview(project, { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) },
+        flags.feedback);
     }
     case "answer": {
       const { project } = projectFor();

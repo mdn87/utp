@@ -56,6 +56,13 @@ utp review         # the person answers in their own terminal
 utp wait <request-id>
 ```
 
+For a batch with previews, use `utp page <review-id>` after flushing and open
+the private link. The page lets you save the batch together and leave optional
+feedback. Use `utp review --feedback` for the same ratings in your terminal.
+`utp show <id> --json` includes the presentation and answer times. Interactive
+terminal answers include elapsed time per card. A review page records one
+elapsed time for the batch from opening the page to saving it.
+
 ## Platforms
 
 UTP is built command line first, so any agent that can run a shell command

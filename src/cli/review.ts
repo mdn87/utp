@@ -5,7 +5,7 @@
 
 import readline from "node:readline";
 import { itemPrompts, type ItemPrompt } from "../core/items.js";
-import { EXIT } from "../core/types.js";
+import { CLARITY_FEEDBACK, EXIT, SURENESS } from "../core/types.js";
 import { call } from "./client.js";
 import { cardMarkdown, defaultNoticeMarkdown, letter, type ReviewView } from "./render.js";
 
@@ -55,7 +55,7 @@ async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise
   return { items: Object.fromEntries(items), details: Object.fromEntries(details) };
 }
 
-export async function runReview(project: string, io: ReviewIO): Promise<number> {
+export async function runReview(project: string, io: ReviewIO, withFeedback = false): Promise<number> {
   const write = (text: string) => io.output.write(`${text}\n`);
   const status = await call("status", {}, { project });
   const reviews = (status.reviews as { id: string; status: string }[]).filter((v) => v.status === "prepared");
@@ -67,9 +67,29 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
     const next = await lines.next();
     return next.done ? null : String(next.value).trim();
   };
+  const optionalRating = async (question: string, allowed: readonly string[]): Promise<string | undefined> => {
+    for (;;) {
+      const rating = await ask(`${question} (${allowed.join(", ")}, or Enter to skip): `);
+      if (!rating) return undefined;
+      if (allowed.includes(rating)) return rating;
+      write(`Choose ${allowed.join(", ")}.`);
+    }
+  };
   let saved = 0;
   let skipped = 0;
   let shownAny = false;
+  const save = async (id: string, args: Record<string, unknown>, shownAt: number): Promise<void> => {
+    if (!args.hide_until) {
+      if (io.interactive) args.active_response_ms = Math.round(performance.now() - shownAt);
+      if (withFeedback) {
+        args.sureness = await optionalRating("How sure are you?", SURENESS);
+        args.feedback = await optionalRating("How clear was this card?", Object.keys(CLARITY_FEEDBACK));
+      }
+    }
+    const r = await call("answer", { id, channel, ...args }, { project });
+    if (r.code === EXIT.OK) saved += 1;
+    else write(`Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
+  };
   try {
     outer: for (const v of reviews) {
       const shown = await call("show", { id: v.id }, { project });
@@ -88,6 +108,8 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
       for (const [n, item] of items.entries()) {
         write(`${cardMarkdown(item, letter(n))}\n`);
         if (item.body.kind === "notice") continue;
+        const shownAt = performance.now();
+        const id = `${item.id}@${item.revision}`;
         const prompts = itemPrompts(item.body);
         if (prompts.length) {
           const args = await readItems(prompts, ask, write);
@@ -96,9 +118,7 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
             skipped += 1;
             continue;
           }
-          const r = await call("answer", { id: `${item.id}@${item.revision}`, channel, ...args }, { project });
-          if (r.code === EXIT.OK) saved += 1;
-          else write(`Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
+          await save(id, args, shownAt);
           continue;
         }
         const ids = (item.body.options ?? []).map((o) => o.id);
@@ -126,9 +146,7 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
             write(`${reply} isn't one of this card's options.`);
             continue;
           }
-          const r = await call("answer", { id: `${item.id}@${item.revision}`, channel, ...args }, { project });
-          if (r.code === EXIT.OK) saved += 1;
-          else write(`Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
+          await save(id, args, shownAt);
           break;
         }
       }

@@ -15,7 +15,7 @@ import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
 import {
-  EXIT, type Actor, type AnswerRecord, type Authorization, type DefaultNotice, type Disposition, type Grant, type OpResult,
+  CLARITY_FEEDBACK, EXIT, SURENESS, type Actor, type AnswerRecord, type Authorization, type DefaultNotice, type Disposition, type Grant, type OpResult,
   type RequestBody, type Verified,
 } from "./types.js";
 
@@ -71,6 +71,7 @@ export interface Review {
   status: "open" | "prepared";
   items: string[];
   presentations: { id: string; channel: string; at: string }[];
+  page_response_ms?: number;
   default_notices?: DefaultNotice[];
 }
 
@@ -81,6 +82,8 @@ export interface BrowserAnswer {
   custom?: string;
   items?: Record<string, string>;
   details?: Record<string, string>;
+  sureness?: string;
+  feedback?: string;
 }
 
 export interface DecisionLogEntry {
@@ -209,7 +212,7 @@ export class Engine {
   }
 
   /** A browser presentation can save its whole batch in one event. */
-  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor): OpResult {
+  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor, pageResponseMs: number): OpResult {
     this.sweep();
     const review = this.reviews.get(reviewId);
     if (!review || review.status !== "prepared") return notFound(reviewId);
@@ -230,7 +233,7 @@ export class Engine {
       if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
       throw error;
     }
-    return this.commit("review-page.save", "review.answered", actor, { review_id: reviewId, answers },
+    return this.commit("review-page.save", "review.answered", actor, { review_id: reviewId, answers, page_response_ms: pageResponseMs },
       { code: EXIT.OK, review_id: reviewId, saved: answers.length });
   }
 
@@ -717,6 +720,7 @@ export class Engine {
       if (!v) return notFound(ref);
       const items = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined).map((r) => this.view(r));
       return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.page_response_ms !== undefined ? { page_response_ms: v.page_response_ms } : {}),
         ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}) } };
     }
     const rev = this.resolve(ref);
@@ -851,6 +855,8 @@ export class Engine {
         break;
       }
       case "review.answered": {
+        const review = this.reviews.get(d.review_id as string);
+        if (review && typeof d.page_response_ms === "number") review.page_response_ms = d.page_response_ms;
         for (const answer of d.answers as Array<{ id: string; revision: number; answer: AnswerRecord }>) {
           this.recordAnswer(this.mustRev(answer), answer.answer, e.at);
         }
@@ -1158,8 +1164,12 @@ export class Engine {
       throw new UsageError("an answer needs an option, your own words, item answers, or a disposition");
     }
     const sureness = optStr(a, "sureness");
-    if (sureness !== undefined && !["sure", "leaning", "unsure"].includes(sureness)) {
+    if (sureness !== undefined && !SURENESS.some((choice) => choice === sureness)) {
       throw new UsageError("sureness must be sure, leaning or unsure");
+    }
+    const feedback = optStr(a, "feedback");
+    if (browser && feedback !== undefined && !Object.hasOwn(CLARITY_FEEDBACK, feedback)) {
+      throw new UsageError("choose one of the available clarity ratings");
     }
     const channel = str(a, "channel");
     const record: AnswerRecord = {
@@ -1167,9 +1177,13 @@ export class Engine {
     };
     const extra: Partial<AnswerRecord> = {
       custom, items, details, disposition, sureness: sureness as AnswerRecord["sureness"],
-      feedback: optStr(a, "feedback"), note: optStr(a, "note"), quote: optStr(a, "quote"),
+      feedback, note: optStr(a, "note"), quote: optStr(a, "quote"),
       addressed: a.addressed === true ? true : undefined,
     };
+    if (channel === "terminal-review" && typeof a.active_response_ms === "number"
+      && Number.isSafeInteger(a.active_response_ms) && a.active_response_ms >= 0) {
+      extra.active_response_ms = a.active_response_ms;
+    }
     for (const [k, v] of Object.entries(extra)) if (v !== undefined) (record as unknown as Args)[k] = v;
     return record;
   }
