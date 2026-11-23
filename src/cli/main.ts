@@ -45,9 +45,9 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             export <id>... --redact --file <output>
             leak-check <file>... [--generic]
             report-import --inbox <directory>
-Answers     review [--feedback]
+Answers     review [<review-id>] [--feedback]
             answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
-                        [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
+                        [--clarify] [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
             wait <id> [--timeout <seconds>] [--authority-file <decision.json>]
 Execution   claim-default <id>
             resolve-late <id> --resolution keep|redo
@@ -63,7 +63,7 @@ Changes     revise <id> <file>
 Exit codes: 0 done or answered, 10 still waiting, 11 stale, 12 cancelled, 13 expired,
 14 late conflict, 15 default claimed, 16 person answered first, 17 revoked,
 18 the answer lacks the provenance its action needs, 19 not allowed now,
-20 check failed, 30 store busy, 31 lease epoch outdated, 32 can't reach the service,
+20 check failed, 21 clarification requested, 30 store busy, 31 lease epoch outdated, 32 can't reach the service,
 40 not found, 1 anything else. The specification is docs/concept/lifecycle.md.
 `;
 
@@ -97,6 +97,7 @@ const OPTIONS = {
   redact: { type: "boolean" },
   generic: { type: "boolean" },
   feedback: { type: "boolean" },
+  clarify: { type: "boolean" },
   "authority-file": { type: "string" },
   inbox: { type: "string" },
   apply: { type: "boolean" },
@@ -159,7 +160,7 @@ const TEMPLATES: Record<string, RequestBody> = {
     kind: "choose",
     category: "approach",
     question: "One sentence: what should the person decide?",
-    why_now: "Why this is being asked now, and what waits on it.",
+    why_now: "Explain what this decision addresses, what it will change, and why you need an answer now.",
     options: [
       { id: "a", label: "Short name", consequence: "What happens if this is chosen." },
       { id: "b", label: "Short name", consequence: "What happens if this is chosen." },
@@ -393,8 +394,9 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       const r = await call("status", {}, { project });
       if (r.code !== EXIT.OK || flags.json) return out(r);
-      const reqs = r.requests as { id: string; revision: number; status: string; question: string }[];
-      return out(r, reqs.length ? reqs.map((q) => `${q.id}@${q.revision}  ${q.status.padEnd(15)}  ${q.question}`).join("\n") : "Nothing is open.");
+      const reqs = r.requests as { id: string; revision: number; status: string; question: string; clarification?: unknown }[];
+      return out(r, reqs.length ? reqs.map((q) => `${q.id}@${q.revision}  ${q.status.padEnd(15)}  ${q.question}`
+        + (q.clarification ? " (clarification requested)" : "")).join("\n") : "Nothing is open.");
     }
     case "log": {
       const { project } = projectFor();
@@ -454,7 +456,7 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       readConfig();
       return runReview(project, { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) },
-        flags.feedback);
+        flags.feedback, rest[0]);
     }
     case "report-import": {
       const inbox = need(flags.inbox, "--inbox with the morning report inbox directory");
@@ -480,6 +482,7 @@ async function main(argv: string[]): Promise<number> {
       }
       if (flags.addressed) args.addressed = true;
       if (flags.withdraw) args.withdraw = true;
+      if (flags.clarify) args.clarify = true;
       if (flags["hide-until"]) args.hide_until = flags["hide-until"];
       if (flags.disposition) args.disposition = flags.disposition;
       return out(await call("answer", args, { project, opId }));

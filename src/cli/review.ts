@@ -23,14 +23,15 @@ function tomorrowMorning(): string {
 }
 
 async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise<string | null>, write: (text: string) => void):
-  Promise<{ items: Record<string, string>; details: Record<string, string> } | { custom: string } | null | undefined> {
+  Promise<{ items: Record<string, string>; details: Record<string, string> } | { custom: string } | { clarify: true } | null | undefined> {
   const items = new Map<string, string>();
   const details = new Map<string, string>();
   for (const prompt of prompts) {
     for (;;) {
-      const value = await ask(`${prompt.id} · ${prompt.label} (${prompt.choices.join(", ")}, / for a custom reply, or Enter to skip): `);
+      const value = await ask(`${prompt.id} · ${prompt.label} (${prompt.choices.join(", ")}, ? for clarification, / for a custom reply, or Enter to skip): `);
       if (value === null) return null;
       if (!value) return undefined;
+      if (value === "?") return { clarify: true };
       if (value === "/") {
         const custom = await ask("Your answer for this card: ");
         return custom === null ? null : custom ? { custom } : undefined;
@@ -55,10 +56,11 @@ async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise
   return { items: Object.fromEntries(items), details: Object.fromEntries(details) };
 }
 
-export async function runReview(project: string, io: ReviewIO, withFeedback = false): Promise<number> {
+export async function runReview(project: string, io: ReviewIO, withFeedback = false, reviewId?: string): Promise<number> {
   const write = (text: string) => io.output.write(`${text}\n`);
   const status = await call("status", {}, { project });
-  const reviews = (status.reviews as { id: string; status: string }[]).filter((v) => v.status === "prepared");
+  const reviews = (status.reviews as { id: string; status: string }[])
+    .filter((v) => v.status === "prepared" && (!reviewId || reviewId === v.id));
   const channel = io.interactive ? "terminal-review" : "terminal-piped";
   const rl = readline.createInterface({ input: io.input, terminal: false });
   const lines = rl[Symbol.asyncIterator]();
@@ -77,8 +79,18 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
   };
   let saved = 0;
   let skipped = 0;
+  let clarified = 0;
   let shownAny = false;
   const save = async (id: string, args: Record<string, unknown>, shownAt: number): Promise<void> => {
+    if (args.clarify) {
+      const note = await ask("What should the agent explain? Enter to send without a note: ");
+      const result = await call("answer", { id, channel, clarify: true, note: note || undefined }, { project });
+      if (result.code === EXIT.OK) {
+        clarified += 1;
+        write("Clarification requested. The agent will see it when it checks this question.");
+      } else write(`Could not request clarification. ${String(result.message ?? `Exit ${result.code}`)}`);
+      return;
+    }
     if (!args.hide_until) {
       if (io.interactive) args.active_response_ms = Math.round(performance.now() - shownAt);
       if (withFeedback) {
@@ -108,6 +120,7 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
       for (const [n, item] of items.entries()) {
         write(`${cardMarkdown(item, letter(n))}\n`);
         if (item.body.kind === "notice") continue;
+        if (item.clarification) continue;
         const shownAt = performance.now();
         const id = `${item.id}@${item.revision}`;
         const prompts = itemPrompts(item.body);
@@ -124,14 +137,16 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
         const ids = (item.body.options ?? []).map((o) => o.id);
         for (;;) {
           const reply = await ask(`Answer ${letter(n)}: ${ids.length ? `an option (${ids.join(", ")}), ` : ""}`
-            + "/ for your own words, h to hide until tomorrow, or Enter to skip: ");
+            + "? for clarification, / for your own words, h to hide until tomorrow, or Enter to skip: ");
           if (reply === null) break outer;
           if (reply === "") {
             skipped += 1;
             break;
           }
           let args: Record<string, unknown>;
-          if (reply === "/") {
+          if (reply === "?") {
+            args = { clarify: true };
+          } else if (reply === "/") {
             const words = await ask("Your answer: ");
             if (!words) {
               skipped += 1;
@@ -155,10 +170,11 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
     rl.close();
   }
   if (!shownAny) {
-    write("Nothing is waiting for your answer.");
+    write(reviewId ? "That review has no questions waiting for you." : "Nothing is waiting for your answer.");
     return EXIT.OK;
   }
-  write(`\nSaved ${saved} answer${saved === 1 ? "" : "s"}${skipped ? `, skipped ${skipped}` : ""}. `
-    + "Go back to the agent's conversation, or resume its session, so it picks them up.");
+  if (clarified) write(`\nRequested clarification on ${clarified} ${clarified === 1 ? "card" : "cards"}.`);
+  if (saved || !clarified) write(`Saved ${saved} answer${saved === 1 ? "" : "s"}${skipped ? `, skipped ${skipped}` : ""}.`);
+  write("Go back to the agent's conversation, or resume its session, so it picks up your reply.");
   return EXIT.OK;
 }

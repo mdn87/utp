@@ -160,6 +160,21 @@ const technicalDefault = (over: Partial<RequestBody> = {}): RequestBody => choos
   ...over,
 });
 
+test("asking for clarification cancels an unused default and persists after restart", () => {
+  const h = new Harness();
+  const id = h.present(technicalDefault(), defaultBasis);
+  const reservation = h.run("claim-default", { id, basis: defaultBasis });
+  assert.equal(reservation.code, 15);
+  const grant = reservation.grant as Grant;
+  h.ok("answer", { id, channel: "terminal-review", clarify: true }, PERSON);
+  assert.equal(h.run("begin", { grant: grant.id, basis: defaultBasis }).code, 17);
+  const reopened = h.reopen();
+  const waiting = reopened.run("wait", { id }, AGENT);
+  assert.equal(waiting.code, 21);
+  assert.equal(waiting.answer, null);
+  assert.equal(reopened.run("claim-default", { id, basis: defaultBasis }, AGENT).code, 21);
+});
+
 test("a stated default is claimed once by the owner, and a timely answer revokes it", () => {
   const h = new Harness();
   const id = h.present(technicalDefault(), defaultBasis);

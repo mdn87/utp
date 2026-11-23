@@ -15,7 +15,7 @@ import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
 import {
-  CLARITY_FEEDBACK, EXIT, SURENESS, type Actor, type AnswerRecord, type Authorization, type DefaultNotice, type Disposition, type Grant, type OpResult,
+  CLARITY_FEEDBACK, EXIT, SURENESS, type Actor, type AnswerRecord, type Authorization, type ClarificationRequest, type DefaultNotice, type Disposition, type Grant, type OpResult,
   type RequestBody, type Verified,
 } from "./types.js";
 
@@ -46,6 +46,7 @@ export interface Rev {
   asked_at: string;
   presented_at?: string;
   answer?: AnswerRecord;
+  clarification?: ClarificationRequest;
   answer_count: number;
   grants: string[];
   flags: string[];
@@ -193,6 +194,7 @@ function contentKey(body: RequestBody, basis: Basis): string {
     kind: body.kind,
     category: body.category ?? null,
     question: normalize(body.question),
+    summary: body.summary ? normalize(body.summary) : null,
     options: (body.options ?? []).map((o) => [o.id, normalize(o.label), normalize(o.consequence), sorted(o.authorization)]),
     steps: Array.isArray(body.steps) ? body.steps.map(sorted) : [],
     goals: Array.isArray(body.goals) ? body.goals.map(sorted) : [],
@@ -533,6 +535,19 @@ export class Engine {
     }
     if (rev.body.kind === "notice") return { code: EXIT.NOT_ALLOWED, message: "notices need no answer" };
     const ref = { id: rev.id, revision: rev.revision };
+    if (a.clarify === true) {
+      if (st !== "presented" && st !== "default_claimed") {
+        return { code: EXIT.NOT_ALLOWED, message: "ask for clarification while the request is open for an answer" };
+      }
+      const channel = str(a, "channel");
+      const note = optStr(a, "note")?.trim() || undefined;
+      if (rev.clarification && rev.clarification.channel === channel && rev.clarification.note === note) {
+        return { code: EXIT.OK, ...ref, clarification: rev.clarification };
+      }
+      const clarification = { at, channel, ...(note ? { note } : {}) };
+      return this.commit("answer", "request.clarification-requested", actor, { ...ref, clarification },
+        { code: EXIT.OK, ...ref, clarification }, opId);
+    }
     if (a.withdraw === true) {
       if (!rev.answer) return { code: EXIT.NOT_ALLOWED, message: "there is no answer to withdraw" };
       return this.commit("answer", "answer.withdrawn", actor, ref, { code: EXIT.OK, ...ref, withdrawn: true }, opId);
@@ -562,6 +577,7 @@ export class Engine {
     if (st === "closed") return { code: EXIT.OK, status: st, message: "a notice needs no answer" };
     const closed = this.closedResult(st);
     if (closed) return { ...closed, status: st };
+    if (rev.clarification) return this.clarificationResult(rev);
     if (st === "draft" || st === "queued" || st === "presented" || st === "hidden" || st === "default_claimed") {
       return { code: EXIT.WAITING, status: st };
     }
@@ -633,6 +649,7 @@ export class Engine {
     if (closed) return closed;
     const ref = { id: rev.id, revision: rev.revision, status, answer: rev.answer ?? null };
     if (rev.answer) return { code: EXIT.ANSWER_FIRST, ...ref, message: "the person answered before the default was claimed" };
+    if (rev.clarification) return this.clarificationResult(rev);
     if (!sameActor(req.owner, actor)) {
       return { code: EXIT.NOT_ALLOWED, ...ref, message: "only the request owner can claim its default" };
     }
@@ -649,6 +666,12 @@ export class Engine {
     }
     return this.issueGrant(rev, actor, { ...eligible, provenance: "none", from_default: true },
       { code: EXIT.DEFAULT_CLAIMED, ...ref }, opId);
+  }
+
+  private clarificationResult(rev: Rev): OpResult {
+    return { code: EXIT.NEEDS_CLARIFICATION, id: rev.id, revision: rev.revision, status: rev.status,
+      answer: null, clarification: rev.clarification,
+      message: "The reviewer asked for an explanation. Clarify the question or its choices and revise the card." };
   }
 
   private issueGrant(rev: Rev, actor: Actor, source: Pick<Grant, "option" | "authorization" | "provenance" | "from_default">,
@@ -905,7 +928,7 @@ export class Engine {
     const requests = [...this.revs.values()]
       .filter((r) => this.isCurrentRev(r) && this.isOpen(r))
       .map((r) => ({ id: r.id, revision: r.revision, kind: r.body.kind, level: r.body.level, status: this.effective(r, at),
-        question: r.body.question, review_id: r.review_id, flags: r.flags }));
+        question: r.body.question, review_id: r.review_id, flags: r.flags, ...(r.clarification ? { clarification: r.clarification } : {}) }));
     const waiting = new Set(["queued", "presented", "hidden"]);
     const reviews = [...this.reviews.values()]
       .filter((v) => v.items.some((k) => {
@@ -1050,6 +1073,15 @@ export class Engine {
         this.recordAnswer(this.mustRev(d), d.answer as AnswerRecord, e.at);
         break;
       }
+      case "request.clarification-requested": {
+        const r = this.mustRev(d);
+        if (r.status === "default_claimed") {
+          this.revoke(r);
+          this.move(r, "presented", e.at);
+        }
+        r.clarification = d.clarification as ClarificationRequest;
+        break;
+      }
       case "review.answered": {
         const review = this.reviews.get(d.review_id as string);
         if (review && typeof d.page_response_ms === "number") review.page_response_ms = d.page_response_ms;
@@ -1187,6 +1219,7 @@ export class Engine {
 
   private recordAnswer(rev: Rev, answer: AnswerRecord, at: string): void {
     rev.answer = answer;
+    delete rev.clarification;
     rev.answer_count += 1;
     const state = this.effective(rev, at);
     if (state === "granted" || state === "default_claimed") this.revoke(rev);
@@ -1447,6 +1480,7 @@ export class Engine {
       presented_at: r.presented_at ?? null, hide_until: r.hide_until ?? null, remaining_scope: r.remaining_scope ?? null,
       reconciliations: r.reconciliations, reversals: req.reversals, owner: req.owner, observers: req.observers.length,
       ...(r.policy ? { policy: r.policy } : {}),
+      ...(r.clarification ? { clarification: r.clarification } : {}),
       epoch: req.epoch,
     };
   }

@@ -45,6 +45,43 @@ function repo(remote?: string): string {
   return dir;
 }
 
+test("a terminal reviewer sees what the question decides and can ask for an explanation", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-clarity-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  try {
+    const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-clarity-home-")) };
+    const run = async (args: string[], input?: string) => {
+      const result = await utp(args, { ...o, input });
+      assert.equal(result.code, 0, result.stderr + result.stdout);
+      return result.stdout;
+    };
+    await run(["connect", svc.url], createToken(data, "reviewer"));
+    await run(["init"]);
+    await run(["new", "choose", "--file", "card.json"]);
+    const file = path.join(o.cwd, "card.json");
+    const card = JSON.parse(readFileSync(file, "utf8"));
+    card.summary = "This decides which rows the import will keep.";
+    writeFileSync(file, JSON.stringify(card));
+    const { id, review_id } = JSON.parse(await run(["ask", "card.json", "--json"]));
+    await run(["flush", "--json"]);
+    const review = await run(["review", review_id], "?\nExplain how choice A changes the output.\n");
+    assert.match(review, /This decides which rows the import will keep/);
+    assert.match(review, /What should the agent explain/);
+    assert.match(review, /Clarification requested/);
+    const waiting = await utp(["wait", id, "--json"], o);
+    assert.equal(waiting.code, 21);
+    const pending = JSON.parse(waiting.stdout);
+    assert.equal(pending.answer, null);
+    assert.equal(pending.clarification.note, "Explain how choice A changes the output.");
+    await run(["revise", id, "card.json"]);
+    const revised = JSON.parse(await run(["show", id, "--json"])).request;
+    assert.equal(revised.revision, 2);
+    assert.equal(revised.clarification, undefined);
+  } finally {
+    await svc.close();
+  }
+});
+
 test("utp setup previews only the selected session's sandbox settings", async () => {
   const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-setup-home-")) };
   writeFileSync(path.join(o.home, "config.json"), JSON.stringify({ server: "https://utp.example.test:7340", token: "synthetic" }));

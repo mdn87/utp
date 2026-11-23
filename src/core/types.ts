@@ -74,6 +74,7 @@ export interface RequestBody {
   kind: Kind;
   category?: string;
   question: string;
+  summary?: string;
   why_now: string;
   options?: OptionSpec[];
   recommendation?: { option: string; because: string; preserves?: string; bolder_alternative?: string };
@@ -95,6 +96,12 @@ export interface RequestBody {
   expires_at?: string;
   origin?: { agent?: string; platform?: string; session?: string };
   notes?: string;
+}
+
+export interface ClarificationRequest {
+  at: string;
+  channel: string;
+  note?: string;
 }
 
 /** How sure UTP is that an answer came from the person. */
@@ -168,6 +175,7 @@ export const EXIT = {
   PROVENANCE: 18,
   NOT_ALLOWED: 19,
   CHECK_FAILED: 20,
+  NEEDS_CLARIFICATION: 21,
   BUSY: 30,
   EPOCH: 31,
   UNREACHABLE: 32,

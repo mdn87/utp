@@ -63,6 +63,12 @@ feedback. Use `utp review --feedback` for the same ratings in your terminal.
 terminal answers include elapsed time per card. A review page records one
 elapsed time for the batch from opening the page to saving it.
 
+Each card opens with what the question addresses. In the terminal, type
+`?` when the question or choices are unclear. On the review page, use
+**Ask for clarification**. You can send a note about what needs explaining.
+The question stays open, and the agent sees your request for clarification
+when it checks the review.
+
 ### Sandbox setup and resuming a review
 
 `utp setup codex`, `utp setup claude`, and `utp setup antigravity` preview

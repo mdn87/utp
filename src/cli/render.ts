@@ -1,6 +1,6 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
-import type { AnswerRecord, DefaultNotice, Grant, OpResult, RequestBody } from "../core/types.js";
+import type { AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody } from "../core/types.js";
 
 export interface RequestView {
   id: string;
@@ -9,6 +9,7 @@ export interface RequestView {
   status: string;
   body: RequestBody;
   answer: AnswerRecord | null;
+  clarification?: ClarificationRequest;
   flags: string[];
 }
 
@@ -26,7 +27,11 @@ export const letter = (n: number): string =>
 
 export function cardMarkdown(v: RequestView, mark?: string): string {
   const b = v.body;
-  const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, "", b.why_now, ""];
+  const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
+  if (b.kind !== "notice") out.push("**What this question addresses**");
+  out.push(b.summary ?? b.why_now, "");
+  if (b.summary && b.summary !== b.why_now) out.push("**Why now**", b.why_now, "");
+  if (v.clarification) out.push("The reviewer asked for a clearer question or choices.", "");
   if (b.depends_on?.length) out.push(`Your answer to ${b.depends_on.join(" and ")} affects this card.`, "");
   const terms = Object.entries(b.glossary ?? {});
   if (terms.length) out.push("Terms on this card:", "", ...terms.map(([t, d]) => `- **${t}**: ${d}`), "");
@@ -101,6 +106,10 @@ export function grantText(g: Grant): string {
 export function resultText(r: OpResult): string {
   const lines: string[] = [];
   if (typeof r.message === "string") lines.push(r.message);
+  if (r.clarification) {
+    const note = (r.clarification as ClarificationRequest).note;
+    if (note) lines.push(`What the reviewer asked the agent to explain · ${note}`);
+  }
   const fields: [string, string][] = [
     ["id", "request"], ["revision", "revision"], ["review_id", "review"], ["presentation_id", "presentation"],
     ["status", "status"], ["outcome", "outcome"], ["epoch", "epoch"], ["near_duplicate", "similar open request"],

@@ -45,6 +45,9 @@ export function checkRequest(body: unknown): CheckFailure[] {
   const b = body as Partial<RequestBody>;
   if (!KINDS.includes(b.kind as never)) fail("S01-kind", `kind must be one of: ${KINDS.join(", ")}`);
   if (!nonEmpty(b.question)) fail("S02-question", "question is required");
+  if (b.summary !== undefined && !nonEmpty(b.summary)) {
+    fail("S21-summary", "summary must explain in plain language what this question addresses");
+  }
   if (!nonEmpty(b.why_now)) fail("S03-why-now", "why_now is required: say why this is being asked now");
   if (![0, 1, 2, 3].includes(b.level as number)) fail("S04-level", "level must be 0, 1, 2 or 3");
   if (!nonEmpty(b.level_reason)) fail("S05-level-reason", "level_reason is required");
