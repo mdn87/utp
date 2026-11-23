@@ -11,8 +11,8 @@
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
   "currentMilestone": "Finish first-release verification. The shared service, everyday requests, batch review, and clarification are working.",
-  "remainingSummary": "The evidence sample needs confirmation before lint fixtures. Live notification delivery needs approval. Blind comparisons are staged for phase 2.",
-  "nextChipId": "utp:lint:classify",
+  "remainingSummary": "Build request checks and warnings. The reviewer requested one page for all open questions. Notification delivery still needs a choice. Blind comparisons follow the first release.",
+  "nextChipId": "utp:lint:rules",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-23"

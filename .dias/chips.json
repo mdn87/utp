@@ -451,14 +451,14 @@
       "projectId": "utp",
       "title": "Classify the evidence used to test review quality",
       "summary": "Classify 60 cases as machine-detectable, policy or adapter behavior, or human judgment. Have the person confirm a sample of at least ten before writing fixtures.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 140,
       "prereqs": [],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T01:49:05.188Z"
+        "updatedAt": "2026-11-23T03:05:16.765Z"
       },
       "evidence": [
         {
@@ -484,6 +484,12 @@
           "at": "2026-11-23T01:49:05.188Z",
           "kind": "note",
           "message": "Verified 60 cases. Of these, 21 are machine-detectable, 23 test policy or adapter behavior, and 16 need human judgment. The revised ten-case sample awaits confirmation."
+        },
+        {
+          "entryId": "classification-sample-v2-confirmed",
+          "at": "2026-11-23T02:59:26.484Z",
+          "kind": "stage-change",
+          "message": "The reviewer confirmed all ten cases on the review page. Four can be checked from the request, three test policy or adapter behavior, and three need human judgment."
         }
       ]
     },
