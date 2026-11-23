@@ -10,9 +10,9 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Finish first-release verification. All seven everyday request kinds show the saved purpose, scope and decision content in Markdown, the terminal and the browser.",
-  "remainingSummary": "Verify how each channel presents a review and records answers. Connect the notification provider and daily report, then prove the agent integrations on real tasks.",
-  "nextChipId": "utp:adapters:answers",
+  "currentMilestone": "Finish first-release verification. Seven request kinds and the selected chat, page and terminal answer routes are implemented.",
+  "remainingSummary": "Connect the three agent platforms and prove their review and resume paths on real tasks. Wire the notification provider and daily report.",
+  "nextChipId": "utp:adapters:platforms",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-23"

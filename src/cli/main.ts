@@ -8,6 +8,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { checkDocument, checkRequest, intentFailure, reviewRequestsHash, validReviewIntent } from "../core/check.js";
+import { transcriptRoots } from "../server/transcripts.js";
 import { waiverNotes } from "../core/quality.js";
 import type { DeliveryAdapter } from "../core/delivery-adapter.js";
 import type { DecisionLogEntry, NoticeDigest } from "../core/engine.js";
@@ -47,7 +48,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             leak-check <file>... [--generic]
             report-import --inbox <directory>
 Answers     review [<review-id>] [--feedback]
-            answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
+            answer <id@revision> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--presentation <id>]]
                         [--clarify] [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
             wait <id> [--timeout <seconds>] [--authority-file <decision.json>]
 Execution   claim-default <id>
@@ -81,6 +82,7 @@ const OPTIONS = {
   file: { type: "string" },
   intent: { type: "string" },
   channel: { type: "string" },
+  presentation: { type: "string" },
   option: { type: "string" },
   "from-chat": { type: "boolean" },
   "quote-file": { type: "string" },
@@ -247,7 +249,9 @@ async function main(argv: string[]): Promise<number> {
     case "serve": {
       const port = flags.port ? Number(flags.port) : DEFAULT_PORT;
       const adapter = await deliveryAdapter();
+      const sources = process.env.UTP_TRANSCRIPT_SOURCES ?? path.join(dataDir, "transcript-sources.json");
       const svc = await startServer({ dataDir, host: flags.host, port, reviewOrigin: flags["review-origin"],
+        transcriptRoots: process.env.UTP_TRANSCRIPT_SOURCES || existsSync(sources) ? transcriptRoots(readJson(sources, "transcript roots")) : undefined,
         reviewInboxSocket: process.env.UTP_REVIEW_INBOX_SOCKET,
         notifications: adapter.sendReview ? { send: adapter.sendReview } : undefined,
         inboxDir: process.env.UTP_REPORT_INBOX, formatInboxItem: adapter.formatInboxItem,
@@ -390,7 +394,14 @@ async function main(argv: string[]): Promise<number> {
         if (!validReviewIntent(args.intent)) return out({ code: EXIT.CHECK_FAILED, failures: [intentFailure] });
       }
       const r = await call("flush", args, { project, opId });
-      if (r.code !== EXIT.OK || !r.review_id || flags.json) return out(r);
+      if (r.code !== EXIT.OK || !r.review_id) return out(r);
+      if (r.route === "review-page") {
+        const page = await call("review-page.prepare", { review: r.review_id }, { project });
+        if (page.code !== EXIT.OK) return out({ ...page, review_id: r.review_id,
+          message: `The batch was prepared. Run utp page ${r.review_id} to obtain its link. ${page.message ?? ""}` });
+        return out({ ...r, url: page.url }, `Open this review page to answer the batch in one save.\n${String(page.url)}`);
+      }
+      if (flags.json) return out(r);
       if (r.digest === true) return out(r, "These notices are queued for the morning report.");
       const shown = await call("show", { id: r.review_id }, { project });
       const review = shown.review as ReviewView;
@@ -502,8 +513,9 @@ async function main(argv: string[]): Promise<number> {
       if (flags.option) args.value = flags.option;
       if (flags["from-chat"]) {
         args.channel = "conversation";
-        args.quote = readFileSync(need(flags["quote-file"], "--quote-file with the person's words"), "utf8").trim();
+        args.quote = readFileSync(need(flags["quote-file"], "--quote-file with the person's words"), "utf8");
       }
+      if (flags.presentation) args.presentation = flags.presentation;
       if (flags.addressed) args.addressed = true;
       if (flags.withdraw) args.withdraw = true;
       if (flags.clarify) args.clarify = true;

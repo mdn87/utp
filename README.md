@@ -51,7 +51,7 @@ utp connect http://homeserver:7340 < token.txt
 utp init
 utp new choose --file question.json   # fill it in, then:
 utp ask question.json
-utp flush --intent context.json   # prints the review as Markdown using the context below
+utp flush --intent context.json   # shows chat cards or prepares a batch review link
 utp review         # the person answers in their own terminal
 utp wait <request-id>
 ```
@@ -75,8 +75,10 @@ cards. UTP checks that the queued cards match the file in order. Markdown,
 the terminal, and the browser show this context when you reopen the review.
 Reviews saved without authored context say so.
 
-For a batch with previews, use `utp page <review-id>` after flushing and open
-the private link. The page lets you save the batch together and leave optional
+One or two questions appear as chat cards. Three or more questions open on
+one private review page with one save. Notices do not count toward the cutoff.
+After flushing, `utp page <review-id>` also prepares a link for a smaller
+review with previews. The page lets you save the batch together and leave optional
 feedback. Use `utp review --feedback` for the same ratings in your terminal.
 `utp show <id> --json` includes the presentation and answer times. Interactive
 terminal answers include elapsed time per card. A review page records one
@@ -87,6 +89,40 @@ Each card opens with what the question addresses. In the terminal, type
 **Ask for clarification**. You can send a note about what needs explaining.
 The question stays open, and the agent sees your request for clarification
 when it checks the review.
+
+### Recording a chat reply
+
+Show the Markdown from `utp flush` in the conversation. Then run the printed
+`utp presented` command. UTP records which revisions appeared. Opening the
+browser page or displaying a terminal review records its own presentation.
+The presentation gains an acknowledgement when the person answers or asks
+for clarification. Creating a page link leaves the cards queued.
+
+Use the native session UUID as `UTP_SESSION` throughout the interaction.
+Save the person's complete turn in `reply.txt` and record it with the displayed revision.
+
+```sh
+utp answer <request-id@revision> --from-chat --presentation <presentation-id> --quote-file reply.txt
+```
+
+The service checks the visible review and the later person-typed reply in
+the same conversation. The reply can name a card and option, as in
+`A: b`. When reviews overlap, use the full request ID and revision.
+A single, freshly presented approval can take a bare `yes`. A question
+or uncertain reply keeps the decision open. For a limited approval, put
+the permitted entries in the option's scope as a comma-separated list of
+identifiers. UTP records the subset the person names. Repeat the recorded
+scope back to the person. A wider request needs a revised card.
+
+The service operator can register native transcript directories in
+`transcript-sources.json` in the service data directory, or point
+`UTP_TRANSCRIPT_SOURCES` at that configuration file. Each key is the machine
+name on its UTP token. Its `codex` entry points to that machine's native
+`sessions` directory and its `claude` entry to its native `projects`
+directory. Use absolute directories the service can read. The verifier
+reads the native session on demand and stores the matched quote and turn
+reference with the decision. Antigravity and machines without a readable
+source use the person's terminal or review page for consequential approvals.
 
 ### Checking a draft
 

@@ -43,7 +43,9 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     if (b.kind !== "notice") parts.push("<h3>What this question addresses</h3>");
     parts.push(notice(b.summary ?? b.why_now));
     if (b.summary && b.summary !== b.why_now) parts.push("<h3>Why now</h3>", notice(b.why_now));
-    if (item.clarification) parts.push('<p role="status">Clarification requested. The agent will see it when it checks this question.</p>');
+    if (item.clarification) parts.push(item.clarification.outcome === "unsure"
+      ? '<p role="status">Confirm the current choice before the agent continues.</p>'
+      : '<p role="status">Clarification requested. The agent will see it when it checks this question.</p>');
     for (const dependency of dependencyLabels(b, review.items)) parts.push(notice(`Depends on ${dependency}`));
     if (Object.keys(b.glossary ?? {}).length) parts.push("<dl>", ...Object.entries(b.glossary ?? {}).map(([term, meaning]) =>
       `<dt>${escapeText(term)}</dt><dd>${escapeText(meaning)}</dd>`), "</dl>");

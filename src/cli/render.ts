@@ -71,7 +71,8 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
   if (b.kind !== "notice") out.push("**What this question addresses**");
   out.push(b.summary ?? b.why_now, "");
   if (b.summary && b.summary !== b.why_now) out.push("**Why now**", b.why_now, "");
-  if (v.clarification) out.push("The reviewer asked for a clearer question or choices.", "");
+  if (v.clarification) out.push(v.clarification.outcome === "unsure" ? "Confirm the current choice before the agent continues."
+    : "The reviewer asked for a clearer question or choices.", "");
   for (const dependency of dependencyLabels(b, review?.items)) out.push(`Depends on ${dependency}`, "");
   const terms = Object.entries(b.glossary ?? {});
   if (terms.length) out.push("Terms on this card:", "", ...terms.map(([t, d]) => `- **${t}**: ${d}`), "");
@@ -131,6 +132,7 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
 }
 
 export function answerValue(a: AnswerRecord, body?: RequestBody): string {
+  if (a.authorization) return `${a.authorization.action} ${a.authorization.target} · scope ${a.authorization.scope}`;
   const items = Object.entries(a.items ?? {}).map(([id, value]) =>
     `${id} ${value.replaceAll("_", " ")}${a.details?.[id] ? ` (${a.details[id]})` : ""}`).join(", ");
   if (a.disposition) return a.disposition.replace("_", " ");

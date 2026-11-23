@@ -10,6 +10,8 @@
 
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { reviewMarkdown, type ReviewView } from "../cli/render.js";
+import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent } from "./check.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
@@ -46,6 +48,8 @@ export interface Rev {
   asked_at: string;
   presented_at?: string;
   answer?: AnswerRecord;
+  reply_seq?: number;
+  reply_presentation?: string;
   clarification?: ClarificationRequest;
   answer_count: number;
   grants: string[];
@@ -73,7 +77,8 @@ export interface Review {
   status: "open" | "prepared";
   items: string[];
   intent?: ReviewIntent;
-  presentations: { id: string; channel: string; at: string }[];
+  presentations: { id: string; channel: string; at: string; actor?: Actor; items?: string[];
+    displayed?: string[]; turn?: string; verified?: Verified; seq: number; other_open?: boolean; acknowledged_at?: string }[];
   page_response_ms?: number;
   delivery?: { questions: number; state: "pending" | "sent" | "resolved" };
   digest?: { at: string; recorded: boolean };
@@ -248,8 +253,9 @@ function eligibleDefault(body: RequestBody): { option: string; authorization: Au
   return authorization ? { option: declared.option, authorization } : undefined;
 }
 
-function contradictsDefault(answer: AnswerRecord | undefined, option: string): boolean {
-  return !!answer && !answer.disposition && answer.value !== option;
+function contradictsDefault(answer: AnswerRecord | undefined, grant: Grant): boolean {
+  return !!answer && !answer.disposition && (answer.value !== grant.option ||
+    (!!answer.authorization && !sameAuthorization(answer.authorization, grant.base_authorization ?? grant.authorization)));
 }
 
 export class Engine {
@@ -322,11 +328,20 @@ export class Engine {
   }
 
   /** A browser presentation can save its whole batch in one event. */
-  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor, pageResponseMs: number, opId?: string): OpResult {
+  browserPresentation(reviewId: string, presentationOp: string): string | undefined {
+    const event = this.store.findOp(presentationOp);
+    return event?.type === "review.presented" && event.data.review_id === reviewId && event.data.channel === "review-page"
+      ? event.data.presentation_id as string : undefined;
+  }
+
+  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor, pageResponseMs: number, opId?: string,
+    presentationOp?: string): OpResult {
     this.sweep();
     const review = this.reviews.get(reviewId);
     if (!review || review.status !== "prepared") return notFound(reviewId);
     const at = this.now().toISOString();
+    const receipt = presentationOp && this.browserPresentation(reviewId, presentationOp);
+    if (presentationOp && !receipt) return { code: EXIT.NOT_ALLOWED, message: "Reopen the page before saving." };
     const answers: RecordedBrowserAnswer[] = [];
     try {
       for (const input of inputs) {
@@ -337,7 +352,9 @@ export class Engine {
             || (rev.status !== "presented" && !usedDefault) || rev.body.kind === "notice") {
           return { code: EXIT.REVOKED, message: "a displayed request changed; reopen the review before saving" };
         }
-        answers.push({ id: rev.id, revision: rev.revision, answer: this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true) });
+        const answer = this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true);
+        if (receipt) answer.presentation_id = receipt;
+        answers.push({ id: rev.id, revision: rev.revision, answer });
       }
     } catch (error) {
       if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
@@ -372,7 +389,7 @@ export class Engine {
     return this.commit("project.relink", "project.archived", actor, { from }, result, opId, { archives });
   }
 
-  run(op: string, args: Args, actor: Actor, opId?: string): OpResult {
+  run(op: string, args: Args, actor: Actor, opId?: string, turns?: ChatTurn[]): OpResult {
     try {
       if (opId) {
         const done = this.store.findOp(opId);
@@ -389,8 +406,8 @@ export class Engine {
         case "consider": return this.decide(args, actor, false);
         case "decide": return this.decide(args, actor, true, opId);
         case "flush": return this.flush(actor, opId, args);
-        case "presented": return this.presented(args, actor, opId);
-        case "answer": return this.answer(args, actor, opId);
+        case "presented": return this.presented(args, actor, opId, false, turns);
+        case "answer": return this.answer(args, actor, opId, turns);
         case "wait": return this.wait(args, actor, opId);
         case "claim-default": return this.claimDefault(args, actor, opId);
         case "resolve-late": return this.resolveLate(args, actor, opId);
@@ -526,6 +543,7 @@ export class Engine {
     }
     const questions = items.filter((k) => this.revs.get(k)?.body.kind !== "notice").length;
     const digest = questions === 0 && delivery.digest === true;
+    const route = digest ? "morning-report" : questions >= 3 ? "review-page" : "conversation";
     const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
       if (!rev.default_notice_pending || !rev.default_application) return [];
       const grant = this.mustGrant(rev.default_application.grant);
@@ -534,11 +552,11 @@ export class Engine {
     });
     return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults,
       ...(delivery.notify === true && questions ? { notify_questions: questions } : {}), ...(digest ? { digest: true } : {}) },
-      { code: EXIT.OK, review_id: review.id, items, ...(digest ? { digest: true } : {}) }, opId,
+      { code: EXIT.OK, review_id: review.id, items, route, ...(digest ? { digest: true } : {}) }, opId,
       delivery.intent ? { intent: delivery.intent } : {});
   }
 
-  private presented(a: Args, actor: Actor, opId?: string, digestDelivered = false): OpResult {
+  private presented(a: Args, actor: Actor, opId?: string, digestDelivered = false, turns?: ChatTurn[]): OpResult {
     const review = this.reviews.get(str(a, "review"));
     if (!review) return notFound(a.review);
     if (review.status !== "prepared") {
@@ -547,16 +565,35 @@ export class Engine {
     const channel = str(a, "channel");
     const at = this.now().toISOString();
     const presentation_id = newId("P", at);
-    const items = review.items.filter((k) => {
+    const available = review.items.filter((k) => {
       const r = this.revs.get(k);
-      return r !== undefined && this.isCurrentRev(r) && this.isOpen(r);
+      return r !== undefined && this.isCurrentRev(r) && (this.isOpen(r) || (r.body.kind === "notice" && r.status === "closed"));
     });
-    return this.commit("presented", "review.presented", actor, { review_id: review.id, presentation_id, channel,
+    const items = Array.isArray(a.items) ? a.items : available;
+    if (!items.length || items.some(k => typeof k !== "string" || !available.includes(k)) || new Set(items).size !== items.length) {
+      return { code: EXIT.NOT_ALLOWED, message: "The displayed cards changed. Reopen the review." };
+    }
+    const displayed = channel === "conversation" ? review.items.filter(k => {
+      const rev = this.revs.get(k)!;
+      return this.isCurrentRev(rev) && rev.status !== "cancelled";
+    }) : items;
+    let turn: string | undefined;
+    if (channel === "conversation" && turns) {
+      const view = this.show({ id: review.id }).review as ReviewView;
+      const markdown = reviewMarkdown(view).replace(/\r\n/g, "\n");
+      turn = turns.filter(t => t.role === "assistant" && t.text.includes(markdown)).at(-1)?.id;
+      if (!turn) return { code: EXIT.NOT_ALLOWED, message: "Show the rendered review in this conversation before recording its presentation." };
+      const existing = review.presentations.find(p => p.turn === turn && p.actor && sameActor(p.actor, actor));
+      if (existing) return { code: EXIT.OK, review_id: review.id, presentation_id: existing.id, items: existing.items };
+    }
+    const verified = channel === "conversation" ? (turn ? "transcript" : "none") : undefined;
+    const other_open = channel === "conversation" && this.otherChatOpen(review.id, actor);
+    return this.commit("presented", "review.presented", actor, { review_id: review.id, presentation_id, channel, items, displayed, turn, verified, other_open,
       ...(digestDelivered ? { digest_delivered: true } : {}) },
       { code: EXIT.OK, review_id: review.id, presentation_id, items }, opId);
   }
 
-  private answer(a: Args, actor: Actor, opId?: string): OpResult {
+  private answer(a: Args, actor: Actor, opId?: string, turns?: ChatTurn[]): OpResult {
     const rev = this.resolve(str(a, "id"));
     if (!rev) return notFound(a.id);
     const req = this.reqOf(rev);
@@ -570,6 +607,18 @@ export class Engine {
     }
     if (rev.body.kind === "notice") return { code: EXIT.NOT_ALLOWED, message: "notices need no answer" };
     const ref = { id: rev.id, revision: rev.revision };
+    let chat: Partial<AnswerRecord> | undefined;
+    if (a.channel === "conversation" && (a.quote !== undefined || rev.body.level === 3 || a.presentation !== undefined)) {
+      const check = this.chatReply(rev, a, actor, turns, opId);
+      if ("code" in check) return check;
+      chat = check;
+      a = { id: rev.key, channel: "conversation", value: chat.value ?? undefined, custom: chat.custom };
+    }
+    const receiptId = optStr(a, "presentation");
+    if (receiptId && !chat && !this.reviews.get(rev.review_id)?.presentations.some(p => p.id === receiptId
+        && p.channel === a.channel && p.actor && sameActor(p.actor, actor) && (p.items?.includes(rev.key) ?? true))) {
+      return { code: EXIT.NOT_ALLOWED, message: "The answer does not match the displayed card." };
+    }
     if (a.clarify === true) {
       if (st !== "presented" && st !== "default_claimed") {
         return { code: EXIT.NOT_ALLOWED, message: "ask for clarification while the request is open for an answer" };
@@ -580,7 +629,7 @@ export class Engine {
         return { code: EXIT.OK, ...ref, clarification: rev.clarification };
       }
       const clarification = { at, channel, ...(note ? { note } : {}) };
-      return this.commit("answer", "request.clarification-requested", actor, { ...ref, clarification },
+      return this.commit("answer", "request.clarification-requested", actor, { ...ref, clarification, presentation_id: receiptId },
         { code: EXIT.OK, ...ref, clarification }, opId);
     }
     if (a.withdraw === true) {
@@ -594,12 +643,103 @@ export class Engine {
       return this.commit("answer", "request.hidden", actor, { ...ref, until: hide }, { code: EXIT.OK, ...ref, hidden_until: hide }, opId);
     }
     const answer = this.answerRecord(rev, a, actor, at);
+    if (chat) Object.assign(answer, chat);
+    else if (receiptId) answer.presentation_id = receiptId;
     const afterEffect = st === "executing" || st === "applied" || st === "outcome_unknown";
     const result: OpResult = { code: EXIT.OK, ...ref, answer };
     if (afterEffect) {
       result.message = "recorded as the current answer; it can't stop the effect already under way, and it governs everything after it";
     }
     return this.commit("answer", "answer.recorded", actor, { ...ref, answer, after_effect: afterEffect }, result, opId);
+  }
+
+  private chatReply(rev: Rev, args: Args, actor: Actor, turns: ChatTurn[] | undefined, opId?: string): Partial<AnswerRecord> | OpResult {
+    const fallback = { code: EXIT.PROVENANCE, message: `Open utp review ${rev.review_id} in your own terminal or use the review page to confirm this answer.` };
+    let quote = optStr(args, "quote")?.replace(/\r\n/g, "\n");
+    const review = this.reviews.get(rev.review_id)!;
+    const receipt = review.presentations.filter(p => p.items?.includes(rev.key)).at(-1);
+    if (!quote || !receipt || receipt.channel !== "conversation" || !receipt.actor || !sameActor(receipt.actor, actor)
+        || (args.presentation !== undefined && args.presentation !== receipt.id)) return fallback;
+    if (args.id !== rev.key && args.presentation !== receipt.id) {
+      return { code: EXIT.NOT_ALLOWED, message: "Name the displayed request ID and revision, or its presentation ID." };
+    }
+    if ((rev.reply_seq ?? 0) > receipt.seq && rev.reply_presentation !== receipt.id) {
+      return { code: EXIT.NOT_ALLOWED, message: "This card received another response. Show its current state before recording a new chat reply." };
+    }
+    const refs = receipt.displayed ?? receipt.items!;
+    const cards = refs.map(k => this.revs.get(k)!);
+    const index = refs.indexOf(rev.key);
+    if (index < 0) return fallback;
+    const otherOpen = receipt.other_open === true || this.otherChatOpen(review.id, actor);
+    let source: ChatTurn | undefined;
+    let fresh = false;
+    let corrected = false;
+    if (receipt.turn || turns) {
+      const shown = turns?.findIndex(t => t.id === receipt.turn) ?? -1;
+      if (shown < 0 || !turns) return fallback;
+      const later = turns.slice(shown + 1);
+      const newer = later.findIndex(t => t.role === "assistant" && t.text.includes("## Review " + review.id + ":"));
+      const window = newer < 0 ? later : later.slice(0, newer);
+      const matches = window.filter(t => t.role === "user" && (t.text === quote || t.text + "\n" === quote));
+      if (matches.length !== 1) return { code: EXIT.PROVENANCE, message: "Quote one complete person-typed turn after this presentation." };
+      source = matches[0]!;
+      quote = source.text;
+      const pos = later.indexOf(source);
+      fresh = pos === 0;
+      corrected = !!laterCorrection(later.slice(pos + 1), cards, index, review.id);
+      const previous = rev.answer?.source_turn;
+      if (previous && later.findIndex(t => t.id === previous) > pos) return fallback;
+    }
+    const reply = interpretChat(cards, index, quote, fresh && cards.filter(c => c.body.kind !== "notice").length === 1, otherOpen);
+    if (reply.elsewhere) return { code: EXIT.NOT_ALLOWED, message: "That reply addresses a different card." };
+    const followup = corrected ? "unsure" : reply.followup;
+    const consequential = rev.body.level === 3 && (rev.body.kind === "approve" || rev.body.options?.some(o => o.authorization));
+    const responseOnly = (reply.value && rev.body.options?.some(o => o.id === reply.value && !o.authorization))
+      || (followup === "needs_clarification" && /\?\s*$/.test(quote));
+    if (!source && ((consequential && !responseOnly) || (rev.answer && strongProvenance(rev.answer)))) return fallback;
+    if (followup) {
+      const clarification = { at: this.now().toISOString(), channel: "conversation", note: quote, outcome: followup };
+      const message = followup === "unsure" ? "Confirm which card and option you mean." : "Clarify the question or offer a revised scope.";
+      return this.commit("answer", "request.clarification-requested", actor, { id: rev.id, revision: rev.revision,
+        clarification, chat_reply: true, presentation_id: receipt.id, source_turn: source?.id }, { code: EXIT.WAITING, outcome: followup, message }, opId);
+    }
+    if (args.value !== undefined && args.value !== reply.value) return { code: EXIT.NOT_ALLOWED, message: "The quoted reply does not select the supplied option." };
+    return { value: reply.value ?? null, ...(reply.custom ? { custom: reply.custom } : {}),
+      ...(reply.authorization ? { authorization: reply.authorization } : {}), quote, addressed: true,
+      verified: source ? "transcript" : "none", presentation_id: receipt.id, ...(source ? { source_turn: source.id } : {}) };
+  }
+
+  private otherChatOpen(reviewId: string, actor: Actor): boolean {
+    return [...this.reviews.values()].some(v => v.id !== reviewId && v.presentations.some(p => p.channel === "conversation"
+      && p.actor && sameActor(p.actor, actor) && p.items?.some(k => {
+        const r = this.revs.get(k)!;
+        return this.isCurrentRev(r) && r.body.kind !== "notice" && (!r.answer || !!r.clarification) && this.isOpen(r);
+      })));
+  }
+
+  /** Recheck a still actionable chat answer before issuing or using its grant. */
+  async refreshChat(ref: unknown, read: (actor: Actor) => Promise<ChatTurn[] | undefined>): Promise<OpResult | undefined> {
+    if (typeof ref !== "string") return;
+    const g = this.grants.get(ref);
+    const rev = g ? this.revOf(g) : this.resolve(ref);
+    const answer = rev?.answer;
+    if (!rev || !answer?.source_turn || !answer.quote || !["answered", "granted"].includes(rev.status)) return;
+    const actor = { machine: answer.machine, session: answer.session };
+    const turns = await read(actor);
+    if (rev.answer !== answer || !this.isCurrentRev(rev) || !["answered", "granted"].includes(rev.status)) return;
+    const pos = turns?.findIndex(t => t.id === answer.source_turn) ?? -1;
+    const receipt = this.reviews.get(rev.review_id)?.presentations.find(p => p.id === answer.presentation_id);
+    const refs = receipt?.displayed;
+    const unavailable = !turns || pos < 0 || !refs || !turns.some(t => t.id === receipt.turn);
+    if (unavailable && (rev.body.level !== 3 || !this.authorizationFor(rev, answer))) return;
+    const correction = unavailable ? undefined : laterCorrection(turns.slice(pos + 1), refs.map(k => this.revs.get(k)!), refs.indexOf(rev.key), rev.review_id);
+    if (!unavailable && !correction) return;
+    const note = unavailable ? "The conversation is unavailable for a final check. Confirm the current choice on the review page or in your own terminal."
+      : "A later reply may change this choice. Confirm the current answer.";
+    const clarification = { at: this.now().toISOString(), channel: "conversation", note, outcome: "unsure" };
+    this.commit("chat.recheck", "request.clarification-requested", actor, { id: rev.id, revision: rev.revision, clarification,
+      chat_reply: true, retain_answer: unavailable, presentation_id: answer.presentation_id, source_turn: correction?.id }, { code: EXIT.NEEDS_CLARIFICATION });
+    if (unavailable) return { code: EXIT.PROVENANCE, message: note };
   }
 
   private wait(a: Args, actor: Actor, opId?: string): OpResult {
@@ -722,6 +862,7 @@ export class Engine {
       issued_at: at,
       lease_until: new Date(Date.parse(at) + GRANT_LEASE_MS).toISOString(),
       authorization: { ...source.authorization, ...(!redoBasis && rev.remaining_scope ? { scope: rev.remaining_scope } : {}) },
+      ...(rev.answer?.authorization || (!redoBasis && rev.remaining_scope) ? { base_authorization: source.authorization } : {}),
       status: "active",
     };
     const op = redoBasis ? "resolve-late" : grant.from_default ? "claim-default" : "wait";
@@ -797,7 +938,7 @@ export class Engine {
     const mismatch = (["action", "target", "scope"] as const)
       .filter((f) => normalize(String(evidence[f])) !== normalize(g.authorization[f]));
     const appliedBasis = g.from_default && !mismatch.length ? this.appliedDefaultBasis(rev, a.applied_basis) : undefined;
-    const conflict = appliedBasis && contradictsDefault(rev.answer, g.option);
+    const conflict = appliedBasis && contradictsDefault(rev.answer, g);
     const result: OpResult = {
       code: conflict ? EXIT.LATE_CONFLICT : EXIT.OK,
       grant: g.id, status: mismatch.length ? "outcome_unknown" : conflict ? "late_conflict" : "applied", mismatch,
@@ -833,6 +974,9 @@ export class Engine {
       if (missing.length) throw new UsageError(`the recovery basis needs a fingerprint for ${missing.join(", ")}`);
       const remaining = str(a, "remaining_scope");
       const started = this.authorizationAtGrant(rev, g);
+      if (!unanticipated && rev.answer?.authorization && !withinListedScope(remaining, rev.answer.authorization.scope)) {
+        return { code: EXIT.NOT_ALLOWED, message: "The remaining entries exceed the person's limited approval. Confirm the remaining scope before continuing." };
+      }
       if (!unanticipated && current && !sameAuthorization(started, current)
           && (!sameTarget(started, current) || remaining !== current.scope)) {
         return {
@@ -847,7 +991,7 @@ export class Engine {
     let status = this.reconcileTarget(rev, outcome, unanticipated);
     if (g.from_default && outcome === "completed") {
       data.applied_default_basis = this.appliedDefaultBasis(rev, a.applied_basis);
-      if (contradictsDefault(rev.answer, g.option)) status = "late_conflict";
+      if (contradictsDefault(rev.answer, g)) status = "late_conflict";
     }
     return this.commit("reconcile", "grant.reconciled", actor, data, { code: EXIT.OK, grant: g.id, outcome, status }, opId);
   }
@@ -1094,8 +1238,12 @@ export class Engine {
           const rev = this.revs.get(key(notice.request_id, notice.revision));
           if (rev && (rev.status === "late_conflict") === notice.conflict) rev.default_notice_pending = false;
         }
-        v.presentations.push({ id: d.presentation_id as string, channel: d.channel as string, at: e.at });
-        for (const k of v.items) {
+        const items = d.items as string[] | undefined;
+        const actor = e.actor?.machine && e.actor.session ? { machine: e.actor.machine, session: e.actor.session } : undefined;
+        v.presentations.push({ id: d.presentation_id as string, channel: d.channel as string, at: e.at, seq: e.seq, actor,
+          items, displayed: d.displayed as string[] | undefined, turn: d.turn as string | undefined, verified: d.verified as Verified | undefined,
+          other_open: d.other_open === true });
+        for (const k of items ?? v.items) {
           const r = this.revs.get(k);
           if (!r || !this.isCurrentRev(r) || !this.isOpen(r)) continue;
           if (r.status === "queued") {
@@ -1107,11 +1255,19 @@ export class Engine {
         break;
       }
       case "answer.recorded": {
-        this.recordAnswer(this.mustRev(d), d.answer as AnswerRecord, e.at);
+        this.recordAnswer(this.mustRev(d), d.answer as AnswerRecord, e);
         break;
       }
       case "request.clarification-requested": {
         const r = this.mustRev(d);
+        r.reply_seq = e.seq;
+        r.reply_presentation = d.presentation_id as string | undefined;
+        this.acknowledge(r, d.presentation_id, e.at);
+        if (d.chat_reply === true) {
+          if (d.retain_answer !== true) delete r.answer;
+          if (r.status === "granted") this.revoke(r);
+          if (["granted", "answered", "hidden"].includes(r.status)) this.move(r, "presented", e.at);
+        }
         if (r.status === "default_claimed") {
           this.revoke(r);
           this.move(r, "presented", e.at);
@@ -1123,12 +1279,14 @@ export class Engine {
         const review = this.reviews.get(d.review_id as string);
         if (review && typeof d.page_response_ms === "number") review.page_response_ms = d.page_response_ms;
         for (const answer of d.answers as RecordedBrowserAnswer[]) {
-          this.recordAnswer(this.mustRev(answer), answer.answer, e.at);
+          this.recordAnswer(this.mustRev(answer), answer.answer, e);
         }
         break;
       }
       case "answer.withdrawn": {
         const r = this.mustRev(d);
+        r.reply_seq = e.seq;
+        r.reply_presentation = undefined;
         r.answer = undefined;
         const st = this.effective(r, e.at);
         if (st === "granted") this.revoke(r);
@@ -1254,7 +1412,11 @@ export class Engine {
     return result;
   }
 
-  private recordAnswer(rev: Rev, answer: AnswerRecord, at: string): void {
+  private recordAnswer(rev: Rev, answer: AnswerRecord, event: StoredEvent): void {
+    const at = event.at;
+    rev.reply_seq = event.seq;
+    rev.reply_presentation = answer.presentation_id;
+    this.acknowledge(rev, answer.presentation_id, at);
     rev.answer = answer;
     delete rev.clarification;
     rev.answer_count += 1;
@@ -1262,6 +1424,11 @@ export class Engine {
     if (state === "granted" || state === "default_claimed") this.revoke(rev);
     if (["granted", "default_claimed", "presented", "hidden", "answered"].includes(state)) this.move(rev, "answered", at);
     this.checkLateConflict(rev, at);
+  }
+
+  private acknowledge(rev: Rev, presentation: unknown, at: string): void {
+    const receipt = this.reviews.get(rev.review_id)?.presentations.find(p => p.id === presentation);
+    if (receipt) receipt.acknowledged_at ??= at;
   }
 
   /** Records lease and expiry deadlines that passed since the last operation. */
@@ -1336,7 +1503,10 @@ export class Engine {
   }
 
   private authorizationAtGrant(rev: Rev, grant: Grant): Authorization {
-    return rev.body.options?.find((option) => option.id === grant.option)?.authorization ?? grant.authorization;
+    if (grant.base_authorization) return grant.base_authorization;
+    // Older partial-recovery grants stored only the remaining scope.
+    if (rev.remaining_scope && !rev.answer?.authorization) return rev.body.options?.find(o => o.id === grant.option)?.authorization ?? grant.authorization;
+    return grant.authorization;
   }
 
   private appliedDefaultBasis(rev: Rev, supplied: unknown): Basis {
@@ -1357,12 +1527,12 @@ export class Engine {
 
   private checkLateConflict(rev: Rev, at: string): void {
     if (!rev.default_application || rev.default_resolution) return;
-    const option = this.mustGrant(rev.default_application.grant).option;
-    if (rev.status === "applied" && contradictsDefault(rev.answer, option)) {
+    const grant = this.mustGrant(rev.default_application.grant);
+    if (rev.status === "applied" && contradictsDefault(rev.answer, grant)) {
       rev.flags.push("late answer conflicts with the applied default");
       rev.default_notice_pending = true;
       this.move(rev, "late_conflict", at);
-    } else if (rev.status === "late_conflict" && rev.answer?.value === option) {
+    } else if (rev.status === "late_conflict" && rev.answer?.value === grant.option && !contradictsDefault(rev.answer, grant)) {
       this.move(rev, "applied", at);
     }
   }
@@ -1498,7 +1668,7 @@ export class Engine {
 
   private authorizationFor(r: Rev, a: AnswerRecord): Authorization | undefined {
     if (a.disposition || a.value === null) return undefined;
-    return r.body.options?.find((o) => o.id === a.value)?.authorization;
+    return a.authorization ?? r.body.options?.find((o) => o.id === a.value)?.authorization;
   }
 
   private replaced(rev: Rev, req: Req): OpResult {

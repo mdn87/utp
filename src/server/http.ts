@@ -13,6 +13,7 @@ import { ReviewPages } from "./review-page.js";
 import { checkReviewerSocket, handleReviewerInbox } from "./reviewer-inbox.js";
 import { ReviewDeliveries, type NotificationOptions } from "./review-delivery.js";
 import { TokenBook, tokenFile } from "./tokens.js";
+import { readNativeTurns, type TranscriptRoots } from "./transcripts.js";
 
 export const DEFAULT_PORT = 7340;
 const MAX_BODY = 1024 * 1024;
@@ -23,6 +24,7 @@ export interface ServeOptions {
   port?: number;
   reviewOrigin?: string;
   reviewInboxSocket?: string;
+  transcriptRoots?: TranscriptRoots;
   notifications?: NotificationOptions;
   inboxDir?: string;
   formatInboxItem?: DeliveryAdapter["formatInboxItem"];
@@ -74,10 +76,12 @@ function readBody(req: http.IncomingMessage): Promise<string | undefined> {
 }
 
 async function holdWait(engine: Engine, args: Record<string, unknown>, actor: Actor, opId: string | undefined,
-  limitMs: number, recheckMs: number, gone: AbortSignal): Promise<OpResult> {
+  limitMs: number, recheckMs: number, gone: AbortSignal, sources?: TranscriptRoots): Promise<OpResult> {
   const timeoutS = Number(args.timeout_s ?? 0);
   const deadline = Date.now() + Math.min(Number.isFinite(timeoutS) && timeoutS > 0 ? timeoutS * 1000 : 0, limitMs);
   for (;;) {
+    const blocked = await engine.refreshChat(args.id, who => readNativeTurns(sources ?? {}, who));
+    if (blocked) return blocked;
     const r = engine.run("wait", args, actor, opId);
     if (r.code !== EXIT.WAITING || Date.now() >= deadline || gone.aborted) return r;
     await new Promise<void>((resolve) => {
@@ -191,12 +195,18 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       res.on("close", () => {
         if (!res.writableFinished) gone.abort();
       });
-      const r = await holdWait(engine, args, actor, opId, limitMs, recheckMs, gone.signal);
+      const r = await holdWait(engine, args, actor, opId, limitMs, recheckMs, gone.signal, opts.transcriptRoots);
       if (!gone.signal.aborted) send(res, 200, r);
       return;
     }
+    if (body.op === "begin") {
+      const blocked = await engine.refreshChat(args.grant, who => readNativeTurns(opts.transcriptRoots ?? {}, who));
+      if (blocked) { send(res, 200, blocked); return; }
+    }
+    const turns = opts.transcriptRoots && args.channel === "conversation" && (body.op === "presented" || body.op === "answer")
+      ? await readNativeTurns(opts.transcriptRoots, actor) : undefined;
     const result = engine.run(body.op, body.op === "flush"
-      ? { ...args, notify: !!opts.notifications, digest: !!opts.inboxDir || opts.reportExport === true } : args, actor, opId);
+      ? { ...args, notify: !!opts.notifications, digest: !!opts.inboxDir || opts.reportExport === true } : args, actor, opId, turns);
     if (body.op === "flush") deliveries?.kick();
     send(res, 200, result);
   }
