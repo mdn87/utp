@@ -1,0 +1,646 @@
+[
+  {
+    "id": "case-01",
+    "rule": "H04-focus",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the garden publish the planting list? Should the editor change the index? Should volunteers also reorganize the seed trays?",
+      "why_now": "Volunteers need a list before they sort the packets.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Publish the checked list",
+          "consequence": "Readers see twenty checked entries today."
+        },
+        {
+          "id": "b",
+          "label": "Hold the list",
+          "consequence": "The editor can verify the remaining entries tomorrow."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the garden publish this week's planting list?",
+      "why_now": "Volunteers need a list before they sort the packets.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Publish the checked list",
+          "consequence": "Readers see twenty checked entries today."
+        },
+        {
+          "id": "b",
+          "label": "Hold the list",
+          "consequence": "The editor can verify the remaining entries tomorrow."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "case-03",
+    "rule": "S18-accept",
+    "before": {
+      "kind": "accept",
+      "question": "Does the finished sign meet the two reading goals?",
+      "why_now": "The sign crew needs to decide whether to mount the proof.",
+      "goals": [
+        {
+          "id": "printing",
+          "goal": "Print the final sign.",
+          "coverage": "covered",
+          "evidence": []
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator decides which work to include."
+    },
+    "after": {
+      "kind": "accept",
+      "question": "Does the finished sign meet the two reading goals?",
+      "why_now": "The sign crew needs to decide whether to mount the proof.",
+      "goals": [
+        {
+          "id": "distance",
+          "goal": "Visitors can read the heading from the path.",
+          "coverage": "covered",
+          "evidence": [
+            {
+              "claim": "The heading was legible from the marked stone.",
+              "kind": "observed",
+              "source": "Garden trial sheet",
+              "date": "2026-02-06"
+            }
+          ]
+        },
+        {
+          "id": "detail",
+          "goal": "Readers can distinguish the two planting symbols.",
+          "coverage": "partly_covered",
+          "evidence": [
+            {
+              "claim": "The outline symbols differ, but the filled symbols still look alike.",
+              "kind": "observed",
+              "source": "Printed key comparison",
+              "date": "2026-02-06"
+            }
+          ]
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator decides which work to include."
+    }
+  },
+  {
+    "id": "case-04",
+    "rule": "H06-scope",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should we wait for our usual proofreader or ask the reserve reader?",
+      "why_now": "The planting chart has a printing slot this week.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Wait for the usual reader",
+          "consequence": "The slot can be held until Thursday noon."
+        },
+        {
+          "id": "b",
+          "label": "Ask the reserve reader",
+          "consequence": "The reserve reader can check the chart this afternoon."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "default": {
+        "option": "a",
+        "consequence": "Leave the chart in the queue until the usual reader returns."
+      }
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should we wait for our usual proofreader or ask the reserve reader?",
+      "why_now": "The planting chart has a printing slot this week.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Wait for the usual reader",
+          "consequence": "The slot can be held until Thursday noon."
+        },
+        {
+          "id": "b",
+          "label": "Ask the reserve reader",
+          "consequence": "The reserve reader can check the chart this afternoon."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "default": {
+        "option": "a",
+        "consequence": "The chart can wait two days. After Thursday noon it loses this week's printing slot."
+      }
+    }
+  },
+  {
+    "id": "case-08",
+    "rule": "H07-review-target",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How would you rate the wording of the draft insert?",
+      "why_now": "The wording will be printed in the next batch.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Keep the wording",
+          "consequence": "The printer will use this sentence."
+        },
+        {
+          "id": "b",
+          "label": "Ask for a rewrite",
+          "consequence": "The editor will try a shorter instruction before printing."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How would you rate the wording of the draft insert?",
+      "why_now": "The wording will be printed in the next batch.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Keep the wording",
+          "consequence": "The printer will use this sentence."
+        },
+        {
+          "id": "b",
+          "label": "Ask for a rewrite",
+          "consequence": "The editor will try a shorter instruction before printing."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "previews": [
+        {
+          "label": "Draft insert",
+          "text": "Water the roots twice during the first week."
+        }
+      ]
+    }
+  },
+  {
+    "id": "case-10",
+    "rule": "S21-summary",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Update the secondary entry?",
+      "why_now": "That is the next step in the sequence.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Update the copy",
+          "consequence": "The secondary entry will be updated."
+        },
+        {
+          "id": "b",
+          "label": "Wait one shift",
+          "consequence": "The secondary entry stays as it is."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the desk update the second copy of the index?",
+      "why_now": "The morning shift uses the second copy to find packets.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Update the copy",
+          "consequence": "Both desks will show the new shelf number."
+        },
+        {
+          "id": "b",
+          "label": "Wait one shift",
+          "consequence": "The afternoon desk will use the old shelf number today."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed.",
+      "summary": "The desk keeps its own copy of the index. Changes to the display copy reach that desk only when staff copy them across."
+    }
+  },
+  {
+    "id": "case-12",
+    "rule": "S17-handoff",
+    "before": {
+      "kind": "handoff",
+      "question": "Can the desk volunteer check the counter display?",
+      "why_now": "Only someone beside the counter can read the small display.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Folding table counter",
+          "shell": "Counter keypad",
+          "command": "Advance to the secondary counter state.",
+          "tested": false,
+          "why_person": "The display is visible only from the desk."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    },
+    "after": {
+      "kind": "handoff",
+      "question": "Can the desk volunteer check the counter display?",
+      "why_now": "Only someone beside the counter can read the small display.",
+      "steps": [
+        {
+          "id": "observe",
+          "actor": "Workshop coordinator",
+          "machine": "Folding table counter",
+          "shell": "Counter keypad",
+          "command": "Press the round button, then the right arrow.",
+          "expected_result": "The screen shows the number of packets checked out today.",
+          "tested": false,
+          "why_person": "The display is visible only from the desk."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Only the person at the workshop can make this observation."
+    }
+  },
+  {
+    "id": "case-15",
+    "rule": "S10-consequence",
+    "before": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which shelf changes should be included in this weekend's work?",
+      "why_now": "The volunteers have one morning to rearrange the room.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Move the lending shelf"
+        },
+        {
+          "id": "b",
+          "label": "Move both shelves"
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Which shelf changes should be included in this weekend's work?",
+      "why_now": "The volunteers have one morning to rearrange the room.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Move the lending shelf",
+          "consequence": "Visitors will see the lending shelf beside the door. The seed shelf stays in the back room."
+        },
+        {
+          "id": "b",
+          "label": "Move both shelves",
+          "consequence": "Visitors will find both shelves together. The team will need a second work session."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "case-16",
+    "rule": "S07-options",
+    "before": {
+      "kind": "clarify",
+      "question": "Did you mean all the labels on one shelf, or on every shelf?",
+      "why_now": "The coordinator asked to replace all the labels.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Only the lending shelf",
+          "consequence": "Staff will replace the lending labels this morning."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "clarify",
+      "question": "Did you mean all the labels on one shelf, or on every shelf?",
+      "why_now": "The coordinator asked to replace all the labels.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Only the lending shelf",
+          "consequence": "Staff will replace the lending labels this morning."
+        },
+        {
+          "id": "b",
+          "label": "Every shelf",
+          "consequence": "Staff will schedule a second shift to replace the return and seed labels as well."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "case-17",
+    "rule": "S27-readings",
+    "before": {
+      "kind": "clarify",
+      "question": "When you say combine the leaflets, do you mean bind them or mix the stacks?",
+      "why_now": "The two jobs need different supplies.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Combine the leaflets",
+          "consequence": "Staff use the first arrangement."
+        },
+        {
+          "id": "b",
+          "label": "Combine the leaflets",
+          "consequence": "Staff use the second arrangement."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    },
+    "after": {
+      "kind": "clarify",
+      "question": "When you say combine the leaflets, do you mean bind them or mix the stacks?",
+      "why_now": "The two jobs need different supplies.",
+      "options": [
+        {
+          "id": "a",
+          "label": "Bind a set for each visitor",
+          "consequence": "Each visitor takes one bound set."
+        },
+        {
+          "id": "b",
+          "label": "Mix the loose stacks",
+          "consequence": "Visitors pick individual pages from one table."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator chooses how the work should proceed."
+    }
+  },
+  {
+    "id": "case-18",
+    "rule": "S10-consequence",
+    "before": {
+      "kind": "approve",
+      "question": "May the garden publish its herb illustrations in the public catalog?",
+      "why_now": "The printer needs the release selection.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Publish the series",
+          "authorization": {
+            "action": "publish",
+            "target": "Herb illustrations",
+            "scope": "All eight illustrations"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Publish the cover illustration",
+          "consequence": "Readers will see the cover illustration only.",
+          "authorization": {
+            "action": "publish",
+            "target": "Herb illustrations",
+            "scope": "Cover illustration only"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Eight drawings and their captions appear in the proofs.",
+          "kind": "observed",
+          "source": "Proof inventory",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    },
+    "after": {
+      "kind": "approve",
+      "question": "May the garden publish its herb illustrations in the public catalog?",
+      "why_now": "The printer needs the release selection.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Publish the series",
+          "consequence": "All eight illustrations become available to anyone who gets the catalog.",
+          "authorization": {
+            "action": "publish",
+            "target": "Herb illustrations",
+            "scope": "All eight illustrations"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Publish the cover illustration",
+          "consequence": "Readers will see the cover illustration only.",
+          "authorization": {
+            "action": "publish",
+            "target": "Herb illustrations",
+            "scope": "Cover illustration only"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Eight drawings and their captions appear in the proofs.",
+          "kind": "observed",
+          "source": "Proof inventory",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    }
+  },
+  {
+    "id": "case-19",
+    "rule": "S24-approval-evidence",
+    "before": {
+      "kind": "approve",
+      "question": "May staff discard the obsolete proof sheets?",
+      "why_now": "The cabinet needs shelf space before the next print run.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Discard all obsolete sheets",
+          "consequence": "The printer loses all forty marked proofs.",
+          "authorization": {
+            "action": "discard",
+            "target": "Obsolete proof sheets",
+            "scope": "Forty marked proofs"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Discard duplicate sheets",
+          "consequence": "The printer keeps one marked copy of every page.",
+          "authorization": {
+            "action": "discard",
+            "target": "Obsolete proof sheets",
+            "scope": "Six duplicate sheets"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    },
+    "after": {
+      "kind": "approve",
+      "question": "May staff discard the obsolete proof sheets?",
+      "why_now": "The cabinet needs shelf space before the next print run.",
+      "options": [
+        {
+          "id": "whole",
+          "label": "Discard all obsolete sheets",
+          "consequence": "The printer loses all forty marked proofs.",
+          "authorization": {
+            "action": "discard",
+            "target": "Obsolete proof sheets",
+            "scope": "Forty marked proofs"
+          }
+        },
+        {
+          "id": "part",
+          "label": "Discard duplicate sheets",
+          "consequence": "The printer keeps one marked copy of every page.",
+          "authorization": {
+            "action": "discard",
+            "target": "Obsolete proof sheets",
+            "scope": "Six duplicate sheets"
+          },
+          "narrower_than": "whole"
+        },
+        {
+          "id": "wait",
+          "label": "Leave it as it is",
+          "consequence": "Staff keep using the existing arrangement for this session."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "The dry count found forty sheets in four folders, including six duplicates.",
+          "kind": "observed",
+          "source": "Cabinet tally",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "costly"
+      },
+      "level": 3,
+      "level_reason": "The coordinator controls this change."
+    }
+  }
+]

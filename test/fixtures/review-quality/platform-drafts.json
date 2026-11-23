@@ -1,0 +1,250 @@
+[
+  {
+    "id": "codex-1",
+    "platform": "Codex",
+    "brief": "seed labels",
+    "expectedRules": [],
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should we group seed packets by planting month or by garden bed?",
+      "why_now": "Volunteers need to know which headings to print on the labels for the RSL.",
+      "options": [
+        {
+          "id": "planting_month",
+          "label": "Group by planting month",
+          "consequence": "A new gardener can start with the month they plan to plant and see which packets to take."
+        },
+        {
+          "id": "garden_bed",
+          "label": "Group by garden bed",
+          "consequence": "Volunteers can collect a bed’s packets from one spot, which should speed up pickup. Nobody has timed either layout."
+        }
+      ],
+      "glossary": {
+        "RSL": "The volunteers’ name for the pickup tray."
+      },
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The choice affects both new gardeners and pickup volunteers. Switching later means regrouping the packets and changing the labels."
+    }
+  },
+  {
+    "id": "codex-2",
+    "platform": "Codex",
+    "brief": "book pickups",
+    "expectedRules": [
+      "H03-evidence"
+    ],
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the book exchange use one Saturday pickup window or let volunteers book individual times?",
+      "why_now": "The next pickup instructions need to tell volunteers when to come or how to book a time.",
+      "options": [
+        {
+          "id": "saturday_window",
+          "label": "Use one Saturday window",
+          "consequence": "Staff can announce the time once and skip individual scheduling. Volunteers need to be available during that window."
+        },
+        {
+          "id": "individual_times",
+          "label": "Let volunteers book individual times",
+          "consequence": "Volunteers can choose a time they can attend. Staff will spend time arranging and tracking each booking."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Under the previous single window, volunteers missed 12 of 50 pickups (24%).",
+          "kind": "measured",
+          "source": "Pickup tally in the book exchange desk notebook",
+          "date": "2026-02-06"
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "The coordinator can choose a different schedule for a later pickup. This choice affects volunteers’ plans and staff time for the upcoming pickup."
+    }
+  },
+  {
+    "id": "claude-1",
+    "platform": "Claude Code",
+    "brief": "seed labels",
+    "expectedRules": [
+      "H04-focus"
+    ],
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the seed exchange labels group packets by planting month or by garden bed?",
+      "why_now": "The labels are about to print, and the grouping has to be settled before they do.",
+      "options": [
+        {
+          "id": "by_month",
+          "label": "Group by planting month",
+          "consequence": "Helps new gardeners. Pickup is expected to be slower than with bed grouping, though nobody has timed either layout."
+        },
+        {
+          "id": "by_bed",
+          "label": "Group by garden bed",
+          "consequence": "Expected to speed up pickup, though nobody has timed either layout. New gardeners lose the help that month grouping gives them."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "It's a trade-off between helping new gardeners and moving pickup along, there's no timing to settle it, and the choice is easy to undo.",
+      "glossary": {
+        "RSL": "The volunteers' name for the pickup tray."
+      },
+      "recommendation": {
+        "option": "by_month",
+        "because": "It's a light lean. Bed grouping's one advantage is pickup speed, and nobody has timed it, so we don't know how big that advantage is. The help to new gardeners doesn't depend on a number we don't have.",
+        "preserves": "The choice stays easy to undo. If pickup drags, the labels can be reprinted grouped by bed.",
+        "bolder_alternative": "Group by planting month and print the garden bed on each label as well, aiming for both benefits. It's untested, and I don't know whether the label has room."
+      },
+      "notes": "Nobody has timed either layout, so the pickup-speed gain from bed grouping is a guess for now. If there's time before the print, timing a few pickups each way would settle it. Volunteers call the pickup tray the RSL, so that's the word you'll hear if you ask them how pickup goes."
+    }
+  },
+  {
+    "id": "claude-2",
+    "platform": "Claude Code",
+    "brief": "book pickups",
+    "expectedRules": [
+      "H03-evidence",
+      "H04-focus"
+    ],
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should book exchange pickups run as one Saturday window, or should volunteers book individual times?",
+      "why_now": "Pickup arrangements can't be announced until this is settled. I wasn't given a deadline.",
+      "options": [
+        {
+          "id": "saturday_window",
+          "label": "One Saturday pickup window",
+          "consequence": "No booking work for staff. Under the previous single window, 12 of 50 pickups were missed (24%). I can't tell from that count whether a Saturday window would do better."
+        },
+        {
+          "id": "individual_bookings",
+          "label": "Volunteers book individual times",
+          "consequence": "Every booking takes staff time, and nobody has measured how much. It may cut missed pickups, but there's no count for booked times to compare against."
+        }
+      ],
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "One dated count argues against the single window, the staff cost of bookings hasn't been sized, and either choice is easy to switch.",
+      "recommendation": {
+        "option": "individual_bookings",
+        "because": "The only count we have shows the single window missing about one pickup in four. Bookings cost staff time, but the amount is unknown and the change is easy to undo, so it's worth trying and counting. Nothing yet shows that booked times reduce misses.",
+        "preserves": "The single window stays available as the fallback. Keeping the same notebook tally under bookings gives a like-for-like comparison with the 12 of 50.",
+        "bolder_alternative": "Offer both: a Saturday window as the default, plus booked times for anyone who can't make it. It covers more people but means running two systems, and it's untested."
+      },
+      "evidence": [
+        {
+          "claim": "12 of 50 pickups were missed under the previous single pickup window (24%).",
+          "kind": "tally",
+          "source": "Desk notebook",
+          "date": "2026-02-06"
+        }
+      ],
+      "notes": "The tally is a single count, and I only have the number, not the reasons pickups were missed. If you go with bookings, logging staff minutes alongside missed pickups would show both sides of the trade."
+    }
+  },
+  {
+    "id": "antigravity-1",
+    "platform": "Antigravity",
+    "brief": "seed labels",
+    "expectedRules": [
+      "H04-focus"
+    ],
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "How should we group seed packets on the labels and in the RSL (pickup tray) for this seed exchange?",
+      "summary": "The seed exchange is ready to organize packets for the RSL (pickup tray), and grouping by planting schedule versus garden bed serves different volunteer needs.",
+      "why_now": "Labels are about to be printed, and the label order and headings must match how packets will be arranged in the RSL.",
+      "glossary": {
+        "RSL": "The pickup tray volunteers use to organize and hand out seed packets."
+      },
+      "options": [
+        {
+          "id": "planting-month",
+          "label": "Group packets by planting month",
+          "consequence": "Organizes labels and the RSL by when seeds go into the ground, which helps new gardeners choose packets in season, though pickup at the tray may be slower."
+        },
+        {
+          "id": "garden-bed",
+          "label": "Group packets by garden bed",
+          "consequence": "Organizes labels and the RSL by destination bed, which speeds pickup for volunteers pulling packets for specific beds, though new gardeners get less guidance on planting times."
+        }
+      ],
+      "recommendation": {
+        "option": "planting-month",
+        "because": "Helping new gardeners pick the right seeds prevents planting mistakes, while the speed advantage of grouping by garden bed has not been timed yet.",
+        "preserves": "Accessible guidance for first-time gardeners while keeping the RSL layout easy to change before the next seed printing run.",
+        "bolder_alternative": "Print both planting month and garden bed on every label and time pickup speed during this exchange before standardizing the RSL layout."
+      },
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Choosing between newcomer usability and pickup speed sets the volunteer handoff workflow for this printing batch, and neither layout has timing data to settle the tradeoff automatically.",
+      "notes": "Nobody has timed either RSL layout yet; recording how long pickups take during this exchange will give concrete data for the next batch of labels."
+    }
+  },
+  {
+    "id": "antigravity-2",
+    "platform": "Antigravity",
+    "brief": "book pickups",
+    "expectedRules": [
+      "H03-evidence",
+      "H04-focus"
+    ],
+    "body": {
+      "kind": "choose",
+      "category": "approach",
+      "question": "Should the book exchange use one Saturday pickup window or let volunteers book individual pickup times?",
+      "summary": "Nearly a quarter of scheduled pickups were missed under the previous single Saturday window, so the exchange must weigh volunteer attendance against staff scheduling effort.",
+      "why_now": "Pickup scheduling and staffing for the upcoming book exchange cannot open until the booking method is set.",
+      "options": [
+        {
+          "id": "single-saturday-window",
+          "label": "Use one Saturday pickup window",
+          "consequence": "Concentrates staffing into one fixed block with no appointment coordination, but risks repeating the 12 of 50 missed pickups seen in the previous window."
+        },
+        {
+          "id": "individual-bookings",
+          "label": "Let volunteers book individual pickup times",
+          "consequence": "Lets volunteers choose a time that fits their schedule to cut down on missed pickups, at the cost of additional staff time to manage and cover individual appointments."
+        }
+      ],
+      "evidence": [
+        {
+          "claim": "Twelve out of fifty pickups were missed under the previous single Saturday pickup window.",
+          "kind": "measurement",
+          "source": "Desk notebook tally",
+          "date": "2026-02-06"
+        }
+      ],
+      "recommendation": {
+        "option": "individual-bookings",
+        "because": "Twelve missed pickups out of fifty left nearly a quarter of books uncollected under the single window, which creates follow-up work that offsets the time saved by a single block.",
+        "preserves": "Reliable book handoff for volunteers who cannot make a single fixed Saturday window, while allowing the exchange to revert for the next cycle if staff load is too high.",
+        "bolder_alternative": "Keep the primary Saturday pickup window for most volunteers and require individual bookings only for those who flag a schedule conflict in advance."
+      },
+      "stakes": {
+        "reversibility": "easy"
+      },
+      "level": 2,
+      "level_reason": "Trading staff time against the 12-of-50 missed-pickup rate directly affects staff workload and volunteer schedule expectations for this cycle."
+    }
+  }
+]
