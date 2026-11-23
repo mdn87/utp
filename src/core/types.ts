@@ -71,7 +71,15 @@ export interface DefaultNotice {
   conflict: boolean;
 }
 
+export interface ReviewIntent {
+  asked: string;
+  doing: string;
+  scope_delta: "none" | Record<"narrowed" | "deferred" | "added", { item: string; reason: string }[]>;
+}
+
 export interface RequestBody {
+  /** Optional author-supplied label used by other cards in a review draft. */
+  id?: string;
   kind: Kind;
   category?: string;
   question: string;

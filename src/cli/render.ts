@@ -1,6 +1,7 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
-import type { AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody } from "../core/types.js";
+import type { AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
+import { itemPrompts } from "../core/items.js";
 import { waiverNotes } from "../core/quality.js";
 
 export interface RequestView {
@@ -12,30 +13,75 @@ export interface RequestView {
   answer: AnswerRecord | null;
   clarification?: ClarificationRequest;
   flags: string[];
+  review_id?: string;
 }
 
 export interface ReviewView {
   id: string;
   items: RequestView[];
+  intent?: ReviewIntent;
   default_notices?: DefaultNotice[];
 }
 
 const UNDO: Record<string, string> = { easy: "easy to undo", costly: "costly to undo", one_way: "can't be undone" };
 const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
+export function reviewContext(intent?: ReviewIntent): [string, string][] {
+  if (!intent) return [["Review context", "This review was saved without a stated purpose or scope."]];
+  const fields: [string, string][] = [["What you asked for", intent.asked], ["What the agent is doing", intent.doing]];
+  const scope = intent.scope_delta;
+  const changes: [string, string][] = [];
+  if (scope !== "none") {
+    for (const [kind, label] of [["narrowed", "Narrowed scope"], ["deferred", "Deferred work"], ["added", "Added work"]] as const) {
+      for (const change of scope[kind]) changes.push([label, `${change.item} — ${change.reason}`]);
+    }
+  }
+  return fields.concat(changes.length ? changes : [["Scope changes", "None."]]);
+}
+
+export function contextMarkdown(intent?: ReviewIntent): string {
+  return reviewContext(intent).map(([label, value]) => `**${label}**\n\n${value}`).join("\n\n");
+}
+
+export function cardMetadata(v: RequestView): string {
+  const b = v.body;
+  const label = typeof b.id === "string" && b.id !== v.id ? b.id + " · " : "";
+  return `${label}${b.kind} · level ${b.level}: ${b.level_reason} · ${UNDO[b.stakes.reversibility] ?? b.stakes.reversibility}`;
+}
+
+export function dependencyLabels(body: RequestBody, items: readonly RequestView[] = []): string[] {
+  return (body.depends_on ?? []).map(ref => {
+    const exact = items.find(item => `${item.id}@${item.revision}` === ref || (item.id === ref && item.current));
+    const drafts = exact ? [] : items.filter(item => item.body.id === ref);
+    const target = exact ?? (drafts.length === 1 ? drafts[0] : undefined);
+    if (!target) return ref;
+    const revision = `${target.id}@${target.revision}`;
+    return `${exact ? revision : `${ref} (${revision})`} · ${target.body.question}`;
+  });
+}
+
 export const letter = (n: number): string =>
   n < 26 ? String.fromCharCode(65 + n) : letter(Math.floor(n / 26) - 1) + String.fromCharCode(65 + (n % 26));
 
-export function cardMarkdown(v: RequestView, mark?: string): string {
+export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView): string {
   const b = v.body;
   const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
+  if (!v.current) out.push("A later revision replaced this card.", "");
+  else if (v.status === "cancelled") out.push("This card was cancelled.", "");
   if (b.kind !== "notice") out.push("**What this question addresses**");
   out.push(b.summary ?? b.why_now, "");
   if (b.summary && b.summary !== b.why_now) out.push("**Why now**", b.why_now, "");
   if (v.clarification) out.push("The reviewer asked for a clearer question or choices.", "");
-  if (b.depends_on?.length) out.push(`Your answer to ${b.depends_on.join(" and ")} affects this card.`, "");
+  for (const dependency of dependencyLabels(b, review?.items)) out.push(`Depends on ${dependency}`, "");
   const terms = Object.entries(b.glossary ?? {});
   if (terms.length) out.push("Terms on this card:", "", ...terms.map(([t, d]) => `- **${t}**: ${d}`), "");
+  for (const preview of Array.isArray(b.previews) ? b.previews : []) {
+    const reviewId = review?.id ?? v.review_id;
+    out.push(`**${preview.label}**`, "");
+    if ("text" in preview) out.push(preview.text.split(/\r?\n/).map(line => "    " + line).join("\n"), "");
+    else out.push(reviewId ? `Open the image on the review page with \`utp page ${reviewId}\`.`
+      : `The image data is in \`utp show ${v.id}@${v.revision} --json\`.`, "");
+  }
   if (b.options?.length) {
     out.push("| Option | What happens |", "|---|---|");
     for (const o of b.options) {
@@ -61,9 +107,14 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
   for (const item of Array.isArray(b.assumptions) ? b.assumptions : []) {
     out.push(`**${item.id}** · ${item.statement}. ${item.consequence}`, "");
   }
+  const [prompt] = itemPrompts(b);
+  if (prompt) {
+    out.push(`Answer each item by ID with ${prompt.choices.join(", ")}.`, "");
+    if (prompt.detailLabel) out.push(`**${prompt.detailLabel}** — required for ${prompt.detailsFor.join(" or ")}.`, "");
+  }
   const rec = b.recommendation;
   if (rec) {
-    out.push(`Recommended: **${rec.option}**, because ${rec.because}`
+    out.push(`Recommended: **${rec.option}**` + (rec.because ? `, because ${rec.because}` : "")
       + `${rec.preserves ? ` It keeps: ${rec.preserves}` : ""}${rec.bolder_alternative ? ` Bolder: ${rec.bolder_alternative}` : ""}`, "");
   }
   if (b.default) out.push(`If you don't answer: **${b.default.option}**. ${b.default.consequence}`, "");
@@ -73,16 +124,25 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
   if (b.evidence?.length) {
     out.push("Evidence:", "", ...b.evidence.map((e) => `- ${e.claim} (${e.kind}, ${e.source}, ${e.date})`), "");
   }
-  out.push(`\`${v.id}@${v.revision}\` · ${b.kind} · level ${b.level}: ${b.level_reason} · ${UNDO[b.stakes.reversibility] ?? b.stakes.reversibility}`);
+  for (const flag of v.flags) out.push(flag, "");
+  out.push(`\`${v.id}@${v.revision}\` · ${cardMetadata(v)}`);
   if (v.answer) out.push("", `Answered: ${answerText(v.answer)}`);
   return out.join("\n");
 }
 
-export function answerText(a: AnswerRecord): string {
+export function answerValue(a: AnswerRecord, body?: RequestBody): string {
   const items = Object.entries(a.items ?? {}).map(([id, value]) =>
     `${id} ${value.replaceAll("_", " ")}${a.details?.[id] ? ` (${a.details[id]})` : ""}`).join(", ");
-  const what = a.disposition ? a.disposition.replace("_", " ") : a.value ?? (a.custom ? `"${a.custom}"` : items || "item answers");
-  return `${what} (through ${a.channel}${a.verified === "none" ? ", unverified" : `, verified by ${a.verified}`})`;
+  if (a.disposition) return a.disposition.replace("_", " ");
+  if (typeof a.value === "string") {
+    const option = body?.options?.find(o => o.id === a.value);
+    return option ? `${option.label} (${option.id})` : a.value;
+  }
+  return a.custom ? `"${a.custom}"` : items || "item answers";
+}
+
+export function answerText(a: AnswerRecord): string {
+  return `${answerValue(a)} (through ${a.channel}${a.verified === "none" ? ", unverified" : `, verified by ${a.verified}`})`;
 }
 
 export function defaultNoticeMarkdown(notice: DefaultNotice): string {
@@ -90,14 +150,21 @@ export function defaultNoticeMarkdown(notice: DefaultNotice): string {
   return `- **${status}** ${notice.question} Option **${notice.option}**. Request \`${notice.request_id}@${notice.revision}\`.`;
 }
 
-export function reviewMarkdown(review: ReviewView): string {
+export function reviewMarkdown(review: ReviewView, mode: "presentation" | "history" = "presentation"): string {
   const cards = review.items.filter((v) => v.current && v.status !== "cancelled");
-  const out = [`## Review ${review.id}: ${cards.length} card${cards.length === 1 ? "" : "s"}`, ""];
+  const earlier = mode === "history" ? review.items.filter(v => !v.current || v.status === "cancelled") : [];
+  const count = cards.length + earlier.length;
+  const out = [`## Review ${review.id}: ${count} card${count === 1 ? "" : "s"}`, ""];
+  out.push(contextMarkdown(review.intent), "");
   if (review.default_notices?.length) out.push(...review.default_notices.map(defaultNoticeMarkdown), "");
-  if (cards.some((c) => c.body.kind !== "notice")) {
+  if (cards.some(c => c.body.kind !== "notice" && ["queued", "presented", "default_claimed"].includes(c.status))) {
     out.push("Reply with the card letter and your choice, for example \"A: b\". Your own words work too.", "");
   }
-  cards.forEach((c, i) => out.push(cardMarkdown(c, letter(i)), ""));
+  cards.forEach((c, i) => out.push(cardMarkdown(c, letter(i), review), ""));
+  if (earlier.length) {
+    out.push("**Earlier cards in this review**", "");
+    for (const card of earlier) out.push(cardMarkdown(card, undefined, review), "");
+  }
   return out.join("\n").trimEnd();
 }
 

@@ -10,9 +10,9 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Finish first-release verification. The shared service, everyday requests, batch review, and clarification are working.",
-  "remainingSummary": "Verify complete reviews in Markdown and the terminal. The protected inbox is live. One notification per review is settled. Provider delivery and daily report setup remain.",
-  "nextChipId": "utp:cards:render",
+  "currentMilestone": "Finish first-release verification. All seven everyday request kinds show the saved purpose, scope and decision content in Markdown, the terminal and the browser.",
+  "remainingSummary": "Verify how each channel presents a review and records answers. Connect the notification provider and daily report, then prove the agent integrations on real tasks.",
+  "nextChipId": "utp:adapters:answers",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-23"

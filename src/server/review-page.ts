@@ -3,7 +3,7 @@ import type { ReviewView } from "../cli/render.js";
 import { Engine, type BrowserAnswer } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
 import { EXIT, type Actor, type ClarificationRequest, type OpResult } from "../core/types.js";
-import { page, reviewHtml } from "./review-html.js";
+import { page, reviewHtml, savedHtml } from "./review-html.js";
 import { linkKey, ReviewLinks, token } from "./review-links.js";
 import type { Service } from "./service.js";
 
@@ -31,14 +31,14 @@ function choices(view: ReviewView, form: URLSearchParams): BrowserAnswer[] {
       sureness: form.get(`sureness-${index}`) || undefined,
       feedback: form.get(`feedback-${index}`) || undefined,
     };
-    const custom = form.get(`custom-${index}`)?.trim();
-    if (custom) return [{ ...ref, custom }];
+    const custom = form.get(`custom-${index}`);
+    if (custom?.trim()) return [{ ...ref, custom }];
     const prompts = itemPrompts(card.body);
     if (prompts.length) {
       const items = Object.fromEntries(prompts.map(({ id }, n) => [id, form.get(`item-${index}-${n}`) ?? ""]));
       const details = Object.fromEntries(prompts.flatMap(({ id }, n) => {
-        const text = form.get(`detail-${index}-${n}`)?.trim();
-        return text ? [[id, text]] : [];
+        const text = form.get(`detail-${index}-${n}`);
+        return text?.trim() ? [[id, text]] : [];
       }));
       return [{ ...ref, items, details }];
     }
@@ -93,14 +93,15 @@ export class ReviewPages {
     const engine = this.service.engine(entry.project);
     if (!(engine instanceof Engine)) return sendHtml(response, 503, page("Review unavailable", "<h1>Review unavailable</h1>"));
     const saveId = `review-save-${linkKey(id)}`;
-    const saved = engine.browserAnswerReceipt(entry.review, saveId);
-    if (saved !== undefined) return this.saved(response, saved);
     const shown = engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined;
-    const items = entry.items.map((ref) => shown?.items.find((card) => card.id === ref.id && card.revision === ref.revision));
+    if (!shown) return denied();
+    const saved = engine.browserAnswerReceipt(entry.review, saveId);
+    if (saved) return sendHtml(response, 200, savedHtml(shown, saved, this.inboxLink()));
+    const items = entry.items.map((ref) => shown.items.find((card) => card.id === ref.id && card.revision === ref.revision));
     if (items.some((card) => !card?.current || (!form && card.body.kind !== "notice" && !answerable(card.status)))) {
       return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>Open a fresh link before answering.</p>" + this.inboxLink()));
     }
-    const view: ReviewView = { id: entry.review, items: items.filter((card) => card !== undefined), default_notices: shown?.default_notices };
+    const view: ReviewView = { ...shown, items: items.filter((card) => card !== undefined) };
     if (request.method === "GET") {
       const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: this.now() };
       const html = reviewHtml(view, browser.form);
@@ -134,11 +135,7 @@ export class ReviewPages {
       return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
         reviewHtml(view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
     }
-    this.saved(response, Number(result.saved));
-  }
-
-  private saved(response: ServerResponse, count: number): void {
-    sendHtml(response, 200, page("Answers saved", `<h1>Answers saved</h1><p class="receipt">UTP recorded ${count} ${count === 1 ? "answer" : "answers"}.</p>` + this.inboxLink()));
+    sendHtml(response, 200, savedHtml(view, engine.browserAnswerReceipt(view.id, saveId)!, this.inboxLink()));
   }
 
   private inboxLink(): string {

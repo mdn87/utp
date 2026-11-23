@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "../src/server/http.js";
 import { createToken } from "../src/server/tokens.js";
+import type { RequestBody } from "../src/core/types.js";
 
 const CLI = fileURLToPath(new URL("../src/cli/main.js", import.meta.url));
 
@@ -498,7 +499,7 @@ test("export removes private details and checks public files before publication"
   }
 });
 
-test("all seven templates work and the terminal records answers by item", async () => {
+test("all seven templates keep their review context and decision content across three views", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));
   const svc = await startServer({ dataDir: data, port: 0 });
   const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-home-")) };
@@ -508,23 +509,70 @@ test("all seven templates work and the terminal records answers by item", async 
     assert.equal(connected.code, 0);
     assert.equal((await utp(["init"], o)).code, 0);
     const ids: Record<string, string> = {};
+    const requests: RequestBody[] = [];
+    let reviewId = "";
     for (const kind of kinds) {
       const file = path.join(o.cwd, kind + ".json");
       const made = await utp(["new", kind, "--file", file], o);
       assert.equal(made.code, 0, made.stdout + made.stderr);
+      const card: RequestBody = JSON.parse(readFileSync(file, "utf8"));
+      if (kind === "choose") {
+        card.id = "order";
+        card.notes = "Match the printed RSL label.";
+        card.waivers = [{ rule: "H01-definition", reason: "The sample reproduces the printed label." }];
+        card.default = { option: "b", consequence: "The current edition keeps its order." };
+        card.previews = [{ label: "Sample entry", text: "Map index" }];
+      }
+      if (kind === "clarify") card.depends_on = ["order"];
+      if (kind === "accept") card.depends_on = [ids.approve + "@1"];
+      writeFileSync(file, JSON.stringify(card));
+      requests.push(card);
       assert.equal((await utp(["check", file], o)).code, 0);
       const asked = await utp(["ask", file, "--json"], o);
       assert.equal(asked.code, 0, asked.stdout + asked.stderr);
-      ids[kind] = JSON.parse(asked.stdout).id;
+      const queued = JSON.parse(asked.stdout);
+      ids[kind] = queued.id;
+      reviewId = queued.review_id;
     }
-    await utp(["flush"], o);
-    const reviewed = await utp(["review"], { ...o, input: "a\nno\ndone\nObserved the test result\na\npartly\nchange\nRevised assumption\n" });
+    const intent = { asked: "Organize the sample catalogue.", doing: "Define the entry order.",
+      scope_delta: { narrowed: [{ item: "Print edition", reason: "The digital edition has its own index." }],
+        deferred: [{ item: "Cover design", reason: "The title is still open." }],
+        added: [{ item: "Index proof", reason: "The printer asked for a sample." }] } };
+    writeFileSync(path.join(o.cwd, "batch.json"), JSON.stringify({ review: { intent, requests } }));
+    const markdown = await utp(["flush", reviewId, "--intent", "batch.json"], o);
+    assert.equal(markdown.code, 0, markdown.stdout + markdown.stderr);
+    const reopened = await utp(["show", reviewId], o);
+    const link = await utp(["page", reviewId, "--json"], o);
+    assert.equal(link.code, 0, link.stdout + link.stderr);
+    const terminal = await utp(["review", reviewId], { ...o, input: "\n".repeat(6) });
+    assert.equal(terminal.code, 0, terminal.stdout + terminal.stderr);
+    const response = await fetch(JSON.parse(link.stdout).url);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    const browser = html.replace(/<style>[\s\S]*?<\/style>|<[^>]+>/g, " ").replaceAll("&#39;", "'");
+    const required = [intent.asked, intent.doing, ...Object.values(intent.scope_delta).flatMap(changes =>
+      changes.flatMap(change => [change.item, change.reason])),
+      ...requests.flatMap(card => [card.question, card.why_now, card.level_reason,
+        ...Object.values(card.glossary ?? {}), ...(card.options ?? []).flatMap(o => [o.label, o.consequence])]),
+      "Why.", "What it keeps.", "The braver choice.", "The current edition keeps its order.",
+      "H01-definition", "The sample reproduces the printed label.", "Map index",
+      "the action", "what it acts on", "the smaller scope", "the state after",
+      "the person", "where to run it", "the shell to use", "what success looks like", "needs a shell check",
+      "step-1", "goal-1", "partly covered", "Describe what you observed.", "Where to verify it", "observed",
+      "assumption-1", "What it changes in the plan.", ...Object.values(ids).map(id => id + "@1")];
+    for (const [surface, output] of Object.entries({ markdown: markdown.stdout, reopened: reopened.stdout, terminal: terminal.stdout, browser })) {
+      for (const detail of required) assert.ok(output.includes(detail), `${surface} omitted ${detail}`);
+      assert.ok(output.indexOf(intent.asked) < output.indexOf(requests[0]!.question), surface);
+      assert.ok(output.includes(`order (${ids.choose}@1) · ${requests[0]!.question}`), surface + " omitted a named dependency");
+      assert.ok(output.includes(`${ids.approve}@1 · ${requests[1]!.question}`), surface + " omitted a pinned dependency");
+    }
+    const reviewed = await utp(["review"], { ...o, input: "a\nno\ndone\nObserved the test result\n/\n  Use both readings.  \npartly\nchange\n  Revised assumption  \n" });
     assert.equal(reviewed.code, 0, reviewed.stdout + reviewed.stderr);
     assert.match(reviewed.stdout, /Saved 6 answers/);
     for (const [kind, item, answer, detail] of [
       ["handoff", "step-1", "done", "Observed the test result"],
       ["accept", "goal-1", "partly", undefined],
-      ["assumptions", "assumption-1", "change", "Revised assumption"],
+      ["assumptions", "assumption-1", "change", "  Revised assumption  "],
     ] as const) {
       const shown = await utp(["show", ids[kind]!, "--json"], o);
       assert.equal(shown.code, 0);
@@ -532,6 +580,14 @@ test("all seven templates work and the terminal records answers by item", async 
       assert.equal(result.items[item], answer);
       assert.equal(result.details?.[item], detail);
     }
+    const savedReview = await utp(["review", reviewId], o);
+    assert.ok(savedReview.stdout.includes(intent.asked));
+    assert.ok(savedReview.stdout.includes("  Use both readings.  "));
+    assert.ok(savedReview.stdout.includes("  Revised assumption  "));
+    assert.equal((await utp(["revise", ids.clarify!, "clarify.json"], o)).code, 0);
+    const history = await utp(["show", reviewId], o);
+    assert.ok(history.stdout.includes(ids.clarify + "@1") && history.stdout.includes("  Use both readings.  "));
+    assert.ok(!history.stdout.includes(ids.clarify + "@2"));
     const notice = await utp(["show", ids.notice!, "--json"], o);
     assert.equal(JSON.parse(notice.stdout).request.status, "closed");
     const invalid = path.join(o.cwd, "invalid-answer.json");

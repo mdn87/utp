@@ -604,7 +604,7 @@
       "projectId": "utp",
       "title": "Show complete, consistent reviews in Markdown and the terminal",
       "summary": "Render the review intent, dependencies, definitions, options and consequences, recommendation, waivers and kind-specific fields. Preserve IDs, revision and custom answers.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 180,
       "prereqs": [
         "utp:cards:kinds",
@@ -614,7 +614,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T07:04:18Z"
       },
       "evidence": [
         {
@@ -622,6 +622,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "AC4 requires every selected kind to pass renderer conformance. A channel that cannot show required content falls back to a complete rendering."
+        },
+        {
+          "entryId": "review-context-three-views",
+          "at": "2026-11-23T07:04:18Z",
+          "kind": "stage-change",
+          "message": "Markdown, terminal and browser tests showed the saved purpose, scope, dependencies, consequences and waivers. Reopened answers kept the original card revisions."
         }
       ]
     },
@@ -1002,7 +1008,7 @@
       "projectId": "utp",
       "title": "Confirm all everyday kinds shipped in phase 1",
       "summary": "Verify that all seven everyday request kinds shipped in phase 1, as D1 selected.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 290,
       "prereqs": [
         "utp:review:kinds",
@@ -1012,7 +1018,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-23T07:04:18Z"
       },
       "evidence": [
         {
@@ -1026,6 +1032,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "note",
           "message": "D1 assigned all seven everyday kinds to phase 1. Close this item when their renderers and templates are delivered."
+        },
+        {
+          "entryId": "seven-kinds-three-views",
+          "at": "2026-11-23T07:04:18Z",
+          "kind": "stage-change",
+          "message": "All seven templates produced complete reviews in three views. Two browser engines displayed the seven cards at phone widths and saved all six answers."
         }
       ]
     },

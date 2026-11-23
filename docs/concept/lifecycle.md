@@ -369,7 +369,7 @@ to map the UTP item into the report reader's required JSON format.
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
 | `utp consider <file>`, `utp decide <file>` | See relevant reversals, then record the asking level, reason, and any existing authority |
 | `utp ask <file>` | Checks, stores, attaches when equivalent, queues into the current review |
-| `utp flush` | Prepares the current review and queues one notification when configured |
+| `utp flush [<review-id>] [--intent <file>]` | Prepares the queued review and saves its authored purpose and scope with those revisions. A complete draft must match the queued cards in order. Queues one notification when configured |
 | `utp report-import --inbox <directory>` | Imports notice-only batches into the morning report's existing inbox |
 | `utp page <review-id>` | Prepares a browser link for the review. Opening the page records presentation and one save records the batch |
 | `utp presented <review>` | Records a presentation receipt (adapters call it) |

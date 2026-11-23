@@ -51,10 +51,29 @@ utp connect http://homeserver:7340 < token.txt
 utp init
 utp new choose --file question.json   # fill it in, then:
 utp ask question.json
-utp flush          # prints the review as Markdown for the conversation
+utp flush --intent context.json   # prints the review as Markdown using the context below
 utp review         # the person answers in their own terminal
 utp wait <request-id>
 ```
+
+Save the following fields in `context.json` before flushing. Use the person's
+request for `asked`, describe the agent's next action in `doing`, and give
+each scope change a reason.
+
+```json
+{
+  "asked": "Prepare the spring catalogue.",
+  "doing": "Choose the order of its entries.",
+  "scope_delta": "none"
+}
+```
+
+For changed scope, use an object with `narrowed`, `deferred`, and `added`
+arrays. Each entry has an `item` and a `reason`. You can also pass a complete
+checked batch to `utp flush <review-id> --intent batch.json` after queuing its
+cards. UTP checks that the queued cards match the file in order. Markdown,
+the terminal, and the browser show this context when you reopen the review.
+Reviews saved without authored context say so.
 
 For a batch with previews, use `utp page <review-id>` after flushing and open
 the private link. The page lets you save the batch together and leave optional
