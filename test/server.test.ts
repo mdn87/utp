@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import { get } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { call, CliError, type ClientConfig } from "../src/cli/client.js";
@@ -160,6 +161,66 @@ test("relink refuses queued work or an active grant in either project", async ()
     assert.deepEqual(await relink(), { code: 0, project: to });
     await s.agent("ask", { body: body("A later request in the source project") });
     assert.deepEqual(await relink(), { code: 0, project: to });
+  } finally {
+    await s.svc.close();
+  }
+});
+
+test("a browser batch presents previews and saves only its displayed revisions", async () => {
+  const s = await service();
+  try {
+    const makeBatch = async () => {
+      const cards = [];
+      for (const name of ["First", "Second", "Third"]) {
+        cards.push(await s.agent("ask", { body: { ...body(name), previews: [{ label: "Text preview", text: "<b>Example output</b>" }] } }));
+      }
+      const flushed = await s.agent("flush");
+      const prep = await s.agent("review-page.prepare", { review: flushed.review_id });
+      assert.equal(prep.code, 0, prep.message);
+      const url = String(prep.url);
+      const before = (await s.agent("show", { id: cards[0]?.id })).request as { status: string };
+      assert.equal(before.status, "queued");
+      const invalidHost = await new Promise<number | undefined>((resolve, reject) => {
+        get(url, { headers: { host: "elsewhere.invalid" } }, (response) => {
+          response.resume();
+          resolve(response.statusCode);
+        }).on("error", reject);
+      });
+      assert.equal(invalidHost, 403);
+      const page = await fetch(url);
+      assert.equal(page.status, 200);
+      assert.equal(page.headers.get("referrer-policy"), "same-origin");
+      const html = await page.text();
+      assert.match(html, /Text preview/);
+      assert.match(html, /&lt;b&gt;Example output&lt;\/b&gt;/);
+      assert.match(html, /First/);
+      assert.match(html, /Second/);
+      assert.match(html, /Third/);
+      const cookie = page.headers.get("set-cookie")?.split(";")[0];
+      const token = /name="presentation" value="([a-zA-Z0-9_-]+)"/.exec(html)?.[1];
+      assert.ok(cookie && token);
+      assert.ok(!url.includes(token));
+      const origin = new URL(url).origin;
+      const form = new URLSearchParams({ presentation: token, "choice-0": "a", "choice-1": "b", "choice-2": "a" });
+      const save = (headers: Record<string, string>) => fetch(url, { method: "POST", headers, body: form });
+      return { cards, url, save, origin, cookie };
+    };
+
+    const current = await makeBatch();
+    assert.equal((await current.save({ origin: "https://elsewhere.invalid", cookie: current.cookie })).status, 403);
+    assert.equal((await current.save({ origin: current.origin })).status, 403);
+    assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 200);
+    const saved = await s.agent("show", { id: current.cards[1]?.id });
+    assert.deepEqual((saved.request as { answer: { value: string; verified: string } }).answer.value, "b");
+    assert.equal((saved.request as { answer: { verified: string } }).answer.verified, "channel");
+
+    const stale = await makeBatch();
+    await s.agent("revise", { id: stale.cards[0]?.id, body: body("Changed since presentation") });
+    assert.equal((await stale.save({ origin: stale.origin, cookie: stale.cookie })).status, 409);
+    const unaffected = await s.agent("show", { id: stale.cards[1]?.id });
+    assert.equal((unaffected.request as { answer: unknown }).answer, null);
+    const spoofed = await s.agent("answer", { id: stale.cards[1]?.id, value: "a", channel: "review-page" });
+    assert.equal((spoofed.answer as { verified: string }).verified, "none");
   } finally {
     await s.svc.close();
   }

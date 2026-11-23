@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { Engine } from "../core/engine.js";
 import { EXIT, type Actor, type OpResult } from "../core/types.js";
 import { Service } from "./service.js";
+import { ReviewPages } from "./review-page.js";
 import { TokenBook, tokenFile } from "./tokens.js";
 
 export const DEFAULT_PORT = 7340;
@@ -17,6 +18,7 @@ export interface ServeOptions {
   dataDir: string;
   host?: string;
   port?: number;
+  reviewOrigin?: string;
   now?: () => Date;
   /** Longest single wait the service holds open; clients wait again for longer timeouts. */
   maxWaitMs?: number;
@@ -85,11 +87,17 @@ async function holdWait(engine: Engine, args: Record<string, unknown>, actor: Ac
 }
 
 export async function startServer(opts: ServeOptions): Promise<RunningService> {
+  const reviewOrigin = opts.reviewOrigin ? new URL(opts.reviewOrigin) : undefined;
+  if (reviewOrigin && (!["http:", "https:"].includes(reviewOrigin.protocol) || reviewOrigin.pathname !== "/"
+      || reviewOrigin.search || reviewOrigin.hash || reviewOrigin.username || reviewOrigin.password)) {
+    throw new Error("review origin must be a bare HTTP or HTTPS origin");
+  }
   const service = new Service(opts.dataDir, opts.now);
   const tokens = new TokenBook(tokenFile(opts.dataDir));
   const limitMs = opts.maxWaitMs ?? 5 * 60 * 1000;
   const recheckMs = opts.recheckMs ?? 30 * 1000;
   const log = opts.log ?? (() => {});
+  let pages: ReviewPages | undefined;
 
   const server = http.createServer((req, res) => {
     handle(req, res).catch((e: unknown) => {
@@ -99,6 +107,10 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   });
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (pages && req.url?.startsWith("/review/")) {
+      await pages.handle(req, res, readBody);
+      return;
+    }
     if (req.method !== "POST" || req.url !== "/v1/op") {
       send(res, 404, { code: EXIT.NOT_FOUND, message: "the UTP service answers POST /v1/op" });
       return;
@@ -144,6 +156,10 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       send(res, 200, engine);
       return;
     }
+    if (body.op === "review-page.prepare" && pages) {
+      send(res, 200, pages.prepare(engine, actor, args.review));
+      return;
+    }
     if (body.op === "wait") {
       const gone = new AbortController();
       res.on("close", () => {
@@ -162,6 +178,8 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   });
   const addr = server.address() as AddressInfo;
   const host = addr.family === "IPv6" ? `[${addr.address}]` : addr.address;
+  const pageHost = addr.address === "0.0.0.0" ? "127.0.0.1" : addr.address === "::" ? "[::1]" : host;
+  pages = new ReviewPages(reviewOrigin ?? new URL(`http://${pageHost}:${addr.port}`));
   return {
     url: `http://${host}:${addr.port}`,
     service,

@@ -328,6 +328,7 @@ its own request.
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
 | `utp ask <file>` | Checks, stores, attaches when equivalent, queues into the current review |
 | `utp flush` | Prepares the current review and sends one notification |
+| `utp page <review-id>` | Prepares a browser link for the review. Opening the page records presentation and one save records the batch |
 | `utp presented <review>` | Records a presentation receipt (adapters call it) |
 | `utp show <id>` | Renders a request or review as Markdown or JSON |
 | `utp review` | Interactive review in the person's own terminal |
@@ -362,6 +363,15 @@ its own request.
 
 ## Privacy
 
+- The browser page uses the service's loopback origin by default. Set
+  `utp serve --review-origin <url>` to the exact private browser origin
+  when reaching it from another machine. The browser receives a separate
+  presentation cookie and form token. The CLI prints the page link and
+  the service checks the Host, Origin, cookie, and form token before saving.
+- Each request can carry `previews` with a label and plain `text`, or a
+  supported image `media_type` and base64 `data`. Small PNG, JPEG, and WebP
+  previews render in the browser. The whole request still fits the
+  service's request size limit.
 - Stores live on the home server, outside code checkouts, so a commit can't
   include them.
 - `utp export --redact` runs a leak check: generic patterns (absolute paths,
