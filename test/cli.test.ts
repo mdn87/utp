@@ -261,6 +261,8 @@ test("an approval answered without proof is refused a grant, and a basis file ch
     writeFileSync(path.join(cwd, "exports", "list.txt"), "ten files\n");
     writeFileSync(path.join(cwd, "approve.json"), JSON.stringify({
       kind: "approve", question: "Delete the ten old exports?", why_now: "They block the release build.",
+      narrowing_reason: "The release consumes the export set together.",
+      evidence: [{ claim: "The list contains ten exports.", kind: "observed", source: "Export list", date: "2026-11-22" }],
       options: [
         { id: "yes", label: "Delete them", consequence: "The ten files are gone for good.",
           authorization: { action: "delete", target: "exports/", scope: "the ten listed files" } },
@@ -278,7 +280,7 @@ test("an approval answered without proof is refused a grant, and a basis file ch
     assert.match(refused.stdout, /utp review/);
 
     writeFileSync(path.join(cwd, "regen.json"), JSON.stringify({
-      kind: "choose", question: "Regenerate the fixtures from the export list?", why_now: "The tests read them next.",
+      kind: "choose", category: "approach", question: "Regenerate the fixtures from the export list?", why_now: "The tests read them next.",
       options: [
         { id: "go", label: "Regenerate", consequence: "Every fixture is rebuilt from the list.",
           authorization: { action: "regenerate", target: "fixtures/", scope: "all fixtures" } },
@@ -437,7 +439,8 @@ test("the CLI reports an applied default and redoes an authorized late choice", 
     writeFileSync(evidence, JSON.stringify({ ...authorization, effect: "Fixture written." }));
     await run(["applied", grant.id, "--evidence", evidence]);
 
-    writeFileSync(card, JSON.stringify({ ...request, question: "Should we also test CSV fixtures?" }));
+    writeFileSync(card, JSON.stringify({ ...request, question: "Should we also test CSV fixtures?",
+      glossary: { CSV: "Comma-separated values" } }));
     await run(["ask", card]);
     assert.match(await run(["flush"]), /Applied by default: change\?/);
     await run(["answer", id, "--option", "b"]);
@@ -465,7 +468,7 @@ test("export removes private details and checks public files before publication"
     const fakeToken = `utp_${"x".repeat(24)}`;
     const privateDetails = `private fixture name alex@example.test 192.0.2.42 2001:db8::5 C:\\Users\\Example\\fixture.txt /home/example/fixture.txt ${fakeToken}`;
     writeFileSync(card, JSON.stringify({
-      kind: "choose", question: `Select the parser for ${privateDetails}?`, why_now: "The fixture needs a parser.",
+      kind: "choose", category: "approach", question: `Select the parser for ${privateDetails}?`, why_now: "The fixture needs a parser.",
       options: [
         { id: "a", label: "Strict", consequence: "Reject bad rows." },
         { id: "b", label: "Lenient", consequence: "Skip bad rows." },

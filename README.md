@@ -69,6 +69,26 @@ Each card opens with what the question addresses. In the terminal, type
 The question stays open, and the agent sees your request for clarification
 when it checks the review.
 
+### Checking a draft
+
+Run `utp check question.json` to see each failing rule and its suggested
+repair. Add `--json` for the rule IDs, messages and whether each issue can
+be waived. The same checks run when an agent queues or revises a request.
+For a batch file, use `review.requests` for the cards and `review.intent`
+for what the person asked, what the agent is doing, and any change of scope.
+
+Structural rules require the fields needed to act on each kind of request.
+For example, an approval needs dated evidence and a smaller authorized option
+that names the wider option in `narrower_than`. For an indivisible action,
+explain why in `narrowing_reason`.
+
+Seven heuristics flag undefined terms, unsupported status claims, incomplete
+evidence, unfocused questions, incomplete recommendations, vague scope and
+missing material for a judgment. Fix the flagged text or add a reason to
+the request, for example `"waivers": [{"rule": "H01-definition", "reason":
+"The reader needs the exact code printed on the tray."}]`. The terminal,
+Markdown and browser card show that reason whenever the revision is read.
+
 ### Sandbox setup and resuming a review
 
 `utp setup codex`, `utp setup claude`, and `utp setup antigravity` preview

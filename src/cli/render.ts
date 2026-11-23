@@ -1,6 +1,7 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
 import type { AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody } from "../core/types.js";
+import { waiverNotes } from "../core/quality.js";
 
 export interface RequestView {
   id: string;
@@ -67,6 +68,8 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
   }
   if (b.default) out.push(`If you don't answer: **${b.default.option}**. ${b.default.consequence}`, "");
   if (b.notes) out.push(b.notes, "");
+  if (b.narrowing_reason) out.push("Why the action cannot be split: " + b.narrowing_reason, "");
+  for (const note of waiverNotes(b)) out.push(note, "");
   if (b.evidence?.length) {
     out.push("Evidence:", "", ...b.evidence.map((e) => `- ${e.claim} (${e.kind}, ${e.source}, ${e.date})`), "");
   }
@@ -122,7 +125,9 @@ export function resultText(r: OpResult): string {
   if (Array.isArray(r.changed) && r.changed.length) lines.push(`changed: ${r.changed.join(", ")}`);
   if (Array.isArray(r.mismatch) && r.mismatch.length) lines.push(`differs from authorization: ${r.mismatch.join(", ")}`);
   if (Array.isArray(r.failures)) {
-    for (const f of r.failures as { rule: string; message: string }[]) lines.push(`${f.rule}: ${f.message}`);
+    for (const f of r.failures as { rule: string; message: string; waivable?: boolean }[]) {
+      lines.push(`${f.rule}: ${f.message}${f.waivable ? " You can waive this warning with a reason." : ""}`);
+    }
   }
   return lines.join("\n");
 }

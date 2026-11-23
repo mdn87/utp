@@ -1,11 +1,12 @@
-// Structural checks for a request (the part of `utp check` that phase 1a
-// needs). Heuristic rules, such as definitions-or-waiver, arrive in phase 1b.
+// Queuing and revising use the same checks as the standalone command.
 
 import { KINDS, type RequestBody } from "./types.js";
+import { hasDatedEvidence, QUALITY_RULES, qualityWarnings } from "./quality.js";
 
 export interface CheckFailure {
   rule: string;
   message: string;
+  waivable: boolean;
 }
 
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
@@ -37,8 +38,8 @@ function checkedItems(raw: unknown, field: string, rule: string, textFields: str
 
 export function checkRequest(body: unknown): CheckFailure[] {
   const out: CheckFailure[] = [];
-  const fail = (rule: string, message: string) => out.push({ rule, message });
-  if (typeof body !== "object" || body === null) {
+  const fail = (rule: string, message: string) => out.push({ rule, message, waivable: false });
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
     fail("S00-shape", "the request must be a JSON object");
     return out;
   }
@@ -56,6 +57,7 @@ export function checkRequest(body: unknown): CheckFailure[] {
   }
   const needsOptions = ["choose", "approve", "clarify"].includes(b.kind as string);
   const options = Array.isArray(b.options) ? b.options : [];
+  if (b.options !== undefined && !Array.isArray(b.options)) fail("S07-options", "Supply options as a list.");
   if (needsOptions && options.length < 2) fail("S07-options", "this kind needs at least two options");
   const ids = new Set<string>();
   for (const [i, o] of options.entries()) {
@@ -65,7 +67,7 @@ export function checkRequest(body: unknown): CheckFailure[] {
     if (!nonEmpty(o?.label)) fail("S09-option-label", `option ${o?.id ?? i + 1} needs a label`);
     if (!nonEmpty(o?.consequence)) fail("S10-consequence", `option ${o?.id ?? i + 1} needs a consequence line: what happens if it's chosen`);
     const a = o?.authorization;
-    if (a !== undefined && !(nonEmpty(a.action) && nonEmpty(a.target) && nonEmpty(a.scope))) {
+    if (a !== undefined && !(nonEmpty(a?.action) && nonEmpty(a?.target) && nonEmpty(a?.scope))) {
       fail("S11-authorization", `option ${o?.id ?? i + 1}'s authorization needs action, target and scope`);
     }
   }
@@ -73,22 +75,21 @@ export function checkRequest(body: unknown): CheckFailure[] {
     fail("S12-approve-authorization", "an approve request needs at least one option with an authorization");
   }
   if (b.recommendation !== undefined) {
-    if (!ids.has(b.recommendation.option)) fail("S13-recommendation", "recommendation.option must name an option");
-    if (!nonEmpty(b.recommendation.because)) fail("S13-recommendation", "recommendation.because is required");
+    if (!b.recommendation || !ids.has(b.recommendation.option)) fail("S13-recommendation", "recommendation.option must name an option");
   }
   if (b.default !== undefined) {
-    if (!ids.has(b.default.option)) fail("S14-default", "default.option must name an option");
-    if (!nonEmpty(b.default.consequence)) fail("S14-default", "the default needs its own consequence line");
+    if (!b.default || !ids.has(b.default.option)) fail("S14-default", "default.option must name an option");
+    if (!nonEmpty(b.default?.consequence)) fail("S14-default", "the default needs its own consequence line");
     if (b.level === 3) fail("S15-default-level", "a level-3 request can't carry a default: it always waits for the person");
   }
   if (b.basis?.files !== undefined && !(Array.isArray(b.basis.files) && b.basis.files.every(nonEmpty))) {
     fail("S16-basis", "basis.files must be a list of paths");
   }
-  if (b.kind === "handoff") {
+  if (b.kind === "handoff" || b.steps !== undefined) {
     const steps = checkedItems(b.steps, "steps", "S17-handoff", ["actor", "machine", "shell", "command", "expected_result", "why_person"], fail);
     for (const step of steps) if (typeof step.tested !== "boolean") fail("S17-handoff", "each step needs a tested true or false value");
   }
-  if (b.kind === "accept") {
+  if (b.kind === "accept" || b.goals !== undefined) {
     const goals = checkedItems(b.goals, "goals", "S18-accept", ["goal"], fail);
     for (const goal of goals) {
       if (!["covered", "partly_covered", "not_covered"].includes(goal.coverage as string)) {
@@ -101,7 +102,7 @@ export function checkRequest(body: unknown): CheckFailure[] {
       }
     }
   }
-  if (b.kind === "assumptions") {
+  if (b.kind === "assumptions" || b.assumptions !== undefined) {
     checkedItems(b.assumptions, "assumptions", "S19-assumptions", ["statement", "consequence"], fail);
   }
   if (b.previews !== undefined && (!Array.isArray(b.previews) || b.previews.some((preview) =>
@@ -111,5 +112,87 @@ export function checkRequest(body: unknown): CheckFailure[] {
         || typeof preview.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(preview.data))))) {
     fail("S20-preview", "previews need a label and plain text or a base64 PNG, JPEG or WebP image");
   }
+  if (b.kind === "choose" && !["design", "approach", "priority", "process", "naming", "other"].includes(b.category ?? "")) {
+    fail("S22-category", "Choose a category: design, approach, priority, process, naming or other.");
+  }
+  if (b.kind === "clarify" && options.length >= 2 && options.every(o => nonEmpty(o?.label))
+      && new Set(options.map(o => o.label.trim().toLowerCase())).size < 2) {
+    fail("S27-readings", "State your interpretation and at least one distinct alternative in the option labels.");
+  }
+  if (b.kind === "approve" && options.some(o => o?.authorization)) {
+    const authorized = options.filter(o => o?.authorization);
+    const differentScope = (left: typeof authorized[number], right: typeof authorized[number]) =>
+      left.authorization!.target !== right.authorization!.target || left.authorization!.scope !== right.authorization!.scope;
+    const narrower = authorized.some(o => authorized.some(other => o !== other && differentScope(o, other)
+      && (o.narrower_than === other.id || (o.narrower_than === undefined && o.id === "narrow"))));
+    if (options.some(o => o?.narrower_than !== undefined && (!o.authorization || !authorized.some(other =>
+      other.id === o.narrower_than && other !== o && differentScope(o, other))))) {
+      fail("S23-narrower", "narrower_than must name another authorized option with a different scope.");
+    } else if (!narrower && !nonEmpty(b.narrowing_reason)) {
+      fail("S23-narrower", "Offer a narrower authorized scope, or explain in narrowing_reason why the action cannot be split.");
+    }
+    if (!Array.isArray(b.evidence) || !b.evidence.some(hasDatedEvidence)) {
+      fail("S24-approval-evidence", "Include dated evidence with a claim and source for the action being approved.");
+    }
+  }
+  if (b.narrowing_reason !== undefined && !nonEmpty(b.narrowing_reason)) {
+    fail("S26-fields", "Give a nonempty explanation for an indivisible action.");
+  }
+  if (b.evidence !== undefined && (!Array.isArray(b.evidence) || b.evidence.some(e => !e || typeof e !== "object" || Array.isArray(e)))) {
+    fail("S26-fields", "Supply evidence as a list of evidence objects.");
+  }
+  if (b.glossary !== undefined && (!b.glossary || typeof b.glossary !== "object" || Array.isArray(b.glossary)
+      || Object.entries(b.glossary).some(([term, meaning]) => !nonEmpty(term) || !nonEmpty(meaning)))) {
+    fail("S26-fields", "Map each glossary term to a nonempty definition.");
+  }
+  for (const list of [b.depends_on, b.tags, b.related]) {
+    if (list !== undefined && (!Array.isArray(list) || !list.every(nonEmpty))) {
+      fail("S26-fields", "Use an array of nonempty identifiers for dependencies, related requests and tags.");
+      break;
+    }
+  }
+  const waived = new Set<string>();
+  if (b.waivers !== undefined) {
+    if (!Array.isArray(b.waivers)) fail("S25-waiver", "Supply waivers as a list of heuristic rule IDs and reasons.");
+    else for (const w of b.waivers) {
+      if (!w || !QUALITY_RULES.some(rule => rule === w.rule) || !nonEmpty(w.reason) || waived.has(w.rule)) {
+        fail("S25-waiver", "Each waiver needs a known heuristic rule ID and a nonempty reason. List a rule only once.");
+      } else waived.add(w.rule);
+    }
+  }
+  if (out.length) return out;
+  const warnings = qualityWarnings(b as RequestBody);
+  for (const rule of waived) {
+    if (!warnings.some(w => w.rule === rule)) fail("S25-waiver", "Remove the unused waiver for " + rule + ".");
+  }
+  for (const warning of warnings) {
+    if (!waived.has(warning.rule)) out.push({ ...warning, waivable: true });
+  }
   return out;
+}
+
+/** The file form of a batch carries its author's intent alongside the request bodies. */
+export function checkDocument(input: Record<string, unknown>): CheckFailure[] {
+  if (!Object.hasOwn(input, "review") || Object.hasOwn(input, "kind")) return checkRequest(input);
+  const review = input.review as { intent?: Record<string, unknown>; requests?: unknown[] } | null;
+  const problems: CheckFailure[] = [];
+  const intent = review?.intent;
+  const scope = intent?.scope_delta;
+  const changes = ["narrowed", "deferred", "added"] as const;
+  const hasScope = scope === "none" || (!!scope && typeof scope === "object" && !Array.isArray(scope)
+    && changes.every(k => {
+      const entries = (scope as Record<string, unknown>)[k];
+      return Array.isArray(entries) && entries.every(entry => nonEmpty(entry?.item) && nonEmpty(entry?.reason));
+    }));
+  if (!nonEmpty(intent?.asked) || !nonEmpty(intent?.doing) || !hasScope) {
+    problems.push({ rule: "S28-intent", waivable: false,
+      message: "State what was asked, what you are doing, and the scope changes with reasons (or none)." });
+  }
+  if (!Array.isArray(review?.requests) || !review.requests.length) {
+    return [...problems, { rule: "S00-shape", waivable: false, message: "Include at least one request in the review." }];
+  }
+  review.requests.forEach((card, index) => {
+    for (const issue of checkRequest(card)) problems.push({ ...issue, message: `Request ${index + 1}. ${issue.message}` });
+  });
+  return problems;
 }
