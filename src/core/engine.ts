@@ -1528,7 +1528,8 @@ export class Engine {
     const req = this.reqOf(r);
     return {
       id: r.id, revision: r.revision, current: r.revision === req.current, status: this.effective(r, this.now().toISOString()),
-      body: this.visibleBody(r), basis_files: Object.keys(r.basis), answer: r.answer ?? null, answers: r.answer_count,
+      body: this.visibleBody(r), basis_files: r.body.kind === "judge" ? [] : Object.keys(r.basis),
+      answer: r.answer ?? null, answers: r.answer_count,
       ...(r.body.kind === "judge" && r.body.blind && r.answer ? { blind_reveal: revealJudgment(r.body.blind, r.blind_swapped === true) } : {}),
       grants: r.grants.map((g) => this.grants.get(g)), flags: r.flags, review_id: r.review_id, asked_at: r.asked_at,
       presented_at: r.presented_at ?? null, hide_until: r.hide_until ?? null, remaining_scope: r.remaining_scope ?? null,

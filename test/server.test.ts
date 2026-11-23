@@ -368,7 +368,9 @@ test("a blind comparison reveals identities only after its immutable ballot", as
     assert.equal(identical.code, 20);
     assert.equal((await s.agent("ask", { body: { ...judge, question: "Is Source Cedar clearer?" } })).code, 20);
     assert.equal((await s.agent("ask", { body: { ...judge, summary: "Compare Source Cedar with the alternative." } })).code, 20);
-    const asked = await s.agent("ask", { body: judge });
+    const asked = await s.agent("ask", { body: { ...judge,
+      stakes: { ...judge.stakes, source: "Source Cedar" }, tags: ["quality", { source: "Source Maple" }],
+    } });
     assert.equal(asked.code, 0, asked.message);
     const { review_id } = await s.agent("flush");
     const hidden = (result: unknown) => {

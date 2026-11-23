@@ -132,7 +132,10 @@ export function publicJudgment(body: RequestBody, swapped: boolean): RequestBody
   const [first, second] = body.blind!.candidates;
   const ordered = swapped ? [second, first] : [first, second];
   const previews: RequestPreview[] = ordered.map(({ artifact }, i) => ({ ...artifact, label: i ? "Candidate B" : "Candidate A" }));
-  return { kind: "judge", question, summary, why_now, level, level_reason, stakes, tags, related, depends_on, previews, options: BALLOT_OPTIONS };
+  const textOnly = (items?: string[]): string[] | undefined => Array.isArray(items)
+    ? items.filter((item) => typeof item === "string") : undefined;
+  return { kind: "judge", question, summary, why_now, level, level_reason, stakes: { reversibility: stakes.reversibility },
+    tags: textOnly(tags), related: textOnly(related), depends_on: textOnly(depends_on), previews, options: BALLOT_OPTIONS };
 }
 
 export function revealJudgment(comparison: BlindComparison, swapped: boolean): BlindReveal {
