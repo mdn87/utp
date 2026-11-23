@@ -331,11 +331,28 @@ original basis, owner, approval rules, and one-use limit still apply.
 
 - The request is stored before anything is sent.
 - Requests queue silently into the current review. `utp flush` prepares the
-  review for the conversation and sends one notification for the whole batch
-  to any other channel the person uses, with the review id as its
-  deduplication key, so a retried notification is harmless.
+  review and schedules one notification when a provider is
+  configured. UTP reuses the review's delivery identity until the provider
+  confirms it. The notification can enter the existing open-items list and resolves
+  when the review's questions are settled.
 - `notice` items never notify on their own; they ride with the next review or
   the daily report.
+
+Set `UTP_DELIVERY_ADAPTER` to a local JavaScript module before starting
+`utp serve`. Its optional exported `sendReview(event, signal)` receives
+`review.ready` or `review.resolved` with the review id and question count.
+Return `{ ok: true, event_id }` after accepting the event durably, and use the
+stable `event_id` to deduplicate retries. The adapter uses the supplied abort
+signal when calling its provider. Newly flushed reviews use these settings.
+
+For notices-only reviews, set `UTP_REPORT_INBOX` to the morning report
+inbox on the service machine. If the report runs on another machine,
+set `UTP_REPORT_EXPORT=1` on the service and run
+`utp report-import --inbox <directory>` on the report machine before it
+reads the inbox. The import uses the same token setup as the other UTP
+commands. A retry reuses the same inbox item, including after the report
+has archived the file. The local adapter can export `formatInboxItem(item)`
+to map the UTP item into the report reader's required JSON format.
 
 ## Command-line contract
 
@@ -350,7 +367,8 @@ original basis, owner, approval rules, and one-use limit still apply.
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
 | `utp consider <file>`, `utp decide <file>` | See relevant reversals, then record the asking level, reason, and any existing authority |
 | `utp ask <file>` | Checks, stores, attaches when equivalent, queues into the current review |
-| `utp flush` | Prepares the current review and sends one notification |
+| `utp flush` | Prepares the current review and queues one notification when configured |
+| `utp report-import --inbox <directory>` | Imports notice-only batches into the morning report's existing inbox |
 | `utp page <review-id>` | Prepares a browser link for the review. Opening the page records presentation and one save records the batch |
 | `utp presented <review>` | Records a presentation receipt (adapters call it) |
 | `utp show <id>` | Renders a request or review as Markdown or JSON |

@@ -37,6 +37,10 @@ function scrub(value: string, denyList: readonly string[]): { text: string; kind
   return { text, kinds: [...kinds] };
 }
 
+export function redactText(value: string, denyList: readonly string[] = []): string {
+  return scrub(value, denyList).text;
+}
+
 export function leakKinds(text: string, denyList: readonly string[] = []): string[] {
   const kinds = new Set<string>();
   const scan = (value: unknown): void => {
@@ -59,7 +63,7 @@ export function leakKinds(text: string, denyList: readonly string[] = []): strin
 
 /** Public exports use an allowlist. Raw quotes, evidence and project details never enter this format. */
 export function redactedDecisions(entries: readonly DecisionLogEntry[], denyList: readonly string[]): string {
-  const redact = (text: string): string => scrub(text, denyList).text;
+  const redact = (text: string): string => redactText(text, denyList);
   const decisions = entries.map((entry) => ({
     kind: entry.kind,
     question: redact(entry.question),

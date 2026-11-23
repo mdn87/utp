@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { get } from "node:http";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { createServer, get } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { call, CliError, type ClientConfig } from "../src/cli/client.js";
-import { startServer, type RunningService } from "../src/server/http.js";
+import { startServer, type RunningService, type ServeOptions } from "../src/server/http.js";
 import { createToken } from "../src/server/tokens.js";
 import type { OpResult, RequestBody } from "../src/core/types.js";
 
@@ -18,8 +19,8 @@ const body = (question = "Which parser should the import use?"): RequestBody => 
   stakes: { reversibility: "easy" }, level: 2, level_reason: "Easy to switch later.",
 });
 
-async function service(dataDir = mkdtempSync(path.join(tmpdir(), "utp-svc-"))) {
-  const svc: RunningService = await startServer({ dataDir, port: 0, maxWaitMs: 10_000, recheckMs: 200 });
+async function service(dataDir = mkdtempSync(path.join(tmpdir(), "utp-svc-")), options?: Partial<ServeOptions>) {
+  const svc: RunningService = await startServer({ dataDir, port: 0, maxWaitMs: 10_000, recheckMs: 200, ...options });
   const agent: ClientConfig = { server: svc.url, token: createToken(dataDir, "laptop") };
   const person: ClientConfig = { server: svc.url, token: createToken(dataDir, "desk") };
   const project = ((await call("project.create", { remote: "git@github.com:someone/thing.git" }, { config: agent })).project as { id: string }).id;
@@ -27,6 +28,96 @@ async function service(dataDir = mkdtempSync(path.join(tmpdir(), "utp-svc-"))) {
     call(op, args, { config, project, timeoutMs });
   return { svc, dataDir, project, agent: as(agent), person: as(person), agentCfg: agent };
 }
+
+test("one attention item serves a review across retries and restart, and notices alone stay silent", async () => {
+  const accepted = new Map<string, Record<string, unknown>>();
+  let attempts = 0;
+  let allowAck = false;
+  const receiver = createServer(async (req, res) => {
+    let text = "";
+    for await (const chunk of req) text += chunk.toString();
+    const event = JSON.parse(text) as Record<string, unknown>;
+    attempts++;
+    accepted.set(String(event.event_id), event);
+    res.writeHead(allowAck ? 200 : 503, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: allowAck, event_id: event.event_id }));
+  });
+  await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}/events`;
+  const notifications: NonNullable<ServeOptions["notifications"]> = { retryMs: 25,
+    send: async (event, signal) => {
+      const response = await fetch(url, { method: "POST", body: JSON.stringify(event), signal });
+      return await response.json() as { ok: boolean; event_id: string };
+    },
+  };
+  const s = await service(undefined, { notifications });
+  let current = s.svc;
+  const until = async (condition: () => boolean | Promise<boolean>) => {
+    const deadline = Date.now() + 6_000;
+    while (!(await condition())) {
+      assert.ok(Date.now() < deadline, "attention delivery did not reach the expected state");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  try {
+    await s.agent("ask", { body: { ...body("A quiet update"), kind: "notice", level: 1 } });
+    const notice = await s.agent("flush");
+    assert.equal(notice.code, 0);
+    await s.agent("presented", { review: notice.review_id, channel: "conversation" });
+    const ids = [];
+    for (const question of ["First sample?", "Another sample?"]) ids.push((await s.agent("ask", { body: body(question) })).id);
+    const flush = await s.agent("flush");
+    assert.equal((await s.agent("flush")).review_id, null);
+    await until(() => attempts >= 2);
+    assert.equal(accepted.size, 1);
+    const requested = [...accepted.values()][0]!;
+    assert.equal(requested.type, "review.ready");
+    assert.equal(requested.questions, 2);
+    assert.match(String(requested.dedupe_key), new RegExp(String(flush.review_id)));
+    await current.close();
+    allowAck = true;
+    current = await startServer({ dataDir: s.dataDir, port: 0, notifications });
+    const options = { config: { ...s.agentCfg, server: current.url }, project: s.project };
+    await until(async () => ((await call("show", { id: flush.review_id }, options)).review as { delivery: string }).delivery === "sent");
+    assert.equal(accepted.size, 1);
+    await call("presented", { review: flush.review_id, channel: "conversation" }, options);
+    for (const id of ids) assert.equal((await call("answer", { id, value: "a", channel: "cli" }, options)).code, 0);
+    await until(() => [...accepted.values()].some((event) => event.type === "review.resolved"));
+    assert.equal(accepted.size, 2);
+    assert.ok([...accepted.values()].every((event) => event.dedupe_key === requested.dedupe_key));
+  } finally {
+    await current.close();
+    receiver.closeAllConnections();
+    await new Promise<void>((resolve) => receiver.close(() => resolve()));
+  }
+});
+
+test("notice-only flush writes a redacted morning report item and records its receipt", async () => {
+  const inboxDir = mkdtempSync(path.join(tmpdir(), "utp-report-inbox-"));
+  const s = await service(undefined, { inboxDir });
+  try {
+    const secret = "utp_" + "q".repeat(32);
+    const notice = await s.agent("ask", { body: { ...body("A routine import update"), kind: "notice", level: 1,
+      why_now: `Keep the checked import. Sample data includes ${secret}.` } });
+    const flush = await s.agent("flush");
+    assert.equal(flush.digest, true);
+    const files = readdirSync(inboxDir).filter((name) => name.endsWith(".json"));
+    assert.equal(files.length, 1);
+    const item = JSON.parse(readFileSync(path.join(inboxDir, files[0]!), "utf8"));
+    assert.equal(item.schema, "utp-report-notice/v1");
+    assert.equal(item.review_id, flush.review_id);
+    assert.match(item.body_md, /Keep the checked import/);
+    assert.match(item.body_md, /\[redacted\]/);
+    assert.ok(!item.body_md.includes(secret));
+    const view = (await s.agent("show", { id: notice.id })).request as { status: string; presented_at: string };
+    assert.equal(view.status, "closed");
+    assert.ok(Number.isFinite(Date.parse(view.presented_at)));
+    await s.agent("flush");
+    assert.deepEqual(readdirSync(inboxDir).filter((name) => name.endsWith(".json")), files);
+  } finally {
+    await s.svc.close();
+  }
+});
 
 async function presented(s: Awaited<ReturnType<typeof service>>): Promise<string> {
   const asked = await s.agent("ask", { body: body() });

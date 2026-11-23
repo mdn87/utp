@@ -5,10 +5,12 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import type { DeliveryAdapter } from "../core/delivery-adapter.js";
 import { Engine } from "../core/engine.js";
 import { EXIT, type Actor, type OpResult } from "../core/types.js";
 import { Service } from "./service.js";
 import { ReviewPages } from "./review-page.js";
+import { ReviewDeliveries, type NotificationOptions } from "./review-delivery.js";
 import { TokenBook, tokenFile } from "./tokens.js";
 
 export const DEFAULT_PORT = 7340;
@@ -19,6 +21,10 @@ export interface ServeOptions {
   host?: string;
   port?: number;
   reviewOrigin?: string;
+  notifications?: NotificationOptions;
+  inboxDir?: string;
+  formatInboxItem?: DeliveryAdapter["formatInboxItem"];
+  reportExport?: boolean;
   now?: () => Date;
   /** Longest single wait the service holds open; clients wait again for longer timeouts. */
   maxWaitMs?: number;
@@ -87,6 +93,7 @@ async function holdWait(engine: Engine, args: Record<string, unknown>, actor: Ac
 }
 
 export async function startServer(opts: ServeOptions): Promise<RunningService> {
+  if (opts.inboxDir && opts.reportExport) throw new Error("choose one morning report delivery mode");
   const reviewOrigin = opts.reviewOrigin ? new URL(opts.reviewOrigin) : undefined;
   if (reviewOrigin && (!["http:", "https:"].includes(reviewOrigin.protocol) || reviewOrigin.pathname !== "/"
       || reviewOrigin.search || reviewOrigin.hash || reviewOrigin.username || reviewOrigin.password)) {
@@ -97,6 +104,8 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   const limitMs = opts.maxWaitMs ?? 5 * 60 * 1000;
   const recheckMs = opts.recheckMs ?? 30 * 1000;
   const log = opts.log ?? (() => {});
+  const deliveries = (opts.notifications || opts.inboxDir)
+    ? new ReviewDeliveries(service, log, opts.notifications, opts.inboxDir, opts.formatInboxItem) : undefined;
   let pages: ReviewPages | undefined;
 
   const server = http.createServer((req, res) => {
@@ -142,6 +151,14 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     const session = typeof body.session === "string" && body.session.trim() ? body.session.trim().slice(0, 200) : "default";
     const actor: Actor = { machine, session };
     const opId = typeof body.op_id === "string" ? body.op_id : undefined;
+    if (opts.reportExport && body.op === "report.pending") {
+      const pending = service.projects().flatMap(({ id }) => {
+        const engine = service.engine(id);
+        return engine instanceof Engine ? engine.noticeDigests().map((digest) => ({ ...digest, project: id })) : [];
+      });
+      send(res, 200, { code: EXIT.OK, pending });
+      return;
+    }
     const global = service.global(body.op, args, actor, opId);
     if (global) {
       send(res, 200, global);
@@ -154,6 +171,12 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     const engine = service.engine(body.project);
     if (!(engine instanceof Engine)) {
       send(res, 200, engine);
+      return;
+    }
+    if (opts.reportExport && body.op === "report.received") {
+      const digest = engine.noticeDigests().find((item) => item.review === args.review);
+      if (digest) engine.recordDigest(digest);
+      send(res, 200, { code: EXIT.OK });
       return;
     }
     if (body.op === "review-page.prepare" && pages) {
@@ -169,7 +192,10 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       if (!gone.signal.aborted) send(res, 200, r);
       return;
     }
-    send(res, 200, engine.run(body.op, args, actor, opId));
+    const result = engine.run(body.op, body.op === "flush"
+      ? { ...args, notify: !!opts.notifications, digest: !!opts.inboxDir || opts.reportExport === true } : args, actor, opId);
+    if (body.op === "flush") deliveries?.kick();
+    send(res, 200, result);
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -180,16 +206,20 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   const host = addr.family === "IPv6" ? `[${addr.address}]` : addr.address;
   const pageHost = addr.address === "0.0.0.0" ? "127.0.0.1" : addr.address === "::" ? "[::1]" : host;
   pages = new ReviewPages(reviewOrigin ?? new URL(`http://${pageHost}:${addr.port}`));
+  deliveries?.start();
   return {
     url: `http://${host}:${addr.port}`,
     service,
-    close: () =>
-      new Promise<void>((resolve) => {
+    close: async () => {
+      const closingDeliveries = deliveries?.close();
+      await new Promise<void>((resolve) => {
         server.close(() => {
-          service.close();
           resolve();
         });
         server.closeAllConnections();
-      }),
+      });
+      await closingDeliveries;
+      service.close();
+    },
   };
 }

@@ -73,7 +73,21 @@ export interface Review {
   items: string[];
   presentations: { id: string; channel: string; at: string }[];
   page_response_ms?: number;
+  delivery?: { questions: number; state: "pending" | "sent" | "resolved" };
+  digest?: { at: string; recorded: boolean };
   default_notices?: DefaultNotice[];
+}
+
+export interface ReviewDelivery {
+  review: string;
+  questions: number;
+  action: "request" | "resolve";
+}
+
+export interface NoticeDigest {
+  review: string;
+  at: string;
+  notices: { title: string; consequence: string }[];
 }
 
 export interface BrowserAnswer {
@@ -240,6 +254,47 @@ export class Engine {
     for (const e of this.store.all()) this.apply(e);
   }
 
+  reviewDeliveries(): ReviewDelivery[] {
+    this.sweep();
+    return [...this.reviews.values()].flatMap<ReviewDelivery>((review) => {
+      if (!review.delivery || review.delivery.state === "resolved") return [];
+      if (review.delivery.state === "sent" && review.items.some((ref) => {
+        const card = this.revs.get(ref);
+        return card && this.isCurrentRev(card) && card.body.kind !== "notice" && !card.answer
+          && ["queued", "presented", "hidden", "default_claimed"].includes(card.status);
+      })) return [];
+      return [{ review: review.id, questions: review.delivery.questions,
+        action: review.delivery.state === "pending" ? "request" : "resolve" }];
+    });
+  }
+
+  recordDelivery(delivery: ReviewDelivery): void {
+    const review = this.reviews.get(delivery.review);
+    if (review?.delivery?.state !== (delivery.action === "request" ? "pending" : "sent")) return;
+    this.commit("review.delivery", "review.delivery-recorded", SYSTEM, { review_id: review.id,
+      state: delivery.action === "request" ? "sent" : "resolved" }, { code: EXIT.OK });
+  }
+
+  noticeDigests(): NoticeDigest[] {
+    return [...this.reviews.values()].flatMap<NoticeDigest>((review) => {
+      if (!review.digest || review.digest.recorded) return [];
+      const notices = review.items.flatMap((ref) => {
+        const card = this.revs.get(ref);
+        if (!card || card.body.kind !== "notice" || !this.isCurrentRev(card) || card.status !== "queued") return [];
+        return [{ title: card.body.question, consequence: card.body.why_now }];
+      });
+      return [{ review: review.id, at: review.digest.at, notices }];
+    });
+  }
+
+  recordDigest(digest: NoticeDigest): void {
+    const review = this.reviews.get(digest.review);
+    if (review?.digest && !review.digest.recorded) {
+      if (digest.notices.length > 0) this.presented({ review: review.id, channel: "morning-report-inbox" }, SYSTEM, undefined, true);
+      else this.commit("review.digest", "review.digest-recorded", SYSTEM, { review_id: review.id }, { code: EXIT.OK });
+    }
+  }
+
   /** A browser presentation can save its whole batch in one event. */
   saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor, pageResponseMs: number): OpResult {
     this.sweep();
@@ -307,7 +362,7 @@ export class Engine {
         case "ask": return this.ask(args, actor, opId);
         case "consider": return this.decide(args, actor, false);
         case "decide": return this.decide(args, actor, true, opId);
-        case "flush": return this.flush(actor, opId);
+        case "flush": return this.flush(actor, opId, args);
         case "presented": return this.presented(args, actor, opId);
         case "answer": return this.answer(args, actor, opId);
         case "wait": return this.wait(args, actor, opId);
@@ -429,21 +484,24 @@ export class Engine {
       { id, revision: 1, basis, review_id, owner: actor, ...(decision ? { policy: decision.policy } : {}) }, result, opId, { body });
   }
 
-  private flush(actor: Actor, opId?: string): OpResult {
+  private flush(actor: Actor, opId: string | undefined, delivery: Args): OpResult {
     const review = this.openReviewId ? this.reviews.get(this.openReviewId) : undefined;
     const items = review ? review.items.filter((k) => this.revs.get(k)?.status === "queued") : [];
     if (!review || items.length === 0) return { code: EXIT.OK, review_id: null, items: [], message: "nothing is queued" };
-    const defaults = [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
+    const questions = items.filter((k) => this.revs.get(k)?.body.kind !== "notice").length;
+    const digest = questions === 0 && delivery.digest === true;
+    const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
       if (!rev.default_notice_pending || !rev.default_application) return [];
       const grant = this.mustGrant(rev.default_application.grant);
       return [{ request_id: rev.id, revision: rev.revision, question: rev.body.question,
         option: grant.option, conflict: rev.status === "late_conflict" }];
     });
-    return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults },
-      { code: EXIT.OK, review_id: review.id, items }, opId);
+    return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults,
+      ...(delivery.notify === true && questions ? { notify_questions: questions } : {}), ...(digest ? { digest: true } : {}) },
+      { code: EXIT.OK, review_id: review.id, items, ...(digest ? { digest: true } : {}) }, opId);
   }
 
-  private presented(a: Args, actor: Actor, opId?: string): OpResult {
+  private presented(a: Args, actor: Actor, opId?: string, digestDelivered = false): OpResult {
     const review = this.reviews.get(str(a, "review"));
     if (!review) return notFound(a.review);
     if (review.status !== "prepared") {
@@ -456,7 +514,8 @@ export class Engine {
       const r = this.revs.get(k);
       return r !== undefined && this.isCurrentRev(r) && this.isOpen(r);
     });
-    return this.commit("presented", "review.presented", actor, { review_id: review.id, presentation_id, channel },
+    return this.commit("presented", "review.presented", actor, { review_id: review.id, presentation_id, channel,
+      ...(digestDelivered ? { digest_delivered: true } : {}) },
       { code: EXIT.OK, review_id: review.id, presentation_id, items }, opId);
   }
 
@@ -832,6 +891,7 @@ export class Engine {
       if (!v) return notFound(ref);
       const items = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined).map((r) => this.view(r));
       return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.delivery ? { delivery: v.delivery.state } : {}),
         ...(v.page_response_ms !== undefined ? { page_response_ms: v.page_response_ms } : {}),
         ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}) } };
     }
@@ -951,12 +1011,25 @@ export class Engine {
         v.items = v.items.filter((k) => this.revs.get(k)?.status === "queued");
         v.status = "prepared";
         v.default_notices = (d.default_notices as DefaultNotice[] | undefined) ?? [];
+        if (typeof d.notify_questions === "number") v.delivery = { questions: d.notify_questions, state: "pending" };
+        if (d.digest === true) v.digest = { at: e.at, recorded: false };
         if (this.openReviewId === v.id) this.openReviewId = undefined;
+        break;
+      }
+      case "review.delivery-recorded": {
+        const delivery = this.reviews.get(d.review_id as string)?.delivery;
+        if (delivery) delivery.state = d.state as "sent" | "resolved";
+        break;
+      }
+      case "review.digest-recorded": {
+        const digest = this.reviews.get(d.review_id as string)?.digest;
+        if (digest) digest.recorded = true;
         break;
       }
       case "review.presented": {
         const v = this.reviews.get(d.review_id as string);
         if (!v) throw new CorruptStoreError(`presentation of unknown review ${String(d.review_id)}`);
+        if (d.digest_delivered === true && v.digest) v.digest.recorded = true;
         for (const notice of v.default_notices ?? []) {
           const rev = this.revs.get(key(notice.request_id, notice.revision));
           if (rev && (rev.status === "late_conflict") === notice.conflict) rev.default_notice_pending = false;
