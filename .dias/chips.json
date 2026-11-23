@@ -796,7 +796,7 @@
       "projectId": "utp",
       "title": "Review a batch and its previews on one page",
       "summary": "Ship one page with previews and one save for batches of three or more in phase 1. Test presentation receipts, local page access and revision binding.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 260,
       "prereqs": [
         "utp:review:channel",
@@ -807,7 +807,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-23T00:18:27Z"
       },
       "evidence": [
         {
@@ -821,6 +821,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "stage-change",
           "message": "D5 moves the batch review page into phase 1. Terminal review remains available."
+        },
+        {
+          "entryId": "batch-page-browser-verified",
+          "at": "2026-11-23T00:18:27Z",
+          "kind": "stage-change",
+          "message": "Chrome rendered three cards and an image preview at two widths and saved one batch. Tests cover Host, Origin, token and stale revision checks."
         }
       ]
     },

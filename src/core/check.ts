@@ -101,5 +101,12 @@ export function checkRequest(body: unknown): CheckFailure[] {
   if (b.kind === "assumptions") {
     checkedItems(b.assumptions, "assumptions", "S19-assumptions", ["statement", "consequence"], fail);
   }
+  if (b.previews !== undefined && (!Array.isArray(b.previews) || b.previews.some((preview) =>
+    !preview || !nonEmpty(preview.label)
+    || ("text" in preview ? !nonEmpty(preview.text)
+      : !["image/png", "image/jpeg", "image/webp"].includes(preview.media_type)
+        || typeof preview.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(preview.data))))) {
+    fail("S20-preview", "previews need a label and plain text or a base64 PNG, JPEG or WebP image");
+  }
   return out;
 }

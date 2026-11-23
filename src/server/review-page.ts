@@ -1,0 +1,124 @@
+import { randomBytes } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ReviewView } from "../cli/render.js";
+import type { BrowserAnswer, Engine } from "../core/engine.js";
+import { itemPrompts } from "../core/items.js";
+import { EXIT, type Actor, type OpResult } from "../core/types.js";
+import { page, reviewHtml } from "./review-html.js";
+
+const PAGE_LIFETIME_MS = 30 * 60 * 1000;
+const MAX_PREPARED_PAGES = 256;
+const token = (): string => randomBytes(24).toString("base64url");
+const reviewPath = /^\/review\/([A-Za-z0-9_-]+)$/;
+
+interface Presentation {
+  engine: Engine;
+  actor: Actor;
+  view: ReviewView;
+  expiresAt: number;
+  browser?: { cookie: string; form: string };
+  saved?: number;
+}
+
+function sendHtml(response: ServerResponse, code: number, html: string, cookie?: string): void {
+  response.writeHead(code, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "referrer-policy": "same-origin",
+    "x-content-type-options": "nosniff",
+    ...(cookie ? { "set-cookie": cookie } : {}),
+  });
+  response.end(html);
+}
+
+function choices(view: ReviewView, form: URLSearchParams): BrowserAnswer[] {
+  return view.items.flatMap<BrowserAnswer>((card, index) => {
+    if (card.body.kind === "notice") return [];
+    const ref = { id: card.id, revision: card.revision };
+    const custom = form.get(`custom-${index}`)?.trim();
+    if (custom) return [{ ...ref, custom }];
+    const prompts = itemPrompts(card.body);
+    if (prompts.length) {
+      const items = Object.fromEntries(prompts.map(({ id }, n) => [id, form.get(`item-${index}-${n}`) ?? ""]));
+      const details = Object.fromEntries(prompts.flatMap(({ id }, n) => {
+        const text = form.get(`detail-${index}-${n}`)?.trim();
+        return text ? [[id, text]] : [];
+      }));
+      return [{ ...ref, items, details }];
+    }
+    return [{ ...ref, value: form.get(`choice-${index}`) ?? undefined }];
+  });
+}
+
+export class ReviewPages {
+  private readonly pending = new Map<string, Presentation>();
+
+  constructor(private readonly origin: URL) {}
+
+  prepare(engine: Engine, actor: Actor, reviewId: unknown): OpResult {
+    if (typeof reviewId !== "string") return { code: EXIT.OTHER, message: "a review id is required" };
+    const shown = engine.run("show", { id: reviewId }, actor);
+    if (shown.code !== EXIT.OK) return shown;
+    const review = shown.review as (ReviewView & { status: string }) | undefined;
+    if (review?.status !== "prepared") return { code: EXIT.NOT_ALLOWED, message: "prepare the review with utp flush first" };
+    const items = review.items.filter((card) => card.current && ["queued", "presented", "default_claimed"].includes(card.status));
+    if (!items.length) return { code: EXIT.NOT_ALLOWED, message: "this review has no unanswered cards" };
+    const now = Date.now();
+    for (const [id, entry] of this.pending) if (entry.expiresAt <= now) this.pending.delete(id);
+    if (this.pending.size >= MAX_PREPARED_PAGES) return { code: EXIT.BUSY, message: "too many open review pages; try again after one expires" };
+    const id = token();
+    this.pending.set(id, { engine, actor, view: { id: review.id, items, default_notices: review.default_notices }, expiresAt: now + PAGE_LIFETIME_MS });
+    return { code: EXIT.OK, review_id: review.id, url: new URL(`/review/${id}`, this.origin).href };
+  }
+
+  async handle(request: IncomingMessage, response: ServerResponse, readBody: (req: IncomingMessage) => Promise<string | undefined>): Promise<void> {
+    const denied = () => sendHtml(response, 403, page("Review unavailable", "<h1>Review unavailable</h1><p>Open the review link from the configured UTP address.</p>"));
+    if (request.headers.host?.toLowerCase() !== this.origin.host) return denied();
+    const path = request.url ?? "";
+    const id = reviewPath.exec(path)?.[1];
+    const entry = id && this.pending.get(id);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      return sendHtml(response, 404, page("Review expired", "<h1>Review expired</h1><p>Prepare a fresh review link.</p>"));
+    }
+    const hasCookie = () => !!entry.browser && request.headers.cookie?.split(";").some((part) => part.trim() === `utp_review=${entry.browser?.cookie}`);
+    if (request.method === "GET") {
+      if (entry.browser && !hasCookie()) return denied();
+      if (entry.saved !== undefined) return this.saved(response, entry.saved);
+      const shown = entry.engine.run("show", { id: entry.view.id }, entry.actor);
+      const current = (shown.review as ReviewView | undefined)?.items ?? [];
+      if (entry.view.items.some((card) => !current.some((candidate) => candidate.id === card.id && candidate.revision === card.revision
+        && candidate.current && (candidate.body.kind === "notice" || ["queued", "presented", "default_claimed"].includes(candidate.status))))) {
+        return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>Prepare a fresh link before answering.</p>"));
+      }
+      const browser = entry.browser ?? { cookie: token(), form: token() };
+      const html = reviewHtml(entry.view, browser.form);
+      const presented = entry.engine.run("presented", { review: entry.view.id, channel: "review-page" }, entry.actor, `review-page-${id}`);
+      if (presented.code !== EXIT.OK) return denied();
+      const cookie = entry.browser ? undefined
+        : `utp_review=${browser.cookie}; Path=${path}; HttpOnly; SameSite=Strict${this.origin.protocol === "https:" ? "; Secure" : ""}`;
+      entry.browser = browser;
+      sendHtml(response, 200, html, cookie);
+      return;
+    }
+    if (request.method !== "POST" || request.headers.origin !== this.origin.origin || !hasCookie()) return denied();
+    if (!request.headers["content-type"]?.startsWith("application/x-www-form-urlencoded")) return denied();
+    const raw = await readBody(request);
+    if (raw === undefined) return sendHtml(response, 413, page("Answer too large", "<h1>Answer too large</h1>"));
+    const form = new URLSearchParams(raw);
+    if (form.get("presentation") !== entry.browser?.form) return denied();
+    if (entry.saved !== undefined) return this.saved(response, entry.saved);
+    const answers = choices(entry.view, form);
+    const result = entry.engine.saveBrowserAnswers(entry.view.id, answers, entry.actor);
+    if (result.code !== EXIT.OK) {
+      return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
+        reviewHtml(entry.view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
+    }
+    entry.saved = Number(result.saved);
+    this.saved(response, entry.saved);
+  }
+
+  private saved(response: ServerResponse, count: number): void {
+    sendHtml(response, 200, page("Answers saved", `<h1>Answers saved</h1><p>UTP recorded ${count} ${count === 1 ? "answer" : "answers"}.</p>`));
+  }
+}

@@ -74,6 +74,15 @@ export interface Review {
   default_notices?: DefaultNotice[];
 }
 
+export interface BrowserAnswer {
+  id: string;
+  revision: number;
+  value?: string;
+  custom?: string;
+  items?: Record<string, string>;
+  details?: Record<string, string>;
+}
+
 export interface DecisionLogEntry {
   id: string;
   revision: number;
@@ -197,6 +206,32 @@ export class Engine {
   /** Rebuilds the projection from the log. Call once, after store.open(). */
   load(): void {
     for (const e of this.store.all()) this.apply(e);
+  }
+
+  /** A browser presentation can save its whole batch in one event. */
+  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor): OpResult {
+    this.sweep();
+    const review = this.reviews.get(reviewId);
+    if (!review || review.status !== "prepared") return notFound(reviewId);
+    const at = this.now().toISOString();
+    const answers: { id: string; revision: number; answer: AnswerRecord }[] = [];
+    try {
+      for (const input of inputs) {
+        const rev = this.revs.get(key(input.id, input.revision));
+        const usedDefault = rev && !rev.answer && this.lastGrant(rev)?.from_default
+          && ["default_claimed", "executing", "applied", "outcome_unknown"].includes(rev.status);
+        if (!rev || rev.review_id !== reviewId || !this.isCurrentRev(rev)
+            || (rev.status !== "presented" && !usedDefault) || rev.body.kind === "notice") {
+          return { code: EXIT.REVOKED, message: "a displayed request changed; reopen the review before saving" };
+        }
+        answers.push({ id: rev.id, revision: rev.revision, answer: this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true) });
+      }
+    } catch (error) {
+      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
+      throw error;
+    }
+    return this.commit("review-page.save", "review.answered", actor, { review_id: reviewId, answers },
+      { code: EXIT.OK, review_id: reviewId, saved: answers.length });
   }
 
   /** Snapshots the source and its prior archives without exposing them to write operations. */
@@ -812,15 +847,13 @@ export class Engine {
         break;
       }
       case "answer.recorded": {
-        const r = this.mustRev(d);
-        r.answer = d.answer as AnswerRecord;
-        r.answer_count += 1;
-        const st = this.effective(r, e.at);
-        if (st === "granted" || st === "default_claimed") this.revoke(r);
-        if (st === "granted" || st === "default_claimed" || st === "presented" || st === "hidden" || st === "answered") {
-          this.move(r, "answered", e.at);
+        this.recordAnswer(this.mustRev(d), d.answer as AnswerRecord, e.at);
+        break;
+      }
+      case "review.answered": {
+        for (const answer of d.answers as Array<{ id: string; revision: number; answer: AnswerRecord }>) {
+          this.recordAnswer(this.mustRev(answer), answer.answer, e.at);
         }
-        this.checkLateConflict(r, e.at);
         break;
       }
       case "answer.withdrawn": {
@@ -948,6 +981,15 @@ export class Engine {
     this.apply(event);
     this.events.emit("commit", event);
     return result;
+  }
+
+  private recordAnswer(rev: Rev, answer: AnswerRecord, at: string): void {
+    rev.answer = answer;
+    rev.answer_count += 1;
+    const state = this.effective(rev, at);
+    if (state === "granted" || state === "default_claimed") this.revoke(rev);
+    if (["granted", "default_claimed", "presented", "hidden", "answered"].includes(state)) this.move(rev, "answered", at);
+    this.checkLateConflict(rev, at);
   }
 
   /** Records lease and expiry deadlines that passed since the last operation. */
@@ -1089,7 +1131,7 @@ export class Engine {
     return { g, rev, req: this.reqOf(rev) };
   }
 
-  private answerRecord(rev: Rev, a: Args, actor: Actor, at: string): AnswerRecord {
+  private answerRecord(rev: Rev, a: Args, actor: Actor, at: string, browser = false): AnswerRecord {
     const options = rev.body.options ?? [];
     const value = optStr(a, "value") ?? null;
     if (value !== null && !options.some((o) => o.id === value)) {
@@ -1121,7 +1163,7 @@ export class Engine {
     }
     const channel = str(a, "channel");
     const record: AnswerRecord = {
-      value, channel, verified: PERSON_CHANNELS[channel] ?? "none", machine: actor.machine, session: actor.session, at,
+      value, channel, verified: browser ? "channel" : PERSON_CHANNELS[channel] ?? "none", machine: actor.machine, session: actor.session, at,
     };
     const extra: Partial<AnswerRecord> = {
       custom, items, details, disposition, sureness: sureness as AnswerRecord["sureness"],

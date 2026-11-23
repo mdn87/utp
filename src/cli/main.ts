@@ -21,7 +21,7 @@ const HELP = `utp: hand a person structured decisions, and get structured answer
 
 Usage: utp <verb> [arguments] [--json] [--op-id <id>]
 
-Setup       serve [--data <dir>] [--host <addr>] [--port <n>]
+Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <url>]
             token create <machine> [--data <dir>]
             connect <server-url>        (reads the token from standard input)
             init [--name <name>] [--new]
@@ -30,6 +30,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             check <file>
             ask <file>
             flush
+            page <review-id>
             presented <review> [--channel <name>]
             show <id>
             status
@@ -65,6 +66,7 @@ const OPTIONS = {
   data: { type: "string" },
   host: { type: "string" },
   port: { type: "string" },
+  "review-origin": { type: "string" },
   name: { type: "string" },
   new: { type: "boolean" },
   file: { type: "string" },
@@ -211,7 +213,8 @@ async function main(argv: string[]): Promise<number> {
   switch (verb) {
     case "serve": {
       const port = flags.port ? Number(flags.port) : DEFAULT_PORT;
-      const svc = await startServer({ dataDir, host: flags.host, port, log: (l) => process.stderr.write(`${l}\n`) });
+      const svc = await startServer({ dataDir, host: flags.host, port, reviewOrigin: flags["review-origin"],
+        log: (l) => process.stderr.write(`${l}\n`) });
       process.stderr.write(`UTP service listening on ${svc.url}, data in ${dataDir}\n`);
       await new Promise<void>((resolve) => {
         const stop = () => void svc.close().then(resolve);
@@ -317,6 +320,11 @@ async function main(argv: string[]): Promise<number> {
     case "presented": {
       const { project } = projectFor();
       return out(await call("presented", { review: need(rest[0], "a review id"), channel: flags.channel ?? "conversation" }, { project, opId }));
+    }
+    case "page": {
+      const { project } = projectFor();
+      const r = await call("review-page.prepare", { review: need(rest[0], "a review id") }, { project });
+      return out(r, r.code === EXIT.OK ? `Open the review page in your browser.\n${String(r.url)}` : undefined);
     }
     case "show": {
       const { project } = projectFor();

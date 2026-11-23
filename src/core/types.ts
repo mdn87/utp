@@ -48,6 +48,11 @@ export interface AssumptionItem {
   consequence: string;
 }
 
+export type RequestPreview = { label: string } & (
+  { text: string }
+  | { media_type: "image/png" | "image/jpeg" | "image/webp"; data: string }
+);
+
 export interface DefaultEligibility {
   local: true;
   scope_delta: "none";
@@ -78,6 +83,7 @@ export interface RequestBody {
   steps?: HandoffStep[];
   goals?: AcceptanceGoal[];
   assumptions?: AssumptionItem[];
+  previews?: RequestPreview[];
   stakes: { reversibility: "easy" | "costly" | "one_way" };
   level: 0 | 1 | 2 | 3;
   level_reason: string;
