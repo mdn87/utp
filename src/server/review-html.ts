@@ -50,7 +50,11 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
       `<option value="${value}"${form?.get(name) === value ? " selected" : ""}>${text}</option>`).join("")}</select></label>`;
   const cards = review.items.map((item, index) => {
     const b = item.body;
-    const parts = [`<article><h2>${escapeText(b.question)}</h2>`, notice(b.why_now)];
+    const parts = [`<article><h2>${escapeText(b.question)}</h2>`];
+    if (b.kind !== "notice") parts.push("<h3>What this question addresses</h3>");
+    parts.push(notice(b.summary ?? b.why_now));
+    if (b.summary && b.summary !== b.why_now) parts.push("<h3>Why now</h3>", notice(b.why_now));
+    if (item.clarification) parts.push('<p role="status">Clarification requested. The agent will see it when it checks this question.</p>');
     if (b.depends_on?.length) parts.push(notice(`This question depends on ${b.depends_on.join(" and ")}.`));
     if (Object.keys(b.glossary ?? {}).length) parts.push("<dl>", ...Object.entries(b.glossary ?? {}).map(([term, meaning]) =>
       `<dt>${escapeText(term)}</dt><dd>${escapeText(meaning)}</dd>`), "</dl>");
@@ -98,6 +102,11 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
         [choice, choice.charAt(0).toUpperCase() + choice.slice(1)]));
       const clarity = rating(`feedback-${index}`, "How clear was this card?", Object.entries(CLARITY_FEEDBACK));
       parts.push(`<div class="ratings">${sureness}${clarity}</div>`);
+      if (!item.clarification) {
+        parts.push('<details><summary>Question or choices unclear?</summary>',
+          `<label>What should the agent explain? <textarea name="clarify-note-${index}" rows="2">${field(`clarify-note-${index}`)}</textarea></label>`,
+          `<button type="submit" name="clarify" value="${index}" formnovalidate>Ask for clarification</button></details>`);
+      }
     }
     parts.push("</article>");
     return parts.join("\n");

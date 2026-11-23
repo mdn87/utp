@@ -42,6 +42,10 @@ git-ignored. Public documents describe patterns in general terms only.
   an agent when to ask and how to call `utp`; they do not fork the format.
 - UTP reviews itself. Design decisions for this project are written as UTP
   decision requests and answered through UTP once it can render them.
+- Open every review with the decision it addresses, in plain language. Use
+  `summary` for context when the reason for asking now is different. Explain
+  what each choice changes. If the reviewer asks for clarification, explain
+  the goal or choices and revise the same request before asking again.
 
 ## Conventions
 

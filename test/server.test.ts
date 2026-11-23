@@ -303,6 +303,17 @@ test("a browser batch presents previews and saves only its displayed revisions",
     const current = await makeBatch();
     assert.equal((await current.save({ origin: "https://elsewhere.invalid", cookie: current.cookie })).status, 403);
     assert.equal((await current.save({ origin: current.origin })).status, 403);
+    current.form.set("clarify", "1");
+    current.form.set("clarify-note-1", "What changes when I choose the second option?");
+    const clarification = await current.save({ origin: current.origin, cookie: current.cookie });
+    assert.equal(clarification.status, 200);
+    assert.match(await clarification.text(), /Clarification requested/);
+    const waiting = await s.agent("wait", { id: current.cards[1]?.id });
+    assert.equal(waiting.code, 21);
+    assert.equal(waiting.answer, null);
+    assert.equal((waiting.clarification as { note: string }).note, "What changes when I choose the second option?");
+    assert.equal((await s.agent("wait", { id: current.cards[0]?.id })).code, 10);
+    current.form.delete("clarify");
     current.form.set("feedback-1", "unknown");
     assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 400);
     current.form.set("feedback-1", "needed_more");

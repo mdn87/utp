@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReviewView } from "../cli/render.js";
 import type { BrowserAnswer, Engine } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
-import { EXIT, type Actor, type OpResult } from "../core/types.js";
+import { EXIT, type Actor, type ClarificationRequest, type OpResult } from "../core/types.js";
 import { page, reviewHtml } from "./review-html.js";
 
 const PAGE_LIFETIME_MS = 30 * 60 * 1000;
@@ -113,6 +113,20 @@ export class ReviewPages {
     const form = new URLSearchParams(raw);
     if (form.get("presentation") !== entry.browser?.form) return denied();
     if (entry.saved !== undefined) return this.saved(response, entry.saved);
+    const requested = form.get("clarify");
+    if (requested !== null) {
+      const card = /^\d+$/.test(requested) ? entry.view.items[Number(requested)] : undefined;
+      if (!card) return denied();
+      const result = entry.engine.run("answer", {
+        id: `${card.id}@${card.revision}`, channel: "review-page", clarify: true,
+        note: form.get(`clarify-note-${requested}`)?.trim(),
+      }, entry.actor);
+      if (result.code !== EXIT.OK) {
+        return sendHtml(response, 409, reviewHtml(entry.view, entry.browser.form, result.message ?? "This question changed.", form));
+      }
+      card.clarification = result.clarification as ClarificationRequest;
+      return sendHtml(response, 200, reviewHtml(entry.view, entry.browser.form, undefined, form));
+    }
     const answers = choices(entry.view, form);
     const result = entry.engine.saveBrowserAnswers(entry.view.id, answers, entry.actor,
       Math.round(performance.now() - entry.browser.openedAt));

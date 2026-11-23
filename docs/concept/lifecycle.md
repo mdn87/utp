@@ -374,7 +374,7 @@ to map the UTP item into the report reader's required JSON format.
 | `utp page <review-id>` | Prepares a browser link for the review. Opening the page records presentation and one save records the batch |
 | `utp presented <review>` | Records a presentation receipt (adapters call it) |
 | `utp show <id>` | Renders a request or review as Markdown or JSON |
-| `utp review` | Interactive review in the person's own terminal |
+| `utp review [<review-id>]` | Interactive review in the person's own terminal, with `?` to ask for a clearer question |
 | `utp answer <id>` | Records or revises an answer; `--from-chat` takes a verbatim quote and checks it against the session transcript |
 | `utp wait <id> --timeout <s>` | Waits for an answer and issues an execution grant when it authorizes an action |
 | `utp claim-default <id>` | Reserves the default and issues a grant, or returns the answer that already won |
@@ -389,6 +389,11 @@ to map the UTP item into the report reader's required JSON format.
 | `utp export <id>... --redact --file <output>` | Write selected decisions to a new file after redaction and leak checks |
 | `utp leak-check <file>...` | Scan files for generic patterns and private deny-list terms |
 
+An unclear question stays open when the reviewer asks for clarification in
+the terminal or on the review page. The agent sees the optional note in
+`utp wait`, which returns exit code 21. An unused default is released, and
+`utp claim-default` waits while the clarification request is open.
+
 - Requests and evidence are passed as UTF-8 JSON files, never as inline
   arguments, because quoting differs between PowerShell, bash, and zsh.
 - `--json` prints machine-readable results for agents; the default output is
@@ -398,7 +403,8 @@ to map the UTP item into the report reader's required JSON format.
   default claimed; 16 an answer arrived first; 17 grant revoked (answer
   revised or withdrawn, or request superseded); 18 the answer lacks the
   provenance its action needs (see "Provenance follows the effect"); 19 not
-  allowed in the request's current state; 20 check failed; 30 store
+  allowed in the request's current state; 20 check failed; 21 clarification
+  requested; 30 store
   busy (safe to retry); 31 lease epoch outdated; 32 can't reach the UTP
   service (check the service, or run `utp setup` in a sandbox); 40 not found; 1 any other error.
 - Supported lanes, tested separately: PowerShell 7 and Git Bash on Windows,

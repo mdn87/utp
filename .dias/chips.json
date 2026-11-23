@@ -458,7 +458,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T00:06:21Z"
+        "updatedAt": "2026-11-23T01:39:55.775Z"
       },
       "evidence": [
         {
@@ -472,6 +472,12 @@
           "at": "2026-11-23T00:06:21Z",
           "kind": "stage-change",
           "message": "Classified all 60 cases. UTP presented a ten-case sample for confirmation before fixtures are written."
+        },
+        {
+          "entryId": "classification-review-reworded",
+          "at": "2026-11-23T01:39:55.775Z",
+          "kind": "note",
+          "message": "Rewrote the ten-example review in plain language after the reviewer found it unclear. The revised question still needs an answer."
         }
       ]
     },
@@ -610,7 +616,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T00:26:25.254Z"
+        "updatedAt": "2026-11-23T01:39:55.775Z"
       },
       "evidence": [
         {
@@ -624,6 +630,12 @@
           "kind": "stage-change",
           "at": "2026-11-23T00:26:25.254Z",
           "message": "The terminal and page save optional ratings. Checks covered batch timing, feedback after restart and the absence of timing for piped answers."
+        },
+        {
+          "entryId": "review-clarification-verified",
+          "at": "2026-11-23T01:39:55.775Z",
+          "kind": "note",
+          "message": "Cards explain what they address. A clarification request keeps the choice open and releases any unused default."
         }
       ]
     },
