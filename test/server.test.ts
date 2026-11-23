@@ -351,3 +351,83 @@ test("a browser batch presents previews and saves only its displayed revisions",
     await s.svc.close();
   }
 });
+
+test("a blind comparison reveals identities only after its immutable ballot", async () => {
+  const s = await service();
+  try {
+    const candidateA = { identity: "Source Cedar", artifact: { text: "A sample with larger type." }, reveal_note: "Private accounting details." };
+    const candidateB = { identity: "Source Maple", artifact: { text: "A sample with more spacing." } };
+    const judge: RequestBody = {
+      kind: "judge", question: "Which sample is easier to read?", why_now: "Choose a layout for the next check.",
+      summary: "Compare readability at the same display size.",
+      level: 3, level_reason: "The person judges readability.", stakes: { reversibility: "easy" },
+      blind: { candidates: [candidateA, candidateB], recommended_candidate: 0 },
+      notes: "Private design note for Source Cedar",
+    };
+    const identical = await s.agent("ask", { body: { ...judge, blind: { candidates: [candidateA, { ...candidateB, artifact: candidateA.artifact }] } } });
+    assert.equal(identical.code, 20);
+    assert.equal((await s.agent("ask", { body: { ...judge, question: "Is Source Cedar clearer?" } })).code, 20);
+    assert.equal((await s.agent("ask", { body: { ...judge, summary: "Compare Source Cedar with the alternative." } })).code, 20);
+    const asked = await s.agent("ask", { body: judge });
+    assert.equal(asked.code, 0, asked.message);
+    const { review_id } = await s.agent("flush");
+    const hidden = (result: unknown) => {
+      assert.doesNotMatch(JSON.stringify(result), /Source Cedar|Source Maple|recommended_candidate|Private design note|Private accounting details/);
+    };
+    hidden(await s.agent("show", { id: asked.id }));
+    hidden(await s.agent("show", { id: review_id }));
+    assert.deepEqual((await s.agent("log", { text: "Source Cedar" })).entries, []);
+    const prepared = await s.agent("review-page.prepare", { review: review_id });
+    const url = new URL(String(prepared.url));
+    const presented = await fetch(url);
+    const html = await presented.text();
+    hidden(html);
+    assert.match(html, /class="compare"/);
+    assert.match(html, /Compare readability at the same display size/);
+    assert.match(html, /larger type/);
+    assert.match(html, /more spacing/);
+    const cookie = presented.headers.get("set-cookie")?.split(";")[0];
+    const token = /name="presentation" value="([a-zA-Z0-9_-]+)"/.exec(html)?.[1];
+    assert.ok(cookie && token);
+    const ballot = new URLSearchParams({ presentation: token, "rating-a-0": "4", "rating-b-0": "4", "repeat-0": "yes" });
+    const vote = () => fetch(url, { method: "POST", headers: { cookie, origin: url.origin }, body: ballot });
+    const incomplete = await vote();
+    assert.equal(incomplete.status, 400);
+    hidden(await incomplete.text());
+    ballot.set("choice-0", "tie");
+    ballot.set("reason-0", "Both samples have readable headings.");
+    ballot.set("clarify", "0");
+    ballot.set("clarify-note-0", "Which display size should I use?");
+    const clarification = await vote();
+    assert.equal(clarification.status, 200);
+    hidden(await clarification.text());
+    const waiting = await s.agent("wait", { id: asked.id });
+    assert.equal(waiting.code, 21);
+    assert.equal(waiting.answer, null);
+    ballot.delete("clarify");
+    ballot.delete("clarify-note-0");
+    const submitted = await vote();
+    assert.equal(submitted.status, 200);
+    const revealed = await submitted.text();
+    assert.match(revealed, /Source Cedar/);
+    assert.match(revealed, /Source Maple/);
+    assert.match(revealed, /Private accounting details/);
+    assert.equal((await vote()).status, 200);
+    ballot.set("choice-0", "a");
+    assert.equal((await vote()).status, 409);
+    assert.equal((await s.person("answer", { id: asked.id, channel: "cli", value: "b", note: "Changed vote." })).code, 17);
+    assert.equal((await s.person("answer", { id: asked.id, channel: "cli", withdraw: true })).code, 17);
+
+    const saved = (await s.agent("show", { id: asked.id })).request as {
+      answer: { value: string; ratings: unknown; note: string; repeat_test: boolean };
+      blind_reveal: { identities: Record<string, string>; recommendation: string };
+    };
+    assert.equal(saved.answer.value, "tie");
+    assert.deepEqual(saved.answer.ratings, { a: 4, b: 4 });
+    assert.equal(saved.answer.repeat_test, true);
+    assert.equal(saved.answer.note, "Both samples have readable headings.");
+    assert.equal(saved.blind_reveal.identities[saved.blind_reveal.recommendation], "Source Cedar");
+  } finally {
+    await s.svc.close();
+  }
+});

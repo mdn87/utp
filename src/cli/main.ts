@@ -31,7 +31,7 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             setup <codex|claude|antigravity> [--apply] [-- <agent arguments>]
             init [--name <name>] [--new]
             link <project-id>
-Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
+Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge> [--file <path>]
             check <file>
             consider <decision.json>
             decide <decision.json>
@@ -219,6 +219,18 @@ const TEMPLATES: Record<string, RequestBody> = {
     kind: "notice", question: "An informational update", why_now: "Say what happened and why it matters.",
     stakes: { reversibility: "easy" }, level: 1, level_reason: "The person needs to know what changed.",
   },
+  judge: {
+    kind: "judge", question: "Which sample works better for the stated goal?",
+    summary: "Describe the result you are comparing and what the reviewer should look for.",
+    why_now: "Pick the result that best meets the goal, then explain your preference.",
+    stakes: { reversibility: "easy" }, level: 3, level_reason: "The choice needs the person's judgment.",
+    blind: {
+      candidates: [
+        { identity: "First source", artifact: { text: "Preview of the first candidate." } },
+        { identity: "Second source", artifact: { text: "Preview of the second candidate." } },
+      ],
+    },
+  },
 };
 
 async function main(argv: string[]): Promise<number> {
@@ -370,6 +382,10 @@ async function main(argv: string[]): Promise<number> {
       if (r.digest === true) return out(r, "These notices are queued for the morning report.");
       const shown = await call("show", { id: r.review_id }, { project });
       const review = shown.review as ReviewView;
+      if (review.items.some((card) => card.body.kind === "judge" && card.body.previews?.some((artifact) => "data" in artifact))) {
+        const page = await call("review-page.prepare", { review: review.id }, { project });
+        return out(page, page.code === EXIT.OK ? `Open the review page to compare the previews side by side.\n${String(page.url)}` : undefined);
+      }
       return out(r, `${reviewMarkdown(review)}\n\nAfter this review appears in your message to the person, run: `
         + `utp presented ${review.id} --channel conversation`);
     }

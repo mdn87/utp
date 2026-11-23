@@ -1,6 +1,7 @@
 // Structural checks for a request (the part of `utp check` that phase 1a
 // needs). Heuristic rules, such as definitions-or-waiver, arrive in phase 1b.
 
+import { exposesBlindIdentity, normalizeBlind } from "./blind.js";
 import { KINDS, type RequestBody } from "./types.js";
 
 export interface CheckFailure {
@@ -44,6 +45,14 @@ export function checkRequest(body: unknown): CheckFailure[] {
   }
   const b = body as Partial<RequestBody>;
   if (!KINDS.includes(b.kind as never)) fail("S01-kind", `kind must be one of: ${KINDS.join(", ")}`);
+  if (b.kind === "judge") {
+    const blind = normalizeBlind(b.blind);
+    if (typeof blind === "string") fail("S22-blind-candidates", blind);
+    else if (exposesBlindIdentity(b, blind)) fail("S22-blind-candidates", "remove candidate identities from the displayed text");
+    if (b.options !== undefined || b.recommendation !== undefined || b.previews !== undefined || b.level !== 3) {
+      fail("S22-blind-candidates", "use level 3 and put the candidates and recommendation in blind");
+    }
+  } else if (b.blind !== undefined) fail("S22-blind-candidates", "use a judge request for blind candidates");
   if (!nonEmpty(b.question)) fail("S02-question", "question is required");
   if (b.summary !== undefined && !nonEmpty(b.summary)) {
     fail("S21-summary", "summary must explain in plain language what this question addresses");

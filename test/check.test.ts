@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { normalizeBlind } from "../src/core/blind.js";
 import { checkRequest } from "../src/core/check.js";
+
+test("blind PNG candidates compare without identifying metadata", () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jCwwAAAAASUVORK5CYII=", "base64");
+  const text = Buffer.from("Author\0Private identity");
+  const metadata = Buffer.alloc(text.length + 12);
+  metadata.writeUInt32BE(text.length);
+  metadata.write("tEXt", 4);
+  text.copy(metadata, 8);
+  const withMetadata = Buffer.concat([png.subarray(0, -12), metadata, png.subarray(-12)]);
+  const duplicate = normalizeBlind({ candidates: [
+    { identity: "First source", artifact: { media_type: "image/png", data: png.toString("base64") } },
+    { identity: "Second source", artifact: { media_type: "image/png", data: withMetadata.toString("base64") } },
+  ] });
+  assert.equal(duplicate, "the two candidate previews are identical");
+});
 import type { RequestBody } from "../src/core/types.js";
 
 const valid = (): RequestBody => ({

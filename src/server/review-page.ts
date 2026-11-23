@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReviewView } from "../cli/render.js";
+import type { BlindReveal } from "../core/blind.js";
 import type { BrowserAnswer, Engine } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
 import { EXIT, type Actor, type ClarificationRequest, type OpResult } from "../core/types.js";
-import { page, reviewHtml } from "./review-html.js";
+import { blindRevealHtml, comparisonScriptHash, page, reviewHtml } from "./review-html.js";
 
 const PAGE_LIFETIME_MS = 30 * 60 * 1000;
 const MAX_PREPARED_PAGES = 256;
@@ -17,14 +18,15 @@ interface Presentation {
   view: ReviewView;
   expiresAt: number;
   browser?: { cookie: string; form: string; openedAt: number };
-  saved?: number;
+  saved?: { count: number; ballot: string; reveals: { question: string; reveal: BlindReveal }[] };
 }
 
 function sendHtml(response: ServerResponse, code: number, html: string, cookie?: string): void {
   response.writeHead(code, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; `
+      + `script-src 'sha256-${comparisonScriptHash}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
     "referrer-policy": "same-origin",
     "x-content-type-options": "nosniff",
     ...(cookie ? { "set-cookie": cookie } : {}),
@@ -41,6 +43,14 @@ function choices(view: ReviewView, form: URLSearchParams): BrowserAnswer[] {
       sureness: form.get(`sureness-${index}`) || undefined,
       feedback: form.get(`feedback-${index}`) || undefined,
     };
+    if (card.body.kind === "judge") {
+      const a = form.get(`rating-a-${index}`);
+      const b = form.get(`rating-b-${index}`);
+      const repeat = form.get(`repeat-${index}`);
+      return [{ ...ref, value: form.get(`choice-${index}`) ?? undefined, note: form.get(`reason-${index}`)?.trim(),
+        ratings: a || b ? { a: Number(a), b: Number(b) } : undefined,
+        repeat_test: repeat === "yes" ? true : repeat === "no" ? false : undefined }];
+    }
     const custom = form.get(`custom-${index}`)?.trim();
     if (custom) return [{ ...ref, custom }];
     const prompts = itemPrompts(card.body);
@@ -89,7 +99,7 @@ export class ReviewPages {
     const hasCookie = () => !!entry.browser && request.headers.cookie?.split(";").some((part) => part.trim() === `utp_review=${entry.browser?.cookie}`);
     if (request.method === "GET") {
       if (entry.browser && !hasCookie()) return denied();
-      if (entry.saved !== undefined) return this.saved(response, entry.saved);
+      if (entry.saved) return this.saved(response, entry.saved);
       const shown = entry.engine.run("show", { id: entry.view.id }, entry.actor);
       const current = (shown.review as ReviewView | undefined)?.items ?? [];
       if (entry.view.items.some((card) => !current.some((candidate) => candidate.id === card.id && candidate.revision === card.revision
@@ -112,9 +122,9 @@ export class ReviewPages {
     if (raw === undefined) return sendHtml(response, 413, page("Answer too large", "<h1>Answer too large</h1>"));
     const form = new URLSearchParams(raw);
     if (form.get("presentation") !== entry.browser?.form) return denied();
-    if (entry.saved !== undefined) return this.saved(response, entry.saved);
     const requested = form.get("clarify");
     if (requested !== null) {
+      if (entry.saved) return this.saved(response, entry.saved);
       const card = /^\d+$/.test(requested) ? entry.view.items[Number(requested)] : undefined;
       if (!card) return denied();
       const result = entry.engine.run("answer", {
@@ -128,17 +138,30 @@ export class ReviewPages {
       return sendHtml(response, 200, reviewHtml(entry.view, entry.browser.form, undefined, form));
     }
     const answers = choices(entry.view, form);
+    const judges = new Set(entry.view.items.filter((card) => card.body.kind === "judge").map((card) => card.id));
+    const ballot = JSON.stringify(answers.filter(({ id }) => judges.has(id)));
+    if (entry.saved) {
+      if (ballot !== entry.saved.ballot) {
+        return sendHtml(response, 409, page("Ballot already saved", "<h1>Ballot already saved</h1><p>The original choices still apply.</p>"));
+      }
+      return this.saved(response, entry.saved);
+    }
     const result = entry.engine.saveBrowserAnswers(entry.view.id, answers, entry.actor,
       Math.round(performance.now() - entry.browser.openedAt));
     if (result.code !== EXIT.OK) {
       return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
         reviewHtml(entry.view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
     }
-    entry.saved = Number(result.saved);
+    const stored = judges.size ? entry.engine.run("show", { id: entry.view.id }, entry.actor).review as ReviewView : undefined;
+    const reveals = stored?.items.flatMap((card) => judges.has(card.id) && card.blind_reveal
+      ? [{ question: card.body.question, reveal: card.blind_reveal }] : []) ?? [];
+    entry.saved = { count: Number(result.saved), ballot, reveals };
     this.saved(response, entry.saved);
   }
 
-  private saved(response: ServerResponse, count: number): void {
-    sendHtml(response, 200, page("Answers saved", `<h1>Answers saved</h1><p>UTP recorded ${count} ${count === 1 ? "answer" : "answers"}.</p>`));
+  private saved(response: ServerResponse, result: NonNullable<Presentation["saved"]>): void {
+    const { count, reveals } = result;
+    sendHtml(response, 200, page("Answers saved", `<h1>Answers saved</h1><p>UTP recorded ${count} ${count === 1 ? "answer" : "answers"}.</p>`
+      + reveals.map(({ question, reveal }) => blindRevealHtml(reveal, question)).join("")));
   }
 }

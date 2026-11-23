@@ -1,5 +1,6 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
+import type { BlindReveal } from "../core/blind.js";
 import type { AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody } from "../core/types.js";
 
 export interface RequestView {
@@ -10,6 +11,7 @@ export interface RequestView {
   body: RequestBody;
   answer: AnswerRecord | null;
   clarification?: ClarificationRequest;
+  blind_reveal?: BlindReveal;
   flags: string[];
 }
 
@@ -32,6 +34,11 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
   out.push(b.summary ?? b.why_now, "");
   if (b.summary && b.summary !== b.why_now) out.push("**Why now**", b.why_now, "");
   if (v.clarification) out.push("The reviewer asked for a clearer question or choices.", "");
+  if (b.kind === "judge") {
+    for (const artifact of b.previews ?? []) {
+      out.push(`**${artifact.label}**`, "text" in artifact ? artifact.text : "View this preview on the review page.", "");
+    }
+  }
   if (b.depends_on?.length) out.push(`Your answer to ${b.depends_on.join(" and ")} affects this card.`, "");
   const terms = Object.entries(b.glossary ?? {});
   if (terms.length) out.push("Terms on this card:", "", ...terms.map(([t, d]) => `- **${t}**: ${d}`), "");
@@ -72,6 +79,17 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
   }
   out.push(`\`${v.id}@${v.revision}\` · ${b.kind} · level ${b.level}: ${b.level_reason} · ${UNDO[b.stakes.reversibility] ?? b.stakes.reversibility}`);
   if (v.answer) out.push("", `Answered: ${answerText(v.answer)}`);
+  if (b.kind === "judge" && v.answer) {
+    if (v.answer.note) out.push(`Reason given · ${v.answer.note}`);
+    if (v.answer.ratings) out.push(`Ratings · Candidate A ${v.answer.ratings.a}/5 and Candidate B ${v.answer.ratings.b}/5`);
+    if (v.answer.repeat_test !== undefined) out.push(v.answer.repeat_test ? "The reviewer would run the test again." : "The reviewer declined another test.");
+  }
+  if (v.blind_reveal) {
+    out.push("", `Candidate A was ${v.blind_reveal.identities.a}. Candidate B was ${v.blind_reveal.identities.b}.`);
+    if (v.blind_reveal.notes?.a) out.push(`Candidate A · ${v.blind_reveal.notes.a}`);
+    if (v.blind_reveal.notes?.b) out.push(`Candidate B · ${v.blind_reveal.notes.b}`);
+    if (v.blind_reveal.recommendation) out.push(`The recommendation was Candidate ${v.blind_reveal.recommendation.toUpperCase()}.`);
+  }
   return out.join("\n");
 }
 
@@ -94,6 +112,7 @@ export function reviewMarkdown(review: ReviewView): string {
   if (cards.some((c) => c.body.kind !== "notice")) {
     out.push("Reply with the card letter and your choice, for example \"A: b\". Your own words work too.", "");
   }
+  if (cards.some((c) => c.body.kind === "judge")) out.push("For a blind comparison, choose a listed option. You can add a short reason.", "");
   cards.forEach((c, i) => out.push(cardMarkdown(c, letter(i)), ""));
   return out.join("\n").trimEnd();
 }
