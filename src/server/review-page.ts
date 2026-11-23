@@ -138,7 +138,7 @@ export class ReviewPages {
   }
 
   private saved(response: ServerResponse, count: number): void {
-    sendHtml(response, 200, page("Answers saved", `<h1>Answers saved</h1><p>UTP recorded ${count} ${count === 1 ? "answer" : "answers"}.</p>` + this.inboxLink()));
+    sendHtml(response, 200, page("Answers saved", `<h1>Answers saved</h1><p class="receipt">UTP recorded ${count} ${count === 1 ? "answer" : "answers"}.</p>` + this.inboxLink()));
   }
 
   private inboxLink(): string {
