@@ -711,7 +711,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T04:07:09.595Z"
+        "updatedAt": "2026-11-23T04:45:47.639Z"
       },
       "evidence": [
         {
@@ -731,6 +731,12 @@
           "at": "2026-11-23T04:07:09.595Z",
           "kind": "note",
           "message": "Decision D6 set one notification per review. The reviewer confirmed that choice and requested one lasting link to all open questions."
+        },
+        {
+          "entryId": "review-inbox-and-day-long-links",
+          "at": "2026-11-23T04:45:47.639Z",
+          "kind": "note",
+          "message": "New review links last 24 hours. The shared inbox found no unanswered questions across four projects. Public access still needs account approval."
         }
       ]
     },
