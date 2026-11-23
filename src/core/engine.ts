@@ -11,6 +11,7 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { checkRequest } from "./check.js";
+import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
 import {
@@ -136,8 +137,12 @@ function contentKey(body: RequestBody, basis: Basis): string {
   const sorted = (o: object | undefined) => (o ? Object.entries(o).sort(([a], [b]) => a.localeCompare(b)) : null);
   return JSON.stringify({
     kind: body.kind,
+    category: body.category ?? null,
     question: normalize(body.question),
     options: (body.options ?? []).map((o) => [o.id, normalize(o.label), normalize(o.consequence), sorted(o.authorization)]),
+    steps: Array.isArray(body.steps) ? body.steps.map(sorted) : [],
+    goals: Array.isArray(body.goals) ? body.goals.map(sorted) : [],
+    assumptions: Array.isArray(body.assumptions) ? body.assumptions.map(sorted) : [],
     default: sorted(body.default),
     basis: sorted(basis),
   });
@@ -733,7 +738,7 @@ export class Engine {
           tags: b.tags ?? [], related: b.related ?? [], reversals: req.reversals, asked_at: rev.asked_at,
         },
         searchText: [b.question, b.why_now, b.notes ?? "", rev.answer?.custom ?? "", rev.answer?.note ?? "",
-          ...req.reversals.map((r) => r.reason)].join(" ").toLowerCase(),
+          ...Object.values(rev.answer?.details ?? {}), ...req.reversals.map((r) => r.reason)].join(" ").toLowerCase(),
       };
     });
   }
@@ -1095,13 +1100,17 @@ export class Engine {
       throw new UsageError("disposition must be answered_elsewhere or no_longer_matters");
     }
     const custom = optStr(a, "custom");
-    let items: Record<string, string> | undefined;
-    if (a.items !== undefined) {
-      if (typeof a.items !== "object" || a.items === null || Array.isArray(a.items)
-        || !Object.values(a.items).every((v) => typeof v === "string")) {
-        throw new UsageError("items must map each item id to its answer");
+    const items = this.answerMap(a.items, "items");
+    const details = this.answerMap(a.details, "details");
+    const prompts = itemPrompts(rev.body);
+    if (prompts.length) {
+      if (value !== null || ((custom || disposition) && (items || details))) {
+        throw new UsageError("use item answers, a custom answer, or a disposition for this card");
       }
-      items = a.items as Record<string, string>;
+      if (!custom && !disposition) {
+        const problem = itemAnswerProblem(prompts, items, details);
+        if (problem) throw new UsageError(problem);
+      }
     }
     if (value === null && !custom && !disposition && !items) {
       throw new UsageError("an answer needs an option, your own words, item answers, or a disposition");
@@ -1115,12 +1124,21 @@ export class Engine {
       value, channel, verified: PERSON_CHANNELS[channel] ?? "none", machine: actor.machine, session: actor.session, at,
     };
     const extra: Partial<AnswerRecord> = {
-      custom, items, disposition, sureness: sureness as AnswerRecord["sureness"],
+      custom, items, details, disposition, sureness: sureness as AnswerRecord["sureness"],
       feedback: optStr(a, "feedback"), note: optStr(a, "note"), quote: optStr(a, "quote"),
       addressed: a.addressed === true ? true : undefined,
     };
     for (const [k, v] of Object.entries(extra)) if (v !== undefined) (record as unknown as Args)[k] = v;
     return record;
+  }
+
+  private answerMap(value: unknown, name: string): Record<string, string> | undefined {
+    if (value === undefined) return undefined;
+    if (!value || typeof value !== "object" || Array.isArray(value)
+        || !Object.values(value).every((entry) => typeof entry === "string")) {
+      throw new UsageError(`${name} must map item ids to text`);
+    }
+    return value as Record<string, string>;
   }
 
   private evidenceArg(v: unknown): { action: string; target: string; scope: string; effect: string } & Args {

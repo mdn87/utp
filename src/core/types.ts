@@ -17,6 +17,37 @@ export interface OptionSpec {
   authorization?: Authorization;
 }
 
+export interface EvidenceItem {
+  claim: string;
+  kind: string;
+  source: string;
+  date: string;
+}
+
+export interface HandoffStep {
+  id: string;
+  actor: string;
+  machine: string;
+  shell: string;
+  command: string;
+  expected_result: string;
+  tested: boolean;
+  why_person: string;
+}
+
+export interface AcceptanceGoal {
+  id: string;
+  goal: string;
+  coverage: "covered" | "partly_covered" | "not_covered";
+  evidence: EvidenceItem[];
+}
+
+export interface AssumptionItem {
+  id: string;
+  statement: string;
+  consequence: string;
+}
+
 export interface DefaultEligibility {
   local: true;
   scope_delta: "none";
@@ -43,7 +74,10 @@ export interface RequestBody {
   recommendation?: { option: string; because: string; preserves?: string; bolder_alternative?: string };
   default?: { option: string; consequence: string; eligibility?: DefaultEligibility };
   glossary?: Record<string, string>;
-  evidence?: { claim: string; kind: string; source: string; date: string }[];
+  evidence?: EvidenceItem[];
+  steps?: HandoffStep[];
+  goals?: AcceptanceGoal[];
+  assumptions?: AssumptionItem[];
   stakes: { reversibility: "easy" | "costly" | "one_way" };
   level: 0 | 1 | 2 | 3;
   level_reason: string;
@@ -66,6 +100,7 @@ export interface AnswerRecord {
   value: string | null;
   custom?: string;
   items?: Record<string, string>;
+  details?: Record<string, string>;
   disposition?: Disposition;
   sureness?: "sure" | "leaning" | "unsure";
   feedback?: string;

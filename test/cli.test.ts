@@ -334,3 +334,49 @@ test("export removes private details and checks public files before publication"
     await svc.close();
   }
 });
+
+test("all seven templates work and the terminal records answers by item", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-home-")) };
+  const kinds = ["choose", "approve", "handoff", "clarify", "accept", "assumptions", "notice"];
+  try {
+    const connected = await utp(["connect", svc.url], { ...o, input: createToken(data, "test") });
+    assert.equal(connected.code, 0);
+    assert.equal((await utp(["init"], o)).code, 0);
+    const ids: Record<string, string> = {};
+    for (const kind of kinds) {
+      const file = path.join(o.cwd, kind + ".json");
+      const made = await utp(["new", kind, "--file", file], o);
+      assert.equal(made.code, 0, made.stdout + made.stderr);
+      assert.equal((await utp(["check", file], o)).code, 0);
+      const asked = await utp(["ask", file, "--json"], o);
+      assert.equal(asked.code, 0, asked.stdout + asked.stderr);
+      ids[kind] = JSON.parse(asked.stdout).id;
+    }
+    await utp(["flush"], o);
+    const reviewed = await utp(["review"], { ...o, input: "a\nno\ndone\nObserved the test result\na\npartly\nchange\nRevised assumption\n" });
+    assert.equal(reviewed.code, 0, reviewed.stdout + reviewed.stderr);
+    assert.match(reviewed.stdout, /Saved 6 answers/);
+    for (const [kind, item, answer, detail] of [
+      ["handoff", "step-1", "done", "Observed the test result"],
+      ["accept", "goal-1", "partly", undefined],
+      ["assumptions", "assumption-1", "change", "Revised assumption"],
+    ] as const) {
+      const shown = await utp(["show", ids[kind]!, "--json"], o);
+      assert.equal(shown.code, 0);
+      const result = JSON.parse(shown.stdout).request.answer;
+      assert.equal(result.items[item], answer);
+      assert.equal(result.details?.[item], detail);
+    }
+    const notice = await utp(["show", ids.notice!, "--json"], o);
+    assert.equal(JSON.parse(notice.stdout).request.status, "closed");
+    const invalid = path.join(o.cwd, "invalid-answer.json");
+    writeFileSync(invalid, JSON.stringify({ items: { "assumption-1": "change" } }));
+    const refused = await utp(["answer", ids.assumptions!, "--file", invalid], o);
+    assert.equal(refused.code, 1);
+    assert.match(refused.stdout, /needs its result or replacement text/);
+  } finally {
+    await svc.close();
+  }
+});

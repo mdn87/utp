@@ -451,14 +451,14 @@
       "projectId": "utp",
       "title": "Classify the evidence used to test review quality",
       "summary": "Classify 60 cases as machine-detectable, policy or adapter behavior, or human judgment. Have the person confirm a sample of at least ten before writing fixtures.",
-      "stage": "ready",
+      "stage": "blocked",
       "sequence": 140,
       "prereqs": [],
       "linkedRunIds": [],
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T00:06:21Z"
       },
       "evidence": [
         {
@@ -466,6 +466,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The verification plan requires separate test methods for these groups. Only anonymized, reviewed fixtures belong in the public project."
+        },
+        {
+          "entryId": "evidence-sample-presented",
+          "at": "2026-11-23T00:06:21Z",
+          "kind": "stage-change",
+          "message": "Classified all 60 cases. UTP presented a ten-case sample for confirmation before fixtures are written."
         }
       ]
     },
@@ -475,7 +481,7 @@
       "projectId": "utp",
       "title": "Complete templates and answers for the selected kinds",
       "summary": "Implement D1’s selected kinds in the terminal, including scoped approvals and each kind’s required fields. Track any kinds deferred to phase 2.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 150,
       "prereqs": [
         "utp:review:kinds",
@@ -485,7 +491,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-23T00:06:21Z"
       },
       "evidence": [
         {
@@ -499,6 +505,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "stage-change",
           "message": "D1 selected all seven everyday kinds for phase 1."
+        },
+        {
+          "entryId": "everyday-kind-templates-verified",
+          "at": "2026-11-23T00:06:21Z",
+          "kind": "stage-change",
+          "message": "All seven templates pass terminal tests. Scoped approvals show each option’s authority, and manual steps, result checks and assumptions save per-item answers."
         }
       ]
     },

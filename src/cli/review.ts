@@ -4,6 +4,7 @@
 // control; piped input is recorded as terminal-piped and stays unverified.
 
 import readline from "node:readline";
+import { itemPrompts, type ItemPrompt } from "../core/items.js";
 import { EXIT } from "../core/types.js";
 import { call } from "./client.js";
 import { cardMarkdown, defaultNoticeMarkdown, letter, type ReviewView } from "./render.js";
@@ -19,6 +20,39 @@ function tomorrowMorning(): string {
   d.setDate(d.getDate() + 1);
   d.setHours(9, 0, 0, 0);
   return d.toISOString();
+}
+
+async function readItems(prompts: ItemPrompt[], ask: (prompt: string) => Promise<string | null>, write: (text: string) => void):
+  Promise<{ items: Record<string, string>; details: Record<string, string> } | { custom: string } | null | undefined> {
+  const items = new Map<string, string>();
+  const details = new Map<string, string>();
+  for (const prompt of prompts) {
+    for (;;) {
+      const value = await ask(`${prompt.id} · ${prompt.label} (${prompt.choices.join(", ")}, / for a custom reply, or Enter to skip): `);
+      if (value === null) return null;
+      if (!value) return undefined;
+      if (value === "/") {
+        const custom = await ask("Your answer for this card: ");
+        return custom === null ? null : custom ? { custom } : undefined;
+      }
+      if (!prompt.choices.includes(value)) {
+        write(`Choose ${prompt.choices.join(", ")}.`);
+        continue;
+      }
+      if (prompt.detailsFor.includes(value)) {
+        const detail = await ask(`${prompt.detailLabel ?? "Details"}: `);
+        if (detail === null) return null;
+        if (!detail) {
+          write("This answer needs the result or replacement text.");
+          continue;
+        }
+        details.set(prompt.id, detail);
+      }
+      items.set(prompt.id, value);
+      break;
+    }
+  }
+  return { items: Object.fromEntries(items), details: Object.fromEntries(details) };
 }
 
 export async function runReview(project: string, io: ReviewIO): Promise<number> {
@@ -54,6 +88,19 @@ export async function runReview(project: string, io: ReviewIO): Promise<number> 
       for (const [n, item] of items.entries()) {
         write(`${cardMarkdown(item, letter(n))}\n`);
         if (item.body.kind === "notice") continue;
+        const prompts = itemPrompts(item.body);
+        if (prompts.length) {
+          const args = await readItems(prompts, ask, write);
+          if (args === null) break outer;
+          if (!args) {
+            skipped += 1;
+            continue;
+          }
+          const r = await call("answer", { id: `${item.id}@${item.revision}`, channel, ...args }, { project });
+          if (r.code === EXIT.OK) saved += 1;
+          else write(`Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
+          continue;
+        }
         const ids = (item.body.options ?? []).map((o) => o.id);
         for (;;) {
           const reply = await ask(`Answer ${letter(n)}: ${ids.length ? `an option (${ids.join(", ")}), ` : ""}`
