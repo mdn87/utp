@@ -5,6 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { connect, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +45,93 @@ function repo(remote?: string): string {
   return dir;
 }
 
+test("utp setup previews only the selected session's sandbox settings", async () => {
+  const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-setup-home-")) };
+  writeFileSync(path.join(o.home, "config.json"), JSON.stringify({ server: "https://utp.example.test:7340", token: "synthetic" }));
+  const before = readdirSync(o.cwd);
+  const plan = async (platform: string) => {
+    const result = await utp(["setup", platform, "--json"], o);
+    assert.equal(result.code, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  assert.deepEqual((await plan("codex")).args, ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"]);
+  const claudeSettings = JSON.parse((await plan("claude")).args[1]);
+  assert.deepEqual(claudeSettings.sandbox.network.allowedDomains, ["utp.example.test:7340"]);
+  assert.equal(claudeSettings.sandbox.failIfUnavailable, true);
+  const agy = await plan("antigravity");
+  assert.equal(agy.program, "agy");
+  const allow = JSON.parse(agy.args[2]).permissions.allow;
+  assert.equal(allow[0], "read_url(utp.example.test)");
+  assert.ok(allow.includes(`read_file(${process.execPath})`));
+  assert.ok(allow.includes(`read_file(${path.join(o.home, "config.json")})`));
+  assert.deepEqual(readdirSync(o.cwd), before);
+  if (process.platform === "win32") {
+    const nativeClaude = await utp(["setup", "claude", "--apply"], o);
+    assert.equal(nativeClaude.code, 1);
+    assert.match(nativeClaude.stderr, /inside WSL2/);
+  }
+});
+
+test("utp uses the sandbox HTTP proxy for the decision service", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-proxy-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  const remote = new URL(svc.url);
+  const proxy = createServer();
+  let connections = 0;
+  proxy.on("connect", (request, client, head) => {
+    if (request.url !== `utp.example.test:${remote.port}`) {
+      client.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+      return;
+    }
+    const server = connect(Number(remote.port), remote.hostname, () => {
+      connections++;
+      client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      server.write(head);
+      client.pipe(server);
+      server.pipe(client);
+    });
+    client.on("error", () => server.destroy());
+    server.on("error", () => client.destroy());
+  });
+  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+  const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+  try {
+    const o = {
+      cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-proxy-home-")),
+      env: { http_proxy: proxyUrl, no_proxy: "" }, input: createToken(data, "synthetic-proxied-client"),
+    };
+    const result = await utp(["connect", `http://utp.example.test:${remote.port}`], o);
+    assert.equal(result.code, 0, result.stderr + result.stdout);
+    assert.equal(connections, 1);
+  } finally {
+    await svc.close();
+    await new Promise<void>((resolve) => proxy.close(() => resolve()));
+  }
+});
+
+test("utp connect honors the service path on a private HTTPS proxy", async () => {
+  const seen: string[] = [];
+  const ingress = createServer((req, res) => {
+    seen.push(req.url ?? "");
+    req.resume();
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ code: 0, machine: "synthetic-laptop" }));
+  });
+  await new Promise<void>((resolve) => ingress.listen(0, "127.0.0.1", resolve));
+  const port = (ingress.address() as AddressInfo).port;
+  try {
+    const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-base-url-")), input: "synthetic" };
+    for (const suffix of ["/utp", "/utp/"]) {
+      const result = await utp(["connect", `http://127.0.0.1:${port}${suffix}`], o);
+      assert.equal(result.code, 0, result.stderr + result.stdout);
+    }
+    assert.deepEqual(seen, ["/utp/v1/op", "/utp/v1/op"]);
+  } finally {
+    ingress.closeAllConnections();
+    await new Promise<void>((resolve) => ingress.close(() => resolve()));
+  }
+});
+
 test("the report machine can import a remote notice once", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-report-data-"));
   const svc = await startServer({ dataDir: data, port: 0, reportExport: true });
@@ -76,7 +165,9 @@ test("a choose request runs end to end through the utp command and the terminal 
     const o = { cwd, home };
     const connected = await utp(["connect", svc.url], { ...o, input: createToken(data, "laptop") });
     assert.equal(connected.code, 0, connected.stderr);
-    assert.equal((await utp(["init"], o)).code, 0);
+    const init = await utp(["init", "--json"], o);
+    assert.equal(init.code, 0, init.stderr);
+    const project = JSON.parse(init.stdout).project as string;
     assert.match((await utp(["init"], o)).stdout, /already registered/);
 
     assert.equal((await utp(["new", "choose", "--file", "req.json"], o)).code, 0);
@@ -97,7 +188,11 @@ test("a choose request runs end to end through the utp command and the terminal 
     assert.ok(review, flushed.stdout);
     assert.equal((await utp(["presented", review], o)).code, 0);
 
-    const answered = await utp(["review", "--feedback"], { ...o, input: "zzz\nb\nsure\nclear\n" });
+    const person = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-review-person-")),
+      env: { UTP_SESSION: "separate-review-terminal" } };
+    assert.equal((await utp(["connect", svc.url], { ...person, input: createToken(data, "reviewer") })).code, 0);
+    assert.equal((await utp(["link", project], person)).code, 0);
+    const answered = await utp(["review", "--feedback"], { ...person, input: "zzz\nb\nsure\nclear\n" });
     assert.equal(answered.code, 0, answered.stderr);
     assert.match(answered.stdout, /zzz isn't one of this card's options/);
     assert.match(answered.stdout, /How sure are you/);
@@ -106,7 +201,7 @@ test("a choose request runs end to end through the utp command and the terminal 
     const waited = await utp(["wait", id, "--json"], o);
     assert.equal(waited.code, 0);
     const answer = JSON.parse(waited.stdout).answer;
-    assert.deepEqual([answer.value, answer.channel, answer.verified], ["b", "terminal-piped", "none"]);
+    assert.deepEqual([answer.value, answer.channel, answer.verified, answer.machine], ["b", "terminal-piped", "none", "reviewer"]);
     assert.equal(answer.sureness, "sure");
     assert.equal(answer.feedback, "clear");
     assert.ok(!("active_response_ms" in answer));

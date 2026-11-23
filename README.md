@@ -63,6 +63,26 @@ feedback. Use `utp review --feedback` for the same ratings in your terminal.
 terminal answers include elapsed time per card. A review page records one
 elapsed time for the batch from opening the page to saving it.
 
+### Sandbox setup and resuming a review
+
+`utp setup codex`, `utp setup claude`, and `utp setup antigravity` preview
+the network access the selected agent needs. Add `--apply` to start a session
+with that setting. Pass agent arguments after `--`. Use Claude Code from a
+WSL2 terminal when you need its sandbox on Windows.
+
+If the agent's sandbox limits destination ports, connect UTP through your
+private HTTPS proxy on port 443. A service URL can include a path prefix.
+
+When an agent reaches a review it must wait for, keep the request ID and
+the session identifier used in `UTP_SESSION`. Answer in the terminal or on
+the review page, then resume the original session and run
+`utp wait <request-id>`. The saved answer applies to the same revision.
+An action still goes through `utp begin` and `utp applied`.
+
+[Codex network settings](https://learn.chatgpt.com/docs/agent-approvals-security)
+· [Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing)
+· [Antigravity CLI sandbox](https://antigravity.google/docs/sandbox?tab=cli)
+
 ## Platforms
 
 UTP is built command line first, so any agent that can run a shell command

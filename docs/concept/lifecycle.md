@@ -33,9 +33,11 @@ share a project. Read [the concept](concept.md) first.
   local fallback; that is the accepted cost of one shared log.
 - **Sandboxed agents need network access to it.** `utp setup <platform>`
   shows the setting that lets that platform's sandbox reach the service and
-  applies it after the person confirms. For Codex's `workspace-write` mode
-  that is `[sandbox_workspace_write] network_access = true`, which opens all
-  outbound network for that agent, not just UTP, and the setup step says so.
+  applies it to the launched session with `--apply`. Codex's
+  `sandbox_workspace_write.network_access` enables outbound access for that
+  workspace-write session. Claude Code and Antigravity use their network
+  allowlists for the service address. On Windows, the Claude Code sandbox
+  runs inside WSL2.
   UTP never asks for a sandbox exception per request.
 - **The network path.** The service listens on one port that the home
   server's firewall allows from the home network only; the person adds that
@@ -362,7 +364,7 @@ to map the UTP item into the report reader's required JSON format.
 | `utp serve` | Runs the service on the home server |
 | `utp token create <machine>` | Creates a client token (run on the server by the person) |
 | `utp connect <url>` | Saves the service address, and this machine's token read from standard input, in `~/.utp/config.json` |
-| `utp setup <platform>` | Shows, and after confirmation applies, the sandbox setting that lets that platform's agents reach the service |
+| `utp setup <platform> [--apply]` | Previews access and applies it to a new agent session when requested |
 | `utp new <kind>` | Writes a request template with fix hints |
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
 | `utp consider <file>`, `utp decide <file>` | See relevant reversals, then record the asking level, reason, and any existing authority |
