@@ -16,7 +16,7 @@ interface Presentation {
   actor: Actor;
   view: ReviewView;
   expiresAt: number;
-  browser?: { cookie: string; form: string };
+  browser?: { cookie: string; form: string; openedAt: number };
   saved?: number;
 }
 
@@ -35,7 +35,12 @@ function sendHtml(response: ServerResponse, code: number, html: string, cookie?:
 function choices(view: ReviewView, form: URLSearchParams): BrowserAnswer[] {
   return view.items.flatMap<BrowserAnswer>((card, index) => {
     if (card.body.kind === "notice") return [];
-    const ref = { id: card.id, revision: card.revision };
+    const ref = {
+      id: card.id,
+      revision: card.revision,
+      sureness: form.get(`sureness-${index}`) || undefined,
+      feedback: form.get(`feedback-${index}`) || undefined,
+    };
     const custom = form.get(`custom-${index}`)?.trim();
     if (custom) return [{ ...ref, custom }];
     const prompts = itemPrompts(card.body);
@@ -91,7 +96,7 @@ export class ReviewPages {
         && candidate.current && (candidate.body.kind === "notice" || ["queued", "presented", "default_claimed"].includes(candidate.status))))) {
         return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>Prepare a fresh link before answering.</p>"));
       }
-      const browser = entry.browser ?? { cookie: token(), form: token() };
+      const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: performance.now() };
       const html = reviewHtml(entry.view, browser.form);
       const presented = entry.engine.run("presented", { review: entry.view.id, channel: "review-page" }, entry.actor, `review-page-${id}`);
       if (presented.code !== EXIT.OK) return denied();
@@ -109,7 +114,8 @@ export class ReviewPages {
     if (form.get("presentation") !== entry.browser?.form) return denied();
     if (entry.saved !== undefined) return this.saved(response, entry.saved);
     const answers = choices(entry.view, form);
-    const result = entry.engine.saveBrowserAnswers(entry.view.id, answers, entry.actor);
+    const result = entry.engine.saveBrowserAnswers(entry.view.id, answers, entry.actor,
+      Math.round(performance.now() - entry.browser.openedAt));
     if (result.code !== EXIT.OK) {
       return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
         reviewHtml(entry.view, entry.browser.form, result.message ?? "Review the answers and try again.", form));

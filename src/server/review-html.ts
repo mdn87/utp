@@ -1,5 +1,6 @@
 import type { ReviewView } from "../cli/render.js";
 import { itemPrompts } from "../core/items.js";
+import { CLARITY_FEEDBACK, SURENESS } from "../core/types.js";
 
 const css = `
 :root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; color: #183028; background: #f1f5f0; }
@@ -24,8 +25,11 @@ legend { padding: 0; font-weight: 700; }
 .option:has(input:checked) { border-color: #1c6c4a; background: #eaf5ed; }
 input { accent-color: #1c6c4a; margin-top: .3rem; }
 textarea { font: inherit; width: 100%; box-sizing: border-box; margin: .35rem 0; border: 1px solid #9fb5a6; border-radius: .45rem; padding: .6rem; }
+.ratings { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; }
+.ratings label { display: grid; gap: .25rem; }
+select { font: inherit; color: inherit; background: white; border: 1px solid #9fb5a6; border-radius: .45rem; padding: .4rem; }
 button { color: white; background: #175c40; border: 0; border-radius: .55rem; padding: .8rem 1.25rem; font: inherit; font-weight: 700; }
-button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px solid #27714e; outline-offset: 2px; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #27714e; outline-offset: 2px; }
 .error { border-left: .25rem solid #a23822; padding-left: .8rem; }
 `;
 
@@ -41,6 +45,9 @@ function notice(text: string): string {
 export function reviewHtml(review: ReviewView, token: string, message?: string, form?: URLSearchParams): string {
   const field = (name: string): string => escapeText(form?.get(name) ?? "");
   const checked = (name: string, value: string): string => form?.get(name) === value ? " checked" : "";
+  const rating = (name: string, label: string, choices: readonly (readonly [string, string])[]): string =>
+    `<label>${label}<select name="${name}"><option value="">Optional</option>${choices.map(([value, text]) =>
+      `<option value="${value}"${form?.get(name) === value ? " selected" : ""}>${text}</option>`).join("")}</select></label>`;
   const cards = review.items.map((item, index) => {
     const b = item.body;
     const parts = [`<article><h2>${escapeText(b.question)}</h2>`, notice(b.why_now)];
@@ -87,6 +94,10 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
         return `<label class="option"><input type="radio" name="choice-${index}" value="${escapeText(option.id)}"${checked(`choice-${index}`, option.id)}><span><strong>${escapeText(option.label)}</strong><br>${escapeText(option.consequence)}${scope ? "<br>" + scope : ""}</span></label>`;
       }), "</fieldset>");
       parts.push(`<label>Your own answer <textarea name="custom-${index}" rows="2">${field(`custom-${index}`)}</textarea></label>`);
+      const sureness = rating(`sureness-${index}`, "How sure are you?", SURENESS.map((choice) =>
+        [choice, choice.charAt(0).toUpperCase() + choice.slice(1)]));
+      const clarity = rating(`feedback-${index}`, "How clear was this card?", Object.entries(CLARITY_FEEDBACK));
+      parts.push(`<div class="ratings">${sureness}${clarity}</div>`);
     }
     parts.push("</article>");
     return parts.join("\n");

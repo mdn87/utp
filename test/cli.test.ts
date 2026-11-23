@@ -73,15 +73,19 @@ test("a choose request runs end to end through the utp command and the terminal 
     assert.ok(review, flushed.stdout);
     assert.equal((await utp(["presented", review], o)).code, 0);
 
-    const answered = await utp(["review"], { ...o, input: "zzz\nb\n" });
+    const answered = await utp(["review", "--feedback"], { ...o, input: "zzz\nb\nsure\nclear\n" });
     assert.equal(answered.code, 0, answered.stderr);
     assert.match(answered.stdout, /zzz isn't one of this card's options/);
+    assert.match(answered.stdout, /How sure are you/);
     assert.match(answered.stdout, /Saved 1 answer/);
 
     const waited = await utp(["wait", id, "--json"], o);
     assert.equal(waited.code, 0);
-    const answer = (JSON.parse(waited.stdout) as { answer: { value: string; channel: string; verified: string } }).answer;
+    const answer = JSON.parse(waited.stdout).answer;
     assert.deepEqual([answer.value, answer.channel, answer.verified], ["b", "terminal-piped", "none"]);
+    assert.equal(answer.sureness, "sure");
+    assert.equal(answer.feedback, "clear");
+    assert.ok(!("active_response_ms" in answer));
     assert.match((await utp(["show", id], o)).stdout, /Answered: b \(through terminal-piped, unverified\)/);
   } finally {
     await svc.close();

@@ -601,7 +601,7 @@
       "projectId": "utp",
       "title": "Capture review feedback and timing",
       "summary": "Save optional clarity feedback, sureness, chosen or custom answers, presentation and answer times. Measure active response time only on channels that observe it.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 190,
       "prereqs": [
         "utp:cards:kinds"
@@ -610,7 +610,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T00:26:25.254Z"
       },
       "evidence": [
         {
@@ -618,6 +618,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The concept distinguishes time spent answering from time since presentation and tracks recommendation overrides by choice category."
+        },
+        {
+          "entryId": "review-feedback-and-timing",
+          "kind": "stage-change",
+          "at": "2026-11-23T00:26:25.254Z",
+          "message": "The terminal and page save optional ratings. Checks covered batch timing, feedback after restart and the absence of timing for piped answers."
         }
       ]
     },
