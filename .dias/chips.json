@@ -665,7 +665,7 @@
       "projectId": "utp",
       "title": "Deliver one notification for each review",
       "summary": "Group waiting cards, show open requests in the existing open-items list and route notices with a review or the daily report. Retrying delivery must not send a second notification.",
-      "stage": "planned",
+      "stage": "blocked",
       "sequence": 210,
       "prereqs": [
         "utp:core:service",
@@ -675,7 +675,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-23T00:50:19.796Z"
       },
       "evidence": [
         {
@@ -683,6 +683,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Decision D6 retained these integrations. Use the review ID to deduplicate delivery and show dependent notices with consequential decisions."
+        },
+        {
+          "entryId": "delivery-activation-awaits-approval",
+          "at": "2026-11-23T00:50:19.796Z",
+          "kind": "note",
+          "message": "Retry and report import tests passed. Live delivery waits for a verified answer covering credential access and the installed morning report."
         }
       ]
     },

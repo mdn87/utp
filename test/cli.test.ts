@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,6 +42,30 @@ function repo(remote?: string): string {
   if (remote) execFileSync("git", ["remote", "add", "origin", remote], { cwd: dir });
   return dir;
 }
+
+test("the report machine can import a remote notice once", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-report-data-"));
+  const svc = await startServer({ dataDir: data, port: 0, reportExport: true });
+  try {
+    const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-report-home-")) };
+    const run = async (args: string[], input?: string) => {
+      const result = await utp(args, { ...o, input });
+      assert.equal(result.code, 0, result.stderr + result.stdout);
+      return result.stdout;
+    };
+    await run(["connect", svc.url], createToken(data, "report-machine"));
+    await run(["init"]);
+    await run(["new", "notice", "--file", "notice.json"]);
+    await run(["ask", "notice.json"]);
+    assert.match(await run(["flush"]), /queued for the morning report/);
+    const inbox = path.join(o.cwd, "inbox");
+    assert.match(await run(["report-import", "--inbox", inbox]), /items imported: 1/);
+    assert.match(await run(["report-import", "--inbox", inbox]), /items imported: 0/);
+    assert.equal(readdirSync(inbox).filter((name) => name.endsWith(".json")).length, 1);
+  } finally {
+    await svc.close();
+  }
+});
 
 test("a choose request runs end to end through the utp command and the terminal review", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-data-"));

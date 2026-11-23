@@ -5,10 +5,13 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { checkRequest } from "../core/check.js";
-import type { DecisionLogEntry } from "../core/engine.js";
+import type { DeliveryAdapter } from "../core/delivery-adapter.js";
+import type { DecisionLogEntry, NoticeDigest } from "../core/engine.js";
 import { leakKinds, redactedDecisions } from "../core/redact.js";
+import { writeNoticeDigest } from "../core/report-inbox.js";
 import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types.js";
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
@@ -39,6 +42,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             log [--tags a,b] [--related <id>] [--text <words>] [--kind <kind>]
             export <id>... --redact --file <output>
             leak-check <file>... [--generic]
+            report-import --inbox <directory>
 Answers     review [--feedback]
             answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
                         [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
@@ -92,6 +96,7 @@ const OPTIONS = {
   generic: { type: "boolean" },
   feedback: { type: "boolean" },
   "authority-file": { type: "string" },
+  inbox: { type: "string" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -106,6 +111,18 @@ function privateDenyList(): string[] {
     // Report the format error without putting the private contents in output.
   }
   throw new CliError(EXIT.OTHER, "deny-list.json must contain a JSON array of nonempty strings");
+}
+
+async function deliveryAdapter(): Promise<DeliveryAdapter> {
+  const file = process.env.UTP_DELIVERY_ADAPTER;
+  if (!file) return {};
+  const adapter = await import(pathToFileURL(path.resolve(file)).href) as DeliveryAdapter;
+  if ((adapter.sendReview !== undefined && typeof adapter.sendReview !== "function")
+    || (adapter.formatInboxItem !== undefined && typeof adapter.formatInboxItem !== "function")
+    || (!adapter.sendReview && !adapter.formatInboxItem)) {
+    throw new CliError(EXIT.OTHER, "the delivery adapter must export sendReview or formatInboxItem");
+  }
+  return adapter;
 }
 
 function readJson(file: string | undefined, what: string): Record<string, unknown> {
@@ -217,7 +234,11 @@ async function main(argv: string[]): Promise<number> {
   switch (verb) {
     case "serve": {
       const port = flags.port ? Number(flags.port) : DEFAULT_PORT;
+      const adapter = await deliveryAdapter();
       const svc = await startServer({ dataDir, host: flags.host, port, reviewOrigin: flags["review-origin"],
+        notifications: adapter.sendReview ? { send: adapter.sendReview } : undefined,
+        inboxDir: process.env.UTP_REPORT_INBOX, formatInboxItem: adapter.formatInboxItem,
+        reportExport: process.env.UTP_REPORT_EXPORT === "1",
         log: (l) => process.stderr.write(`${l}\n`) });
       process.stderr.write(`UTP service listening on ${svc.url}, data in ${dataDir}\n`);
       await new Promise<void>((resolve) => {
@@ -336,6 +357,7 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       const r = await call("flush", {}, { project, opId });
       if (r.code !== EXIT.OK || !r.review_id || flags.json) return out(r);
+      if (r.digest === true) return out(r, "These notices are queued for the morning report.");
       const shown = await call("show", { id: r.review_id }, { project });
       const review = shown.review as ReviewView;
       return out(r, `${reviewMarkdown(review)}\n\nAfter this review appears in your message to the person, run: `
@@ -424,6 +446,19 @@ async function main(argv: string[]): Promise<number> {
       readConfig();
       return runReview(project, { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) },
         flags.feedback);
+    }
+    case "report-import": {
+      const inbox = need(flags.inbox, "--inbox with the morning report inbox directory");
+      const adapter = await deliveryAdapter();
+      const report = await call("report.pending", {});
+      if (report.code !== EXIT.OK) return out(report);
+      const pending = report.pending as (NoticeDigest & { project: string })[];
+      for (const digest of pending) {
+        writeNoticeDigest(inbox, digest.project, digest, adapter.formatInboxItem);
+        const receipt = await call("report.received", { review: digest.review }, { project: digest.project });
+        if (receipt.code !== EXIT.OK) return out(receipt);
+      }
+      return out({ code: EXIT.OK, imported: pending.length }, `Morning report items imported: ${pending.length}.`);
     }
     case "answer": {
       const { project } = projectFor();

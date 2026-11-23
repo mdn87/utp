@@ -117,7 +117,7 @@ export class Service {
     return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as ProjectInfo) : undefined;
   }
 
-  private projects(): ProjectInfo[] {
+  projects(): ProjectInfo[] {
     return readdirSync(this.storesDir)
       .map((id) => this.info(id))
       .filter((p): p is ProjectInfo => p !== undefined);
