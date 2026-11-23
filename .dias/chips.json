@@ -878,7 +878,7 @@
       "projectId": "utp",
       "title": "Support blind comparisons and the chosen migration",
       "summary": "Hide authors and recommendations until a ballot is saved. Refuse identical candidates and changed second ballots. Move existing workflows to UTP in phase 2.",
-      "stage": "planned",
+      "stage": "blocked",
       "sequence": 270,
       "prereqs": [
         "utp:review:comparisons",
@@ -889,7 +889,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-23T01:53:05.291Z"
       },
       "evidence": [
         {
@@ -903,6 +903,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "note",
           "message": "D1 and D6b place side-by-side blind comparisons and migration of the existing comparison workflows in phase 2."
+        },
+        {
+          "entryId": "blind-comparisons-staged",
+          "at": "2026-11-23T01:53:05.291Z",
+          "kind": "stage-change",
+          "message": "Browser comparison tests and a migration dry run passed. The live migration waits for phase 2, after the first release."
         }
       ]
     },

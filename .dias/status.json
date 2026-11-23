@@ -10,9 +10,9 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Prove the shared decision log and a complete choice workflow across Windows, macOS and Linux. The CLI, event store and execution grants passed CI on all three.",
-  "remainingSummary": "The two open phase 1 decisions have clearer wording. The evidence sample and delivery activation still await answers.",
-  "nextChipId": "utp:rich:blind",
+  "currentMilestone": "Finish first-release verification. The shared service, everyday requests, batch review, and clarification are working.",
+  "remainingSummary": "The evidence sample needs confirmation before lint fixtures. Live notification delivery needs approval. Blind comparisons are staged for phase 2.",
+  "nextChipId": "utp:lint:classify",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-23"
