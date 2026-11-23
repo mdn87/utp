@@ -76,6 +76,69 @@ const approve = (over: Partial<RequestBody> = {}): RequestBody => ({
 const H1 = { "exports/list.txt": "sha-1" };
 const EVIDENCE = { action: "delete", target: "exports/", scope: "the ten listed files", effect: "ten files removed" };
 
+test("the asking policy records counts and brings relevant reversals into the next decision", () => {
+  const h = new Harness();
+  const routine = { level: 0, category: "formatting", reason: "Private draft wording" };
+  const first = h.run("decide", routine, AGENT, "routine-once");
+  assert.deepEqual(first, { code: 0, level: 0, category: "formatting", count: 1 });
+  assert.deepEqual(h.run("decide", routine, AGENT, "routine-once"), first);
+  assert.ok(!JSON.stringify(h.store.all()).includes(routine.reason));
+
+  const old = h.present(choose({ tags: ["parser"] }));
+  h.ok("answer", { id: old, channel: "terminal-review", value: "a" }, PERSON);
+  h.ok("reverse", { id: old, tags: ["fixtures"], reason: "A sample left out empty rows." });
+  const notice = { kind: "notice", question: "Use the checked fixture.", why_now: "The import keeps every valid row.",
+    stakes: { reversibility: "easy" }, level: 1, level_reason: "Reversible and visible." };
+  const update = { level: 1, body: notice, tags: ["fixtures"] };
+  const proposed = h.ok("consider", update);
+  assert.deepEqual((proposed.reversals as Array<{ id: string }>).map(({ id }) => id), [old]);
+  assert.equal((h.ok("consider", { level: 2, related: [old] }).reversals as unknown[]).length, 1);
+  assert.equal(h.run("decide", update).code, 19);
+  const accepted = h.ok("decide", { ...update, reversal_reason: "The new sample includes the empty-row case." });
+  const independent = h.ok("decide", { level: 2, body: choose() });
+  assert.equal(independent.level, 2);
+  const raised = h.ok("decide", { level: 3, tags: ["fixtures"], body: choose({ level_reason: "This operation is outward-facing." }) });
+  assert.equal(raised.level, 3);
+  const reopened = h.reopen();
+  const record = reopened.run("show", { id: accepted.id }, AGENT).request as { policy: Record<string, unknown> };
+  assert.equal(record.policy.reversal_reason, "The new sample includes the empty-row case.");
+  const result = reopened.run("decide", { level: 0, category: "formatting" }, AGENT);
+  assert.equal(result.count, 2);
+});
+
+test("existing approval stays bound to its original scope and provenance", () => {
+  const h = new Harness();
+  const source = h.present(approve(), H1);
+  const authorization = approve().options![0]!.authorization!;
+  const notice = { kind: "notice", question: "Use the existing approval.", why_now: "Continue the approved release.",
+    stakes: { reversibility: "easy" }, level: 1, level_reason: "Existing authority covers these files." };
+  const use = { level: 3, body: notice, authority: { decision_id: source, authorization } };
+  h.ok("answer", { id: source, channel: "conversation", value: "yes" }, PERSON);
+  assert.equal(h.run("decide", use).code, 18);
+  h.ok("answer", { id: source, channel: "terminal-review", value: "yes" }, PERSON);
+  assert.equal(h.run("decide", { ...use, authority: { decision_id: source,
+    authorization: { ...authorization, scope: "every export" } } }).code, 19);
+  const decision = h.ok("decide", use);
+  assert.equal(decision.level, 1);
+  assert.equal(decision.use_request, `${source}@1`);
+  assert.equal(h.run("wait", { id: decision.use_request, basis: H1, authority: { ...authorization, scope: "every export" } }).code, 19);
+  const wait = h.ok("wait", { id: decision.use_request, basis: H1, authority: authorization });
+  const grant = wait.grant as Grant;
+  assert.deepEqual(grant.authorization, authorization);
+  h.ok("begin", { grant: grant.id, basis: H1 });
+  h.ok("applied", { grant: grant.id, evidence: EVIDENCE });
+  assert.equal(h.run("decide", use).code, 19);
+});
+
+test("a reversal after issue stops a grant before begin", () => {
+  const h = new Harness();
+  const source = h.present(approve(), H1);
+  h.ok("answer", { id: source, channel: "terminal-review", value: "yes" }, PERSON);
+  const grant = h.ok("wait", { id: source, basis: H1 }).grant as Grant;
+  h.ok("reverse", { id: source, reason: "The listed files are required after all." }, PERSON);
+  assert.equal(h.run("begin", { grant: grant.id, basis: H1 }).code, 17);
+  assert.equal(h.run("wait", { id: source, basis: H1 }).code, 17);
+});
 const defaultBasis = { "fixtures/parser.json": "before" };
 const defaultEvidence = {
   action: "update", target: "fixtures/parser.json", scope: "the local parser fixture", effect: "parser fixture updated",

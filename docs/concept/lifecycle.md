@@ -298,12 +298,34 @@ is ever requested.
 
 A request carries a `dedupe_key` chosen by the agent. `utp ask` attaches a
 new request to an open one only when they are equivalent: same kind, and the
-same question, options, consequences, authorization, and preconditions after
+same asking level, question, options, consequences, authorization, and preconditions after
 normalization. A request with the same key but different content becomes a
 separate request, and the agent is told about the near-duplicate. When
 requests attach, only the first asker can hold an execution grant; the others
 are observers that receive the answer. An observer that needs to act files
 its own request.
+
+## Recording why an agent asked
+
+Run `utp consider decision.json` with the proposed `level` and the `tags`
+or `related` decision ids. The agent chooses the initial level using the
+asking policy. UTP returns prior reversals from the project and its archives.
+
+Run `utp decide decision.json` to record the decision. For level 0, supply a
+short `category`. UTP records the category count. For levels 1 to 3, supply
+the request as `body`, including its `level_reason`. Level 1 queues a
+`notice` whose text states the consequence. Levels 2 and 3 queue a request
+for the person to answer. If the agent keeps a level at or below a prior reversed
+decision, add `reversal_reason` to explain why.
+
+To cite the person's current authorization, put their words in
+`authority.instruction` and provide a notice as `body`. To cite an unused
+answer, provide `authority.decision_id` and `authority.authorization` with
+the action, target, scope and any expected effect. A valid citation records
+level 1. For an unused answer, UTP returns `use_request` with the original
+decision and revision. Pass it to `utp wait <id> --authority-file decision.json`
+to check the exact effect and obtain the original request's grant. The
+original basis, owner, approval rules, and one-use limit still apply.
 
 ## Notifications
 
@@ -326,6 +348,7 @@ its own request.
 | `utp setup <platform>` | Shows, and after confirmation applies, the sandbox setting that lets that platform's agents reach the service |
 | `utp new <kind>` | Writes a request template with fix hints |
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
+| `utp consider <file>`, `utp decide <file>` | See relevant reversals, then record the asking level, reason, and any existing authority |
 | `utp ask <file>` | Checks, stores, attaches when equivalent, queues into the current review |
 | `utp flush` | Prepares the current review and sends one notification |
 | `utp page <review-id>` | Prepares a browser link for the review. Opening the page records presentation and one save records the batch |
