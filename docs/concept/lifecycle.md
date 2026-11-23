@@ -417,6 +417,15 @@ the terminal or on the review page. The agent sees the optional note in
   when reaching it from another machine. The browser receives a separate
   presentation cookie and form token. The CLI prints the page link and
   the service checks the Host, Origin, cookie, and form token before saving.
+  A link lasts 24 hours from creation and keeps its first browser binding
+  through service restarts.
+- A single-reviewer installation can publish a permanent inbox at its HTTPS
+  review origin. Set `UTP_REVIEW_INBOX_SOCKET` to a Unix socket in a
+  service-owned directory with mode 0700. Route the hostname through an
+  authenticating reverse proxy to that socket. With Cloudflare Tunnel, use
+  a self-hosted Access application restricted to the reviewer and require
+  the matching Access audience at the connector. The socket serves the inbox
+  and review forms. Keep the command-line API on its private listener.
 - Each request can carry `previews` with a label and plain `text`, or a
   supported image `media_type` and base64 `data`. Small PNG, JPEG, and WebP
   previews render in the browser. The whole request still fits the

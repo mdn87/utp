@@ -247,6 +247,7 @@ async function main(argv: string[]): Promise<number> {
       const port = flags.port ? Number(flags.port) : DEFAULT_PORT;
       const adapter = await deliveryAdapter();
       const svc = await startServer({ dataDir, host: flags.host, port, reviewOrigin: flags["review-origin"],
+        reviewInboxSocket: process.env.UTP_REVIEW_INBOX_SOCKET,
         notifications: adapter.sendReview ? { send: adapter.sendReview } : undefined,
         inboxDir: process.env.UTP_REPORT_INBOX, formatInboxItem: adapter.formatInboxItem,
         reportExport: process.env.UTP_REPORT_EXPORT === "1",

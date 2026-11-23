@@ -303,8 +303,15 @@ export class Engine {
     }
   }
 
+  /** A link's receipt and answers are committed in the same event. */
+  browserAnswerReceipt(reviewId: string, opId: string): number | undefined {
+    const event = this.store.findOp(opId);
+    if (event?.data.op === "review-page.save" && event.data.review_id === reviewId) return Number((event.result as OpResult).saved);
+    return undefined;
+  }
+
   /** A browser presentation can save its whole batch in one event. */
-  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor, pageResponseMs: number): OpResult {
+  saveBrowserAnswers(reviewId: string, inputs: readonly BrowserAnswer[], actor: Actor, pageResponseMs: number, opId?: string): OpResult {
     this.sweep();
     const review = this.reviews.get(reviewId);
     if (!review || review.status !== "prepared") return notFound(reviewId);
@@ -326,7 +333,7 @@ export class Engine {
       throw error;
     }
     return this.commit("review-page.save", "review.answered", actor, { review_id: reviewId, answers, page_response_ms: pageResponseMs },
-      { code: EXIT.OK, review_id: reviewId, saved: answers.length });
+      { code: EXIT.OK, review_id: reviewId, saved: answers.length }, opId);
   }
 
   /** Snapshots the source and its prior archives without exposing them to write operations. */

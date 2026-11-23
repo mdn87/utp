@@ -34,7 +34,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .error { border-left: .25rem solid #a23822; padding-left: .8rem; }
 `;
 
-function escapeText(value: string): string {
+export function escapeText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }

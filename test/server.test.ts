@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
-import { createServer, get } from "node:http";
+import { createServer, get, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -351,3 +351,100 @@ test("a browser batch presents previews and saves only its displayed revisions",
     await s.svc.close();
   }
 });
+
+test("a review link keeps its browser binding after restart and expires at 24 hours", async () => {
+  const start = Date.now();
+  let time = start;
+  const now = () => new Date(time);
+  const s = await service(undefined, { now });
+  let running = s.svc;
+  try {
+    await s.agent("ask", { body: body() });
+    const review = await s.agent("flush");
+    const prepared = await s.agent("review-page.prepare", { review: review.review_id });
+    const link = String(prepared.url);
+    const visit = (cookie?: string, answers?: URLSearchParams) => new Promise<{ status?: number; setCookie?: string; html: string }>((resolve, reject) => {
+      const req = request(link, { agent: false, method: answers ? "POST" : "GET", headers: {
+        ...(cookie ? { cookie } : {}), ...(answers ? { origin: new URL(link).origin, "content-type": "application/x-www-form-urlencoded" } : {}) },
+      }, (res) => {
+        let html = "";
+        res.setEncoding("utf8").on("data", (chunk) => { html += chunk; });
+        res.on("end", () => resolve({ status: res.statusCode, setCookie: res.headers["set-cookie"]?.[0], html }));
+      });
+      req.on("error", reject).end(answers?.toString());
+    });
+    time = start + 31 * 60_000;
+    const opened = await visit();
+    assert.equal(opened.status, 200);
+    assert.match(opened.setCookie ?? "", /Max-Age=84540;/);
+    const cookie = opened.setCookie?.split(";")[0];
+    assert.ok(cookie);
+    await running.close();
+    running = await startServer({ dataDir: s.dataDir, port: Number(new URL(link).port), now });
+    assert.equal((await visit()).status, 403);
+    time = start + 24 * 60 * 60_000 - 1;
+    const returned = await visit(cookie);
+    const form = /name="presentation" value="([A-Za-z0-9_-]+)"/.exec(returned.html)?.[1];
+    assert.equal(returned.status, 200);
+    assert.ok(form);
+    const answers = new URLSearchParams({ presentation: form, "choice-0": "a" });
+    assert.match((await visit(cookie, answers)).html, /Answers saved/);
+    await running.close();
+    running = await startServer({ dataDir: s.dataDir, port: Number(new URL(link).port), now });
+    assert.match((await visit(cookie, answers)).html, /Answers saved/);
+    time++;
+    assert.equal((await visit(cookie)).status, 404);
+  } finally {
+    await running.close();
+  }
+});
+
+test("the private reviewer socket lists outstanding questions and opens only the selected review",
+  { skip: process.platform === "win32" }, async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "utp-inbox-"));
+    const socket = path.join(dir, "review.sock");
+    const origin = "https://reviews.example.test";
+    const options = { reviewOrigin: origin, reviewInboxSocket: socket };
+    const s = await service(undefined, options);
+    const browse = (url: string, method = "GET", headers: Record<string, string> = {}, text = "") =>
+      new Promise<{ status: number; html: string; headers: import("node:http").IncomingHttpHeaders }>((resolve, reject) => {
+        const req = request({ socketPath: socket, path: url, method, headers: { host: "reviews.example.test", ...headers } }, (res) => {
+          let html = "";
+          res.setEncoding("utf8").on("data", (chunk) => { html += chunk; });
+          res.on("end", () => resolve({ status: res.statusCode!, html, headers: res.headers }));
+        });
+        req.on("error", reject).end(text);
+      });
+    try {
+      assert.equal((await fetch(s.svc.url + "/")).status, 404);
+      assert.equal((await fetch(s.svc.url + "/review/invalid")).status, 404);
+      assert.equal((await browse("/v1/op", "POST")).status, 404);
+      assert.equal((await browse("/", "GET", { host: "different.example.test" })).status, 403);
+      assert.match((await browse("/")).html, /No questions are waiting/);
+      const card = await s.agent("ask", { body: body("Which <sample> needs review?") });
+      assert.doesNotMatch((await browse("/")).html, /Which/);
+      const flushed = await s.agent("flush");
+      const listed = await browse("/");
+      assert.equal(listed.status, 200);
+      assert.equal(listed.headers["cache-control"], "no-store");
+      assert.match(listed.html, /Which &lt;sample&gt; needs review/);
+      const path = `/open/${s.project}/${flushed.review_id}`;
+      assert(listed.html.includes(path));
+      assert.equal((await browse(path, "POST", { origin: "https://other.example.test" })).status, 403);
+      const open = await browse(path, "POST", { origin });
+      assert.equal(open.status, 303);
+      const target = open.headers.location!;
+      assert.match(target, /^\/review\/[A-Za-z0-9_-]+$/);
+      const current = await browse(target);
+      assert.match(current.html, /Which &lt;sample&gt; needs review/);
+      const cookie = current.headers["set-cookie"]?.[0]?.split(";")[0];
+      const form = /name="presentation" value="([A-Za-z0-9_-]+)"/.exec(current.html)?.[1];
+      assert.ok(cookie && form);
+      assert.equal((await browse(target, "POST", { origin, cookie, "content-type": "application/x-www-form-urlencoded" },
+        new URLSearchParams({ presentation: form, "choice-0": "a" }).toString())).status, 200);
+      assert.equal(((await s.agent("show", { id: card.id })).request as { status: string }).status, "answered");
+      assert.match((await browse("/")).html, /No questions are waiting/);
+    } finally {
+      await s.svc.close();
+    }
+  });
