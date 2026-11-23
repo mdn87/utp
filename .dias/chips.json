@@ -711,7 +711,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T04:45:47.639Z"
+        "updatedAt": "2026-11-23T05:36:32.927Z"
       },
       "evidence": [
         {
@@ -737,6 +737,12 @@
           "at": "2026-11-23T04:45:47.639Z",
           "kind": "note",
           "message": "New review links last 24 hours. The shared inbox found no unanswered questions across four projects. Public access still needs account approval."
+        },
+        {
+          "entryId": "protected-review-inbox-verified",
+          "at": "2026-11-23T05:36:32.927Z",
+          "kind": "note",
+          "message": "The shared inbox is live behind reviewer sign-in. The tunnel and vault references were verified. Live notifications still need provider and daily report setup."
         }
       ]
     },

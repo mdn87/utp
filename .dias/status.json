@@ -11,7 +11,7 @@
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
   "currentMilestone": "Finish first-release verification. The shared service, everyday requests, batch review, and clarification are working.",
-  "remainingSummary": "Verify complete reviews in Markdown and the terminal. New review links last 24 hours. Live notification delivery and the permanent inbox address still need setup.",
+  "remainingSummary": "Verify complete reviews in Markdown and the terminal. The protected inbox is live. One notification per review is settled. Provider delivery and daily report setup remain.",
   "nextChipId": "utp:cards:render",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
