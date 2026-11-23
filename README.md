@@ -89,6 +89,9 @@ the request, for example `"waivers": [{"rule": "H01-definition", "reason":
 "The reader needs the exact code printed on the tray."}]`. The terminal,
 Markdown and browser card show that reason whenever the revision is read.
 
+After building, run `node scripts/score-lint.mjs` to reproduce the measured
+recall, specificity and precision. [Evaluation and known misses](docs/research/review-quality-evaluation.md)
+
 ### Sandbox setup and resuming a review
 
 `utp setup codex`, `utp setup claude`, and `utp setup antigravity` preview

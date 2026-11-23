@@ -58,6 +58,10 @@ The fixture plan is built so the rules can't pass by construction.
 7. Fixtures are paraphrased, pass the leak check, and get a provenance review
    before they are committed to the public repository.
 
+The first evaluation caught 9 of 11 held-out defects and accepted all
+12 must-accept requests. Its report gives the split, precision, platform
+results and examples the checker missed. [Review quality evaluation](../research/review-quality-evaluation.md)
+
 ## Phase exit criteria
 
 Phase 0 ended when the decisions from
