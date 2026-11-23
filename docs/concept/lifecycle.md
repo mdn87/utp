@@ -342,7 +342,8 @@ its own request.
 | `utp revise <id> <file>` | Writes a new revision, superseding the old one and revoking its grants |
 | `utp cancel`, `utp reverse`, `utp takeover` | Withdraw, record a reversal, take over after reconciliation |
 | `utp log`, `utp status` | Search the log; show what is waiting |
-| `utp export --redact` | Write a redacted copy for publishing |
+| `utp export <id>... --redact --file <output>` | Write selected decisions to a new file after redaction and leak checks |
+| `utp leak-check <file>...` | Scan files for generic patterns and private deny-list terms |
 
 - Requests and evidence are passed as UTF-8 JSON files, never as inline
   arguments, because quoting differs between PowerShell, bash, and zsh.
@@ -365,7 +366,10 @@ its own request.
   include them.
 - `utp export --redact` runs a leak check: generic patterns (absolute paths,
   email addresses, IP addresses, token shapes) plus a private deny-list kept in
-  the user's UTP configuration, never in a repository. The public repository's
-  CI runs the generic patterns over committed fixtures and exports.
+  the user's UTP configuration, never in a repository. Store the private terms
+  as a JSON string array in `deny-list.json` beside `config.json`. Exports
+  include the question, choice, status, and reversal reasons. Raw quotes,
+  evidence, and internal identifiers stay in the decision log. The public
+  repository's CI runs the generic patterns over committed fixtures and exports.
 - The phone channel keeps its existing rule of purging question and answer
   text within 24 hours; the durable record stays in the UTP store.

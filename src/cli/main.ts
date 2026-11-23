@@ -3,11 +3,12 @@
 // never as inline arguments, because quoting differs between shells. --json
 // prints machine-readable results; the exit code is the operation's code.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { checkRequest } from "../core/check.js";
 import type { DecisionLogEntry } from "../core/engine.js";
+import { leakKinds, redactedDecisions } from "../core/redact.js";
 import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types.js";
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
@@ -33,6 +34,8 @@ Requests    new <choose|approve> [--file <path>]
             show <id>
             status
             log [--tags a,b] [--related <id>] [--text <words>] [--kind <kind>]
+            export <id>... --redact --file <output>
+            leak-check <file>... [--generic]
 Answers     review
             answer <id> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--addressed]]
                         [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
@@ -81,9 +84,23 @@ const OPTIONS = {
   related: { type: "string" },
   text: { type: "string" },
   kind: { type: "string" },
+  redact: { type: "boolean" },
+  generic: { type: "boolean" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
+
+function privateDenyList(): string[] {
+  const file = path.join(utpHome(), "deny-list.json");
+  if (!existsSync(file)) return [];
+  try {
+    const entries: unknown = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    if (Array.isArray(entries) && entries.every((entry) => typeof entry === "string" && entry.trim())) return entries;
+  } catch {
+    // Report the format error without putting the private contents in output.
+  }
+  throw new CliError(EXIT.OTHER, "deny-list.json must contain a JSON array of nonempty strings");
+}
 
 function readJson(file: string | undefined, what: string): Record<string, unknown> {
   if (!file) throw new CliError(EXIT.OTHER, `${what} file is required`);
@@ -291,6 +308,48 @@ async function main(argv: string[]): Promise<number> {
       return out(r, entries.length ? entries.map((e) => `${e.id}  ${e.status}  ${e.answer ?? "-"}  ${e.question}`
         + (e.reversals.length ? `  (reversed ${e.reversals.length}x)` : "")
         + (e.archived ? `  (archived from ${e.origin_project})` : "")).join("\n") : "No matching decisions.");
+    }
+    case "export": {
+      if (!flags.redact) throw new CliError(EXIT.OTHER, "export requires --redact");
+      if (!rest.length) throw new CliError(EXIT.OTHER, "select at least one request id to export");
+      const file = need(flags.file, "--file with an output path");
+      const denyList = privateDenyList();
+      const { project } = projectFor();
+      const logged = await call("log", {}, { project });
+      if (logged.code !== EXIT.OK) return out(logged);
+      const entries = logged.entries as DecisionLogEntry[];
+      const selected = [...new Set(rest)].map((id) => {
+        const matches = entries.filter((entry) => entry.id === id);
+        const first = matches[0];
+        if (!first) throw new CliError(EXIT.NOT_FOUND, `no decision ${id} in this project`);
+        if (matches.length > 1) throw new CliError(EXIT.OTHER, `decision id ${id} occurs in more than one archive`);
+        return first;
+      });
+      const text = redactedDecisions(selected, denyList);
+      const leaks = leakKinds(text, denyList);
+      if (leaks.length) return out({ code: EXIT.CHECK_FAILED, leaks }, `Export stopped. Possible leaks: ${leaks.join(", ")}.`);
+      try {
+        writeFileSync(file, text, { flag: "wx", mode: 0o600 });
+      } catch {
+        throw new CliError(EXIT.OTHER, "couldn't write the export; choose an unused file in an existing folder");
+      }
+      return out({ code: EXIT.OK, decisions: selected.length }, `Wrote and checked ${selected.length} redacted decision records.`);
+    }
+    case "leak-check": {
+      if (!rest.length) throw new CliError(EXIT.OTHER, "leak-check needs at least one file");
+      const denyList = flags.generic ? [] : privateDenyList();
+      const findings = rest.flatMap((file) => {
+        let text: string;
+        try {
+          text = readFileSync(file, "utf8");
+        } catch {
+          throw new CliError(EXIT.OTHER, `can't read file ${file}`);
+        }
+        const leaks = leakKinds(text, denyList);
+        return leaks.length ? [{ file, leaks }] : [];
+      });
+      return out({ code: findings.length ? EXIT.CHECK_FAILED : EXIT.OK, findings },
+        findings.length ? findings.map(({ file, leaks }) => `${file}: ${leaks.join(", ")}`).join("\n") : "No leaks found.");
     }
     case "review": {
       const { project } = projectFor();
