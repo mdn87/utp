@@ -26,7 +26,7 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>]
             connect <server-url>        (reads the token from standard input)
             init [--name <name>] [--new]
             link <project-id>
-Requests    new <choose|approve> [--file <path>]
+Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
             check <file>
             ask <file>
             flush
@@ -124,9 +124,13 @@ function need(value: string | undefined, what: string): string {
   return value;
 }
 
+const exampleEvidence = { claim: "Describe what you observed.", kind: "observed", source: "Where to verify it",
+  date: new Date().toISOString().slice(0, 10) };
+
 const TEMPLATES: Record<string, RequestBody> = {
   choose: {
     kind: "choose",
+    category: "approach",
     question: "One sentence: what should the person decide?",
     why_now: "Why this is being asked now, and what waits on it.",
     options: [
@@ -148,12 +152,44 @@ const TEMPLATES: Record<string, RequestBody> = {
     options: [
       { id: "yes", label: "Do it", consequence: "The exact effect.",
         authorization: { action: "the action", target: "what it acts on", scope: "exactly how much", expected_effect: "the state after" } },
+      { id: "narrow", label: "Approve the smaller scope", consequence: "What the smaller action changes.",
+        authorization: { action: "the action", target: "what it acts on", scope: "the smaller scope", expected_effect: "the state after" } },
       { id: "no", label: "Don't", consequence: "What happens instead." },
     ],
+    evidence: [exampleEvidence],
     stakes: { reversibility: "one_way" },
     level: 3,
     level_reason: "Why this can't be undone or reaches outside the project.",
     basis: { files: [] },
+  },
+  handoff: {
+    kind: "handoff", question: "Can you complete this manual step?", why_now: "Explain what waits on it.",
+    steps: [{ id: "step-1", actor: "the person", machine: "where to run it", shell: "the shell to use",
+      command: "the command or manual action", expected_result: "what success looks like", tested: false,
+      why_person: "Explain what access or observation requires the person." }],
+    stakes: { reversibility: "easy" }, level: 2, level_reason: "The agent needs the person's access or observation.",
+  },
+  clarify: {
+    kind: "clarify", question: "Which reading of your request should I use?", why_now: "Explain what the interpretation changes.",
+    options: [
+      { id: "a", label: "The agent's reading", consequence: "What the agent will do under this reading." },
+      { id: "b", label: "An alternative reading", consequence: "What the agent will do under this reading." },
+    ],
+    stakes: { reversibility: "easy" }, level: 2, level_reason: "Different readings would change the work.",
+  },
+  accept: {
+    kind: "accept", question: "Does the result cover your goals?", why_now: "Identify the result that needs the person's judgment.",
+    goals: [{ id: "goal-1", goal: "A goal or risk from the request", coverage: "partly_covered", evidence: [exampleEvidence] }],
+    stakes: { reversibility: "easy" }, level: 2, level_reason: "The person is judging whether this result is acceptable.",
+  },
+  assumptions: {
+    kind: "assumptions", question: "Which assumptions should the plan use?", why_now: "Say what is about to be planned or built.",
+    assumptions: [{ id: "assumption-1", statement: "The assumption in plain language", consequence: "What it changes in the plan." }],
+    stakes: { reversibility: "easy" }, level: 2, level_reason: "An incorrect assumption would change the plan.",
+  },
+  notice: {
+    kind: "notice", question: "An informational update", why_now: "Say what happened and why it matters.",
+    stakes: { reversibility: "easy" }, level: 1, level_reason: "The person needs to know what changed.",
   },
 };
 

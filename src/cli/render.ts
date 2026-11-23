@@ -38,6 +38,23 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
     }
     out.push("");
   }
+  for (const option of b.options ?? []) {
+    const scope = option.authorization;
+    if (scope) out.push(`Option **${option.id}** authorizes **${scope.action}** on ${scope.target}. Scope is ${scope.scope}.`
+      + (scope.expected_effect ? ` Expected result is ${scope.expected_effect}.` : ""), "");
+  }
+  for (const step of Array.isArray(b.steps) ? b.steps : []) {
+    out.push(`**${step.id}** · ${step.actor} on ${step.machine} using ${step.shell}`, "",
+      step.command, "", `Expect ${step.expected_result}. ${step.tested ? "Tested in this shell." : "This step needs a shell check."}`,
+      step.why_person, "");
+  }
+  for (const goal of Array.isArray(b.goals) ? b.goals : []) {
+    out.push(`**${goal.id}** · ${goal.goal} · ${goal.coverage?.replaceAll("_", " ") ?? ""}`, "",
+      ...(goal.evidence ?? []).map((e) => `- ${e.claim} (${e.kind}, ${e.source}, ${e.date})`), "");
+  }
+  for (const item of Array.isArray(b.assumptions) ? b.assumptions : []) {
+    out.push(`**${item.id}** · ${item.statement}. ${item.consequence}`, "");
+  }
   const rec = b.recommendation;
   if (rec) {
     out.push(`Recommended: **${rec.option}**, because ${rec.because}`
@@ -54,7 +71,9 @@ export function cardMarkdown(v: RequestView, mark?: string): string {
 }
 
 export function answerText(a: AnswerRecord): string {
-  const what = a.disposition ? a.disposition.replace("_", " ") : a.value ?? (a.custom ? `"${a.custom}"` : "item answers");
+  const items = Object.entries(a.items ?? {}).map(([id, value]) =>
+    `${id} ${value.replaceAll("_", " ")}${a.details?.[id] ? ` (${a.details[id]})` : ""}`).join(", ");
+  const what = a.disposition ? a.disposition.replace("_", " ") : a.value ?? (a.custom ? `"${a.custom}"` : items || "item answers");
   return `${what} (through ${a.channel}${a.verified === "none" ? ", unverified" : `, verified by ${a.verified}`})`;
 }
 

@@ -9,6 +9,31 @@ export interface CheckFailure {
 }
 
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+const itemId = /^[A-Za-z0-9_-]+$/;
+
+function checkedItems(raw: unknown, field: string, rule: string, textFields: string[],
+  fail: (rule: string, message: string) => void): Record<string, unknown>[] {
+  if (!Array.isArray(raw) || !raw.length) {
+    fail(rule, `add at least one item to ${field}`);
+    return [];
+  }
+  const ids = new Set<string>();
+  const items = [];
+  for (const [index, entry] of raw.entries()) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail(rule, `${field} item ${index + 1} must be an object`);
+      continue;
+    }
+    const item = entry as Record<string, unknown>;
+    if (!nonEmpty(item.id) || !itemId.test(item.id) || ids.has(item.id)) {
+      fail(rule, `${field} item ${index + 1} needs a unique id with letters, digits, - or _`);
+    } else ids.add(item.id);
+    const missing = textFields.filter((key) => !nonEmpty(item[key]));
+    if (missing.length) fail(rule, `${field} item ${index + 1} needs ${missing.join(", ")}`);
+    items.push(item);
+  }
+  return items;
+}
 
 export function checkRequest(body: unknown): CheckFailure[] {
   const out: CheckFailure[] = [];
@@ -31,7 +56,7 @@ export function checkRequest(body: unknown): CheckFailure[] {
   if (needsOptions && options.length < 2) fail("S07-options", "this kind needs at least two options");
   const ids = new Set<string>();
   for (const [i, o] of options.entries()) {
-    if (!nonEmpty(o?.id) || !/^[A-Za-z0-9_-]+$/.test(o.id)) fail("S08-option-id", `option ${i + 1} needs an id of letters, digits, - or _`);
+    if (!nonEmpty(o?.id) || !itemId.test(o.id)) fail("S08-option-id", `option ${i + 1} needs an id of letters, digits, - or _`);
     else if (ids.has(o.id)) fail("S08-option-id", `option id ${o.id} is used twice`);
     else ids.add(o.id);
     if (!nonEmpty(o?.label)) fail("S09-option-label", `option ${o?.id ?? i + 1} needs a label`);
@@ -55,6 +80,26 @@ export function checkRequest(body: unknown): CheckFailure[] {
   }
   if (b.basis?.files !== undefined && !(Array.isArray(b.basis.files) && b.basis.files.every(nonEmpty))) {
     fail("S16-basis", "basis.files must be a list of paths");
+  }
+  if (b.kind === "handoff") {
+    const steps = checkedItems(b.steps, "steps", "S17-handoff", ["actor", "machine", "shell", "command", "expected_result", "why_person"], fail);
+    for (const step of steps) if (typeof step.tested !== "boolean") fail("S17-handoff", "each step needs a tested true or false value");
+  }
+  if (b.kind === "accept") {
+    const goals = checkedItems(b.goals, "goals", "S18-accept", ["goal"], fail);
+    for (const goal of goals) {
+      if (!["covered", "partly_covered", "not_covered"].includes(goal.coverage as string)) {
+        fail("S18-accept", "each goal needs an explicit coverage result");
+      }
+      if (!Array.isArray(goal.evidence) || !goal.evidence.length
+          || !goal.evidence.every((item) => item && nonEmpty(item.claim) && nonEmpty(item.kind) && nonEmpty(item.source)
+            && nonEmpty(item.date) && Number.isFinite(Date.parse(item.date)))) {
+        fail("S18-accept", "each goal needs dated evidence with a claim, kind and source");
+      }
+    }
+  }
+  if (b.kind === "assumptions") {
+    checkedItems(b.assumptions, "assumptions", "S19-assumptions", ["statement", "consequence"], fail);
   }
   return out;
 }

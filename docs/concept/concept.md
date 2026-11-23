@@ -155,6 +155,11 @@ Kind-specific requirements, enforced by `utp check`:
 - `handoff` steps name actor, machine, shell, command, expected result,
   whether the command was tested in that shell, and why the agent can't do it.
 - `clarify` states the agent's reading and at least one alternative reading.
+- For `handoff`, `accept`, and `assumptions`, answers use the request's
+  stable item IDs. The `items` field records one result or choice per ID.
+  The `details` field records observations or replacement text by the same
+  ID. A handoff completion or blocker needs an observation, and changing an
+  assumption needs replacement text.
 - `choose` carries a `category` (`design`, `approach`, `priority`, `process`,
   `naming`, `other`) so recommendation-override rates can be tracked by
   category; a recommendation asserting current system state carries dated
