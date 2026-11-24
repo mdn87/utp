@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "chipId": "utp:phase1:use",
+  "observedAt": "2026-11-24T06:51:46.289299+00:00",
+  "phase": "in progress",
+  "fieldTasks": [
+    {
+      "platform": "Codex",
+      "task": "Correct reversal recording for delivered agent decisions and verify the live notification retry."
+    },
+    {
+      "platform": "Claude Code",
+      "task": "Measure historical structured-question rounds from local session metadata."
+    },
+    {
+      "platform": "Antigravity",
+      "task": "Measure request waivers, feedback and review-page evidence from the live project."
+    },
+    {
+      "platform": "Claude Code",
+      "task": "Replace the deployment hash shown as the project heading in the review inbox."
+    },
+    {
+      "platform": "Antigravity",
+      "task": "Update the platform instructions for sharing the protected inbox after checking the earlier decision."
+    }
+  ],
+  "AC1": {
+    "eligibleUniqueRequests": 10,
+    "targetRequests": 15,
+    "requestsWithWaivers": 0,
+    "revisionsChecked": 13,
+    "postActivationRequests": 5,
+    "historicalEntriesExcluded": 1,
+    "scope": "The first fifteen distinct requests in the real shared project. Revisions count once. Historical backfills, prototype reviews and synthetic service projects are outside the sample."
+  },
+  "AC2": {
+    "platforms": [
+      "Windows",
+      "macOS",
+      "Linux"
+    ],
+    "nodeVersions": [
+      20,
+      22
+    ],
+    "ciJobs": 6,
+    "evidence": "The cross-platform suite includes lifecycle, recovery, rendering, adapter and close-out tests. The reviewer socket also runs on a POSIX host."
+  },
+  "AC3": {
+    "tasks": 5,
+    "clarity": {
+      "cardsRated": 0,
+      "clear": 0,
+      "clearPercent": null,
+      "targetPercent": 80
+    },
+    "questionCards": 3,
+    "duplicateQuestions": 0,
+    "duplicateEvidence": "The three field questions ask separately about the alert count, its destination and whether the wording gave enough context.",
+    "questionReviewsFlushed": 1,
+    "questionReviewsPresented": 0,
+    "noticeOnlyReviewsPresented": 2,
+    "allReviewsPresentedPerTask": 0.4,
+    "pushReceipts": 1,
+    "cardActiveResponseMs": [],
+    "pageActiveResponseMs": [],
+    "retrospective": {
+      "window": "2026-11-08 through 2026-11-21 UTC",
+      "sessions": 51,
+      "structuredQuestionRounds": 50,
+      "roundsPerSession": 0.98,
+      "scope": "Human-started top-level Claude Code and Codex sessions active on one Windows machine. A session approximates one task. A question tool call counts as one round even when it contains several cards."
+    }
+  },
+  "AC4": {
+    "largestPostActivationQuestionBatch": 3,
+    "verifiedPageSavesOfThreeOrMore": 0
+  },
+  "AC5": {
+    "fileChangingTasksWithReports": 3,
+    "evidence": "closeout-acceptance-evidence.json"
+  },
+  "AC6": {
+    "source": "Earlier shipped per-review links and a documented reviewer correction to one lasting inbox. The earlier choice was entered retrospectively.",
+    "sharedTag": "review-access",
+    "priorReversalShown": true,
+    "recordedAskingLevel": 1,
+    "reason": "The reviewer had already chosen the permanent protected inbox. Updating adapter instructions implements that choice."
+  }
+}

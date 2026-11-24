@@ -36,13 +36,13 @@ in Phase 1 (`chat_provenance` is always `false`):
 
 - **Never** ask a level-3 consequential approval in chat Markdown and never use
   `utp answer --from-chat` for a level-3 approval.
-- `utp flush` automatically prepares a review page URL for any review
-  containing a level-3 approval when `chat_provenance` is `false`. Present that
-  review page URL (or `utp page <review-id>`) or ask the person to run
-  `utp review <review-id>` in their own terminal up front.
+- `utp flush` prepares a level-3 approval for verified review. Share the
+  reviewer's permanent protected inbox if they supplied its address. Otherwise
+  use the link from `utp flush` or `utp page <review-id>`. The reviewer can
+  also run `utp review <review-id>` in their own terminal.
 - If `utp answer --from-chat` or `utp wait` ever returns exit `18`, keep the
-  same request ID and revision, route to `utp page <review-id>` or
-  `utp review <review-id>`, and resume with `utp wait <request-id>`.
+  same request ID and revision, use a verified channel above and resume with
+  `utp wait <request-id>`.
 - Non-level-3 reviews with 1–2 cards (such as reversible `choose` or `clarify`
   cards) can still use chat Markdown or the terminal/page review.
 

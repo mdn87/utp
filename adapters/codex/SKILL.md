@@ -52,9 +52,10 @@ Check `chat_provenance` from `utp status --json` or `utp flush --json`:
   answered via `utp answer <request-id@revision> --from-chat --presentation <presentation-id> --quote-file <file>`.
 - **Remote machines without mounted transcripts** (for example Windows talking
   to a Linux home service, where `chat_provenance` is `false`): `utp flush`
-  routes level-3 consequential approvals straight to the review page URL so the
-  person is never asked to answer twice. Share the URL or ask the person to run
-  `utp review <review-id>` in their own terminal.
+  prepares level-3 consequential approvals for verified review. Share the
+  reviewer's permanent protected inbox if they supplied its address. Otherwise
+  use the link from `utp flush` or `utp page <review-id>`. The reviewer can
+  also run `utp review <review-id>` in their own terminal.
 
 ## 4. Turn-start resume and close-out
 
