@@ -18,6 +18,8 @@ import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
 import { call, CliError, readConfig, utpHome, writeConfig } from "./client.js";
+import { closeout } from "./closeout.js";
+import { closeoutHook } from "./closeout-hook.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
 import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
 import { runReview } from "./review.js";
@@ -35,6 +37,8 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             link <project-id>
 Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
             check <file>
+            closeout <report.json>
+            closeout-hook               (Claude Code hook JSON on standard input)
             consider <decision.json>
             decide <decision.json>
             ask <file>
@@ -257,6 +261,19 @@ async function main(argv: string[]): Promise<number> {
   const dataDir = flags.data ?? process.env.UTP_DATA ?? path.join(utpHome(), "data");
 
   switch (verb) {
+    case "closeout-hook": {
+      try {
+        const response = closeoutHook(JSON.parse(readFileSync(0, "utf8")));
+        if (response) process.stdout.write(JSON.stringify(response) + "\n");
+      } catch {
+        process.stderr.write("UTP could not check this turn's completion report.\n");
+      }
+      return EXIT.OK;
+    }
+    case "closeout": {
+      const report = await closeout(readJson(rest[0], "completion report"));
+      return out(report, report.markdown as string | undefined);
+    }
     case "setup": {
       const plan = setupPlan(need(rest[0], "a platform"));
       if (flags.apply) return launchSetup(plan, rest.slice(1), flags.launcher);

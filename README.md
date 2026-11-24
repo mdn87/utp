@@ -202,7 +202,12 @@ Optional instruction snippets are included in `adapters/codex/AGENTS.snippet.md`
 and `adapters/antigravity/RULES.snippet.md`. For Claude Code, wire the bundled
 `session-env.mjs` helper into a `SessionStart` hook (shown in
 `adapters/claude/SKILL.md`) so `UTP_SESSION` automatically carries the native
-session UUID. Desktop-app conveniences stay optional on top of the CLI, and the
+session UUID. For work that changes files or external state, run
+`utp closeout <report.json>` to show what each goal achieved, its evidence,
+and any queued notices. The [agent workflow](adapters/utp-workflow.md#5-close-out-completion-report)
+includes a report example. Claude Code can remind the agent to write one
+using the [optional Stop hook](adapters/claude/SKILL.md#5-optional-close-out-reminder-hook).
+Desktop-app conveniences stay optional on top of the CLI, and the
 decision log lives in one small service on a home server so every machine and
 every agent shares the same decisions.
 

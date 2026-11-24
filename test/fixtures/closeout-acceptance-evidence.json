@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "chipId": "utp:adapters:closeout",
+  "criterion": "AC5",
+  "recordedAt": "2026-11-24T05:34:33.498Z",
+  "environment": "Windows, using a local UTP service with one real project update queued during the engineering batch.",
+  "tasks": [
+    {
+      "platform": "Codex",
+      "task": "Implement and verify goal-mapped close-out. Report the open delivery decision and the dependent field trial.",
+      "changedFiles": true,
+      "goalsWithEvidence": 4,
+      "queuedNoticesShown": 1,
+      "waitedForAcceptance": false
+    },
+    {
+      "platform": "Claude Code",
+      "task": "Document and verify the optional hook installation and behavior.",
+      "changedFiles": true,
+      "goalsWithEvidence": 4,
+      "queuedNoticesShown": 1,
+      "waitedForAcceptance": false
+    },
+    {
+      "platform": "Antigravity",
+      "task": "Write the common close-out workflow and synchronize the three adapter copies.",
+      "changedFiles": true,
+      "goalsWithEvidence": 2,
+      "queuedNoticesShown": 1,
+      "waitedForAcceptance": false
+    }
+  ],
+  "verification": "Compared the rendered reports with the goal files and dated sources for all three tasks. The native Claude Stop hook matched the report to the turn that edited the guide. The queue held one notice and zero acceptance requests.",
+  "phase1FieldTrial": "These tasks precede live delivery. The five-task post-activation sample is still required."
+}

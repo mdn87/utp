@@ -3,8 +3,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { connect, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -45,6 +46,107 @@ function repo(remote?: string): string {
   if (remote) execFileSync("git", ["remote", "add", "origin", remote], { cwd: dir });
   return dir;
 }
+
+test("closeout maps every goal and shows queued notices without presenting a review or asking for acceptance", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-closeout-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  try {
+    const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-closeout-home-")) };
+    const run = async (args: string[], input?: string) => {
+      const result = await utp(args, { ...o, input });
+      assert.equal(result.code, 0, result.stderr + result.stdout);
+      return result.stdout;
+    };
+    await run(["connect", svc.url], createToken(data, "closeout-client"));
+    await run(["init"]);
+    const notice = { kind: "notice", question: "Updated export format", why_now: "The export includes a date column.",
+      level: 1, level_reason: "An informational update.", stakes: { reversibility: "easy" } };
+    writeFileSync(path.join(o.cwd, "notice.json"), JSON.stringify(notice));
+    await run(["ask", "notice.json"]);
+    const before = JSON.parse(await run(["status", "--json"]));
+    const goals = ["covered", "partly_covered", "not_covered"].map((coverage, i) => ({
+      id: `G${i + 1}`, goal: `Export requirement ${i + 1}`, coverage,
+      evidence: [{ claim: `Observation ${i + 1}`, kind: "observed", source: "export.csv", date: "2026-01-02" }],
+    }));
+    const file = path.join(o.cwd, "report.json");
+    writeFileSync(file, JSON.stringify({ goals }));
+    const report = await run(["closeout", file]);
+    for (const goal of goals) {
+      assert.ok(report.includes(goal.goal) && report.includes(goal.coverage.replaceAll("_", " ")));
+      assert.ok(report.includes(goal.evidence[0]!.claim));
+    }
+    assert.match(report, /export\.csv/);
+    assert.match(report, /2026-01-02/);
+    assert.match(report, /Queued notices[\s\S]*Updated export format[\s\S]*The export includes a date column/);
+    assert.deepEqual(JSON.parse(await run(["status", "--json"])), before);
+    for (const bad of [[], [goals[0], goals[0]], [{ ...goals[0], evidence: [] }], [{ ...goals[0], coverage: "done" }],
+      [{ ...goals[0], evidence: [{ ...goals[0]!.evidence[0], kind: "guess" }] }]]) {
+      writeFileSync(file, JSON.stringify({ goals: bad }));
+      const result = await utp(["closeout", file, "--json"], o);
+      assert.equal(result.code, 20);
+      assert.ok(JSON.parse(result.stdout).failures.length);
+    }
+    writeFileSync(file, JSON.stringify({ goals }));
+    const offline = await utp(["closeout", file], { ...o, env: { UTP_SERVER: "http://127.0.0.1:1" } });
+    assert.equal(offline.code, 0);
+    assert.match(offline.stdout, /Observation 1/);
+    assert.match(offline.stdout, /could not check queued notices/i);
+  } finally {
+    await svc.close();
+  }
+});
+
+test("the optional Claude Stop hook checks only this turn and sends a missing-report reminder to the agent once", async () => {
+  const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-hook-home-")), env: { UTP_SESSION: randomUUID() } };
+  const hook = async (event: string, extra = {}) => {
+    const input = JSON.stringify({ session_id: o.env.UTP_SESSION, cwd: o.cwd, hook_event_name: event, ...extra });
+    const result = await utp(["closeout-hook"], { ...o, input });
+    assert.equal(result.code, 0, result.stderr);
+    return result.stdout.trim() ? JSON.parse(result.stdout) : {};
+  };
+  const report = path.join(o.home, "goals.json");
+  writeFileSync(report, JSON.stringify({ goals: [{ id: "G1", goal: "Update the draft", coverage: "covered",
+    evidence: [{ claim: "The draft includes a date.", kind: "observed", source: "draft.txt", date: "2026-01-02" }] }] }));
+  const draft = path.join(o.cwd, "draft.txt");
+  writeFileSync(draft, "old");
+  await hook("UserPromptSubmit");
+  assert.deepEqual(await hook("Stop"), {});
+  await hook("UserPromptSubmit");
+  writeFileSync(draft, "new");
+  const missing = await hook("Stop", { last_assistant_message: "Done." });
+  assert.equal(missing.decision, "block");
+  assert.match(missing.reason, /utp closeout/);
+  assert.deepEqual(await hook("Stop", { stop_hook_active: true }), {});
+  const alias = path.join(o.home, "workspace-alias");
+  symlinkSync(o.cwd, alias, process.platform === "win32" ? "junction" : "dir");
+  const valid = await utp(["closeout", report], { ...o, cwd: alias });
+  assert.equal(valid.code, 0, valid.stderr);
+  assert.deepEqual(await hook("Stop", { last_assistant_message: valid.stdout }), {});
+  assert.equal((await hook("Stop", { last_assistant_message: "Updated the draft." })).systemMessage, valid.stdout.trimEnd());
+  await hook("UserPromptSubmit");
+  await hook("PostToolUse", { tool_name: "Edit" });
+  assert.equal((await hook("Stop", { last_assistant_message: valid.stdout })).decision, "block");
+  await hook("UserPromptSubmit");
+  execFileSync("git", ["add", "draft.txt"], { cwd: o.cwd });
+  execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+    "-c", "commit.gpgsign=false", "commit", "-qm", "Save draft"], { cwd: o.cwd });
+  assert.equal((await hook("Stop")).decision, "block");
+  const noSession = await utp(["closeout-hook"], { ...o, input: JSON.stringify({ session_id: "../other" }) });
+  assert.equal(noSession.code, 0);
+  assert.equal(noSession.stdout.trim(), "");
+});
+
+test("a shell edit in an explicit non-Git project triggers the closeout reminder", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "utp-hook-folder-"));
+  const o = { cwd, home: path.join(cwd, "profile"), env: { UTP_SESSION: randomUUID(), UTP_PROJECT: "folder-project" } };
+  const hook = async (event: string) => utp(["closeout-hook"], { ...o, input: JSON.stringify({
+    session_id: o.env.UTP_SESSION, cwd, hook_event_name: event,
+  }) });
+  await hook("UserPromptSubmit");
+  assert.equal((await hook("Stop")).stdout, "");
+  writeFileSync(path.join(cwd, "draft.txt"), "new text");
+  assert.equal(JSON.parse((await hook("Stop")).stdout).decision, "block");
+});
 
 test("a terminal reviewer sees what the question decides and can ask for an explanation", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-clarity-data-"));

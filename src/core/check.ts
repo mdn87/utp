@@ -37,6 +37,21 @@ function checkedItems(raw: unknown, field: string, rule: string, textFields: str
   return items;
 }
 
+export function checkGoals(raw: unknown, rule = "completion-goals"): CheckFailure[] {
+  const failures: CheckFailure[] = [];
+  const fail = (id: string, message: string) => failures.push({ rule: id, message, waivable: false });
+  for (const goal of checkedItems(raw, "goals", rule, ["goal"], fail)) {
+    if (!["covered", "partly_covered", "not_covered"].includes(goal.coverage as string)) {
+      fail(rule, "each goal needs an explicit coverage result");
+    }
+    if (!Array.isArray(goal.evidence) || !goal.evidence.length
+        || !goal.evidence.every((item) => hasDatedEvidence(item) && nonEmpty(item.kind))) {
+      fail(rule, "each goal needs dated evidence with a claim, kind and source");
+    }
+  }
+  return failures;
+}
+
 export function checkRequest(body: unknown): CheckFailure[] {
   const out: CheckFailure[] = [];
   const fail = (rule: string, message: string) => out.push({ rule, message, waivable: false });
@@ -91,17 +106,7 @@ export function checkRequest(body: unknown): CheckFailure[] {
     for (const step of steps) if (typeof step.tested !== "boolean") fail("S17-handoff", "each step needs a tested true or false value");
   }
   if (b.kind === "accept" || b.goals !== undefined) {
-    const goals = checkedItems(b.goals, "goals", "S18-accept", ["goal"], fail);
-    for (const goal of goals) {
-      if (!["covered", "partly_covered", "not_covered"].includes(goal.coverage as string)) {
-        fail("S18-accept", "each goal needs an explicit coverage result");
-      }
-      if (!Array.isArray(goal.evidence) || !goal.evidence.length
-          || !goal.evidence.every((item) => item && nonEmpty(item.claim) && nonEmpty(item.kind) && nonEmpty(item.source)
-            && nonEmpty(item.date) && Number.isFinite(Date.parse(item.date)))) {
-        fail("S18-accept", "each goal needs dated evidence with a claim, kind and source");
-      }
-    }
+    out.push(...checkGoals(b.goals, "S18-accept"));
   }
   if (b.kind === "assumptions" || b.assumptions !== undefined) {
     checkedItems(b.assumptions, "assumptions", "S19-assumptions", ["statement", "consequence"], fail);
