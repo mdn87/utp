@@ -10,3 +10,6 @@ node_modules/
 .claude/handoff-history/
 .Codex/handoff.md
 .Codex/handoff-history/
+
+.gemini/handoff.md
+.gemini/handoff-history/
