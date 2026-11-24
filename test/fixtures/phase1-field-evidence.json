@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "chipId": "utp:phase1:use",
-  "observedAt": "2026-11-24T08:00:18.302393+00:00",
+  "observedAt": "2026-11-24T08:37:36.388066+00:00",
   "phase": "in progress",
   "fieldTasks": [
     {
@@ -63,13 +63,14 @@
     "duplicateQuestions": 0,
     "duplicateEvidence": "The initial questions covered alert count, destination and wording. A later question tested whether the newly added task name was recognizable on the device.",
     "questionReviewsFlushed": 2,
-    "questionReviewsPresented": 1,
+    "questionReviewsPresented": 2,
     "noticeOnlyReviewsPresented": 2,
-    "allReviewsPresentedPerTask": 0.5,
+    "allReviewsPresentedPerTask": 0.6666666666666666,
     "pushReceipts": 2,
     "cardActiveResponseMs": [],
     "pageActiveResponseMs": [
-      58819
+      58819,
+      6028
     ],
     "retrospective": {
       "window": "2026-11-08 through 2026-11-21 UTC",
@@ -82,7 +83,16 @@
       "pushDeliveries": 1,
       "providerAccepted": 1,
       "titleInBothPushFormats": true,
-      "deviceRecognition": "awaiting observation"
+      "deviceRecognition": "recognized",
+      "displayReplay": {
+        "authoredTitleOccurrences": {
+          "nativeDisplay": 1,
+          "currentWorker": 1,
+          "previousWorker": 1,
+          "oldestTestedWorker": 1
+        },
+        "additionalPushes": 0
+      }
     }
   },
   "AC4": {

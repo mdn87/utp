@@ -348,8 +348,9 @@ Set `UTP_DELIVERY_ADAPTER` to a local JavaScript module before starting
 `utp serve`. Its optional exported `sendReview(event, signal)` receives
 `review.ready` or `review.resolved` with the review id and question count.
 When the review intent includes `task_title`, `review.ready` also carries
-that name for the notification heading. Use one line of up to 80 characters
-suitable for a lock screen. An untitled review uses the provider's usual heading.
+that name for display once in the notification heading or body. Use one line
+of up to 80 characters suitable for a lock screen. An untitled review uses the
+provider's usual heading.
 Return `{ ok: true, event_id }` after accepting the event durably, and use the
 stable `event_id` to deduplicate retries. The adapter uses the supplied abort
 signal when calling its provider. Newly flushed reviews use these settings.

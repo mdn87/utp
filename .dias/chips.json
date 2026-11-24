@@ -1015,7 +1015,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-24T08:00:18.302Z"
+        "updatedAt": "2026-11-24T08:37:36.388Z"
       },
       "evidence": [
         {
@@ -1044,9 +1044,9 @@
         },
         {
           "entryId": "field-sample-progress",
-          "at": "2026-11-24T08:00:18.302Z",
+          "at": "2026-11-24T08:37:36.388Z",
           "kind": "note",
-          "message": "6 tasks covered three agents. The three-card page save is verified. 11/15 real requests arrived, with 0 waived. 0 cards have clarity feedback. See phase1-field-evidence.json."
+          "message": "6 tasks across 3 agents. One three-card batch saved. 11/15 requests recorded, 0 waived, 0 clarity ratings. The reviewer recognized the task name on the phone."
         }
       ]
     },
