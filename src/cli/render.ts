@@ -2,6 +2,7 @@
 
 import type { AcceptanceGoal, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
 import { itemPrompts } from "../core/items.js";
+import { validTaskTitle } from "../core/check.js";
 import { waiverNotes } from "../core/quality.js";
 
 export interface RequestView {
@@ -29,6 +30,7 @@ const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ")
 export function reviewContext(intent?: ReviewIntent): [string, string][] {
   if (!intent) return [["Review context", "This review was saved without a stated purpose or scope."]];
   const fields: [string, string][] = [["What you asked for", intent.asked], ["What the agent is doing", intent.doing]];
+  if (validTaskTitle(intent.task_title)) fields.unshift(["Task", intent.task_title]);
   const scope = intent.scope_delta;
   const changes: [string, string][] = [];
   if (scope !== "none") {

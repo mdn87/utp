@@ -178,7 +178,11 @@ export function checkRequest(body: unknown): CheckFailure[] {
 }
 
 export const intentFailure: CheckFailure = { rule: "S28-intent", waivable: false,
-  message: "State what was asked, what you are doing, and the scope changes with reasons (or none)." };
+  message: "State what was asked, what you are doing, and the scope changes with reasons (or none). An optional task title must be a single line of 1 to 80 characters." };
+
+export function validTaskTitle(value: unknown): value is string {
+  return nonEmpty(value) && value === value.trim() && [...value].length <= 80 && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value);
+}
 
 /** Match the ordered draft without resending large previews. Object key order is immaterial. */
 export function reviewRequestsHash(requests: readonly unknown[]): string {
@@ -193,6 +197,7 @@ export function validReviewIntent(value: unknown): value is ReviewIntent {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const intent = value as Record<string, unknown>;
   if (!nonEmpty(intent.asked) || !nonEmpty(intent.doing)) return false;
+  if (intent.task_title !== undefined && !validTaskTitle(intent.task_title)) return false;
   const scope = intent.scope_delta;
   const changes = ["narrowed", "deferred", "added"] as const;
   return scope === "none" || (!!scope && typeof scope === "object" && !Array.isArray(scope)

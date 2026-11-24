@@ -636,7 +636,7 @@ test("all seven templates keep their review context and decision content across 
       ids[kind] = queued.id;
       reviewId = queued.review_id;
     }
-    const intent = { asked: "Organize the sample catalogue.", doing: "Define the entry order.",
+    const intent = { task_title: "Spring catalogue", asked: "Organize the sample catalogue.", doing: "Define the entry order.",
       scope_delta: { narrowed: [{ item: "Print edition", reason: "The digital edition has its own index." }],
         deferred: [{ item: "Cover design", reason: "The title is still open." }],
         added: [{ item: "Index proof", reason: "The printer asked for a sample." }] } };
@@ -655,7 +655,7 @@ test("all seven templates keep their review context and decision content across 
     assert.equal(response.status, 200);
     const html = await response.text();
     const browser = html.replace(/<style>[\s\S]*?<\/style>|<[^>]+>/g, " ").replaceAll("&#39;", "'");
-    const required = [intent.asked, intent.doing, ...Object.values(intent.scope_delta).flatMap(changes =>
+    const required = [intent.task_title, intent.asked, intent.doing, ...Object.values(intent.scope_delta).flatMap(changes =>
       changes.flatMap(change => [change.item, change.reason])),
       ...requests.flatMap(card => [card.question, card.why_now, card.level_reason,
         ...Object.values(card.glossary ?? {}), ...(card.options ?? []).flatMap(o => [o.label, o.consequence])]),

@@ -66,13 +66,17 @@ test("one attention item serves a review across retries and restart, and notices
     await s.agent("presented", { review: notice.review_id, channel: "conversation" });
     const ids = [];
     for (const question of ["First sample?", "Another sample?"]) ids.push((await s.agent("ask", { body: body(question) })).id);
-    const flush = await s.agent("flush");
+    const intent = { task_title: "Import settings", asked: "Prepare the private import.",
+      doing: "Choose the internal parser.", scope_delta: "none" };
+    const flush = await s.agent("flush", { intent });
     assert.equal((await s.agent("flush")).review_id, null);
     await until(() => attempts >= 2);
     assert.equal(accepted.size, 1);
     const requested = [...accepted.values()][0]!;
     assert.equal(requested.type, "review.ready");
     assert.equal(requested.questions, 2);
+    assert.equal(requested.task_title, intent.task_title);
+    assert.doesNotMatch(JSON.stringify(requested), /private import|internal parser|First sample/);
     assert.match(String(requested.dedupe_key), new RegExp(String(flush.review_id)));
     await current.close();
     allowAck = true;
@@ -80,11 +84,20 @@ test("one attention item serves a review across retries and restart, and notices
     const options = { config: { ...s.agentCfg, server: current.url }, project: s.project };
     await until(async () => ((await call("show", { id: flush.review_id }, options)).review as { delivery: string }).delivery === "sent");
     assert.equal(accepted.size, 1);
+    assert.deepEqual([...accepted.values()][0], requested);
     await call("presented", { review: flush.review_id, channel: "conversation" }, options);
     for (const id of ids) assert.equal((await call("answer", { id, value: "a", channel: "cli" }, options)).code, 0);
     await until(() => [...accepted.values()].some((event) => event.type === "review.resolved"));
     assert.equal(accepted.size, 2);
     assert.ok([...accepted.values()].every((event) => event.dedupe_key === requested.dedupe_key));
+    assert.equal([...accepted.values()].find(event => event.type === "review.resolved")?.task_title, undefined);
+
+    await call("ask", { body: body("Private question in an untitled review?") }, options);
+    const legacy = await call("flush", {}, options);
+    await until(() => [...accepted.values()].some(event => event.review_id === legacy.review_id));
+    const untitled = [...accepted.values()].find(event => event.review_id === legacy.review_id)!;
+    assert.equal(untitled.task_title, undefined);
+    assert.doesNotMatch(JSON.stringify(untitled), /Private question/);
   } finally {
     await current.close();
     receiver.closeAllConnections();

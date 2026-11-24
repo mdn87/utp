@@ -44,8 +44,10 @@ record `reversal_reason` explaining why the reversal does not apply.
   once at a natural stopping point:
   `utp flush [<review-id>] --intent <intent.json>`.
 - Always attach authored review context (`asked`, `doing`, `scope_delta`) with
-  `--intent <file>`. Open every card in plain language stating what the
-  decision addresses and what each choice changes.
+  `--intent <file>`. Include a short, recognizable `task_title` suitable for
+  the person's lock screen. Keep private details in the review. Open every
+  card in plain language stating what the decision addresses and what each
+  choice changes.
 - **Never double-prompt on level-3 approvals.** Check `chat_provenance` from
   `utp status --json` or `utp flush --json`:
   - **1–2 non-level-3 questions**, or **1–2 questions including level-3 when

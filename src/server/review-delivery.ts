@@ -20,6 +20,7 @@ function notification(project: string, delivery: ReviewDelivery): ReviewNotifica
     event_id: `evt_${hash(dedupe_key + ":" + delivery.action)}`,
     review_id: delivery.review,
     questions: delivery.questions,
+    ...(delivery.task_title ? { task_title: delivery.task_title } : {}),
   };
 }
 
