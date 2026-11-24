@@ -717,7 +717,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T05:36:32.927Z"
+        "updatedAt": "2026-11-24T05:34:33.498Z"
       },
       "evidence": [
         {
@@ -749,6 +749,12 @@
           "at": "2026-11-23T05:36:32.927Z",
           "kind": "note",
           "message": "The shared inbox is live behind reviewer sign-in. The tunnel and vault references were verified. Live notifications still need provider and daily report setup."
+        },
+        {
+          "entryId": "delivery-choice-awaits-reviewer",
+          "at": "2026-11-24T05:34:33.498Z",
+          "kind": "note",
+          "message": "The earlier verified reply requested the shared inbox. The same request now offers both delivery channels, either channel, or inbox only. The protected inbox holds the revised level-3 choice."
         }
       ]
     },
@@ -865,7 +871,7 @@
       "projectId": "utp",
       "title": "Close changed work with evidence for every goal",
       "summary": "Produce completion reports that map each goal to evidence and include pending notices. The optional Claude Code Stop hook requests a missing report from the agent.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 250,
       "prereqs": [
         "utp:cards:render",
@@ -875,7 +881,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-24T05:34:33.498Z"
       },
       "evidence": [
         {
@@ -883,6 +889,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "AC5 requires at least three real tasks with file changes to close this way without waiting for the person to accept routine work."
+        },
+        {
+          "entryId": "goal-reports-and-native-turns",
+          "at": "2026-11-24T05:34:33.498Z",
+          "kind": "note",
+          "message": "The CLI validates goal coverage and shows queued notices. All three agents closed real file-changing tasks with dated evidence and no acceptance wait. See test/fixtures/closeout-acceptance-evidence.json."
         }
       ]
     },
@@ -978,7 +990,7 @@
       "projectId": "utp",
       "title": "Prove the first release on real tasks",
       "summary": "Run at least five real tasks across all three agents. Check 80% clarity, duplicate questions, review frequency, notification counts and the waiver rate in the first 15 requests.",
-      "stage": "planned",
+      "stage": "blocked",
       "sequence": 280,
       "prereqs": [
         "utp:review:record",
@@ -997,7 +1009,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T23:19:46Z"
+        "updatedAt": "2026-11-24T05:34:33.498Z"
       },
       "evidence": [
         {
@@ -1011,6 +1023,12 @@
           "at": "2026-11-22T23:19:46Z",
           "kind": "note",
           "message": "Phase 1 must prove the batch review page on a review with three or more cards."
+        },
+        {
+          "entryId": "post-activation-proof-awaits-delivery",
+          "at": "2026-11-24T05:34:33.498Z",
+          "kind": "note",
+          "message": "AC5 has three real completion reports. The five-task field trial and the first fifteen requests still depend on the operator's delivery choice and live verification."
         }
       ]
     },
