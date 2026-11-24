@@ -10,8 +10,8 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Finish the first 15 real requests and verify reviewer clarity and a batch page save.",
-  "remainingSummary": "Five tasks span all three agents. 10 eligible requests have arrived. The field review has 0 clarity ratings and 0 verified three-card saves.",
+  "currentMilestone": "Measure reviewer clarity and count waivers on the first fifteen real requests.",
+  "remainingSummary": "The three-card batch save is verified. 10 of 15 real requests have arrived. 0 cards have clarity feedback.",
   "nextChipId": "utp:phase1:use",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",

@@ -104,6 +104,11 @@ test("a batch file requires the author's intent and identifies the card needing 
   assert.deepEqual(checkDocument({ review: { requests: [valid()] } }).map(f => f.rule), ["S28-intent"]);
   const intent = { asked: "Prepare the import.", doing: "Choose a parser.", scope_delta: "none" };
   assert.deepEqual(checkDocument({ review: { intent, requests: [valid()] } }), []);
+  const withTitle = (title: unknown) => checkDocument({ review: { intent: { ...intent, task_title: title }, requests: [valid()] } });
+  assert.deepEqual(withTitle("Résumé settings"), []);
+  for (const invalid of ["  ", "Import\nsettings", "a".repeat(81), 4]) {
+    assert.match(withTitle(invalid)[0]?.message ?? "", /task title/i);
+  }
   const problems = checkDocument({ review: { intent, requests: [valid(), { ...valid(), why_now: "" }] } });
   assert.equal(problems[0]?.rule, "S03-why-now");
   assert.match(problems[0]!.message, /Request 2/);

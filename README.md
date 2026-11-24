@@ -62,11 +62,16 @@ each scope change a reason.
 
 ```json
 {
+  "task_title": "Spring catalogue",
   "asked": "Prepare the spring catalogue.",
   "doing": "Choose the order of its entries.",
   "scope_delta": "none"
 }
 ```
+
+Use `task_title` for a short name you would recognize on a phone lock screen.
+The notification provider receives this name when you supply it. The full
+request and scope stay in the review.
 
 For changed scope, use an object with `narrowed`, `deferred`, and `added`
 arrays. Each entry has an `item` and a `reason`. You can also pass a complete

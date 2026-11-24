@@ -5,6 +5,7 @@ export interface ReviewNotification {
   dedupe_key: string;
   review_id: string;
   questions: number;
+  task_title?: string;
 }
 
 export interface ReportInboxItem {

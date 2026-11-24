@@ -72,6 +72,8 @@ export interface DefaultNotice {
 }
 
 export interface ReviewIntent {
+  /** Short name the author intends to show in a notification. */
+  task_title?: string;
   asked: string;
   doing: string;
   scope_delta: "none" | Record<"narrowed" | "deferred" | "added", { item: string; reason: string }[]>;

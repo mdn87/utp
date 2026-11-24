@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { reviewMarkdown, type ReviewView } from "../cli/render.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
-import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent } from "./check.js";
+import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
@@ -89,6 +89,7 @@ export interface ReviewDelivery {
   review: string;
   questions: number;
   action: "request" | "resolve";
+  task_title?: string;
 }
 
 export interface NoticeDigest {
@@ -288,8 +289,10 @@ export class Engine {
         return card && this.isCurrentRev(card) && card.body.kind !== "notice" && !card.answer
           && ["queued", "presented", "hidden", "default_claimed"].includes(card.status);
       })) return [];
-      return [{ review: review.id, questions: review.delivery.questions,
-        action: review.delivery.state === "pending" ? "request" : "resolve" }];
+      const action = review.delivery.state === "pending" ? "request" : "resolve";
+      const title = review.intent?.task_title;
+      return [{ review: review.id, questions: review.delivery.questions, action,
+        ...(action === "request" && validTaskTitle(title) ? { task_title: title } : {}) }];
     });
   }
 
