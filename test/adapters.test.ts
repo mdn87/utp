@@ -269,7 +269,9 @@ test("adapters are synced, self-contained in the packed npm tarball, leak-free, 
     const tgz = readdirSync(packDir).find((name) => name.endsWith(".tgz"));
     assert.ok(tgz, "npm pack produced no .tgz archive");
 
-    const untar = spawnSync("tar", ["-xzf", path.join(packDir, tgz), "-C", extractDir], { encoding: "utf8" });
+    // GNU tar treats a drive letter in an archive name as a remote host.
+    const untar = spawnSync("tar", ["-xzf", tgz, "-C", path.relative(packDir, extractDir).split(path.sep).join("/")],
+      { cwd: packDir, encoding: "utf8" });
     assert.equal(untar.status, 0, untar.stdout + untar.stderr);
 
     const pkgAdapters = path.join(extractDir, "package", "adapters");

@@ -103,6 +103,6 @@ changes there, outside the workspace, or to Git-ignored files require the
 agent to write the report on its own.
 
 Run `utp closeout <report.json>` from the same workspace and session. The
-validated report is saved under `$UTP_HOME/closeout-hooks` for the current
-turn. Claude can finish immediately. If its final reply omits the rendered
-report, the hook displays it as a system message.
+validated report is saved under `closeout-hooks` in `$UTP_HOME` (default
+`$HOME/.utp`) for the current turn. Claude can finish immediately. If its
+final reply omits the rendered report, the hook displays it as a system message.

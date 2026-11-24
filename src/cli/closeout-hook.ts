@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { utpHome } from "./client.js";
 
@@ -73,7 +73,7 @@ export function currentHookTurn(): { directory: string; turn: Turn } | undefined
   if (!directory) return;
   const turn = readState<Turn>(directory, "turn.json");
   if (!turn) return;
-  const relative = path.relative(turn.root, process.cwd());
+  const relative = path.relative(realpathSync.native(turn.root), realpathSync.native(process.cwd()));
   if (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative)) return { directory, turn };
 }
 
