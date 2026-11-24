@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "chipId": "utp:adapters:platforms",
+  "recordedAt": "2026-11-24T03:42:00Z",
+  "tierA": {
+    "expectedRecord": "test/fixtures/adapters-expected.json",
+    "stepsPerShell": 108,
+    "shells": [
+      { "os": "windows", "shell": "pwsh", "status": "pass", "matchedExpectedRecord": true },
+      { "os": "windows", "shell": "git-bash", "status": "pass", "matchedExpectedRecord": true },
+      { "os": "linux", "shell": "bash", "status": "pass", "matchedExpectedRecord": true },
+      { "os": "macos", "shell": "zsh", "status": "pass", "matchedExpectedRecord": true },
+      { "os": "macos", "shell": "bash", "status": "pass", "matchedExpectedRecord": true }
+    ],
+    "packagingChecks": {
+      "syncAdaptersCheck": "pass",
+      "npmPackStandaloneCopy": "pass",
+      "relativeLinksValid": "pass",
+      "leakCheckGeneric": "pass",
+      "claudeSessionStartHookUnit": "pass"
+    }
+  },
+  "tierB": {
+    "service": "isolated candidate utp serve on linux-home-server with real transcript-sources.json and private-network reachability",
+    "matrix": [
+      {
+        "platform": "claude",
+        "hostRole": "linux-home-server",
+        "os": "linux",
+        "shell": "bash-over-ssh",
+        "checks": {
+          "sessionStartHookSetsUuid": "pass",
+          "statusChatProvenance": true,
+          "flushRouteVerifiedChat": "conversation",
+          "presentedNativeTranscript": "pass",
+          "ptyTerminalReviewChannel": "terminal-review",
+          "ptyTerminalReviewVerified": "channel",
+          "sameSessionResume": "pass",
+          "newSessionTakeoverResume": "pass",
+          "serviceStoppedExit32": "pass",
+          "serviceRestoredExit0": "pass"
+        },
+        "knownBoundaries": [
+          "utp setup claude --apply refused to start with sandbox.failIfUnavailable because socat is not installed on the Linux host; sandbox bypass was not attempted.",
+          "Headless claude -p --resume turns are intentionally excluded from human chat provenance (exit 18); interactive native transcript verification is covered by Tier A and interactive sessions."
+        ]
+      },
+      {
+        "platform": "claude",
+        "hostRole": "windows-workstation",
+        "os": "windows",
+        "shell": "pwsh-and-git-bash",
+        "checks": {
+          "setupApplyWsl2Guidance": "pass",
+          "statusChatProvenance": false,
+          "upfrontLevel3Route": "review-page",
+          "defensiveFromChatExit18": "pass",
+          "reviewPageApprovalVerified": "channel",
+          "serviceStoppedExit32": "pass",
+          "serviceRestoredExit0": "pass"
+        },
+        "knownBoundaries": [
+          "Windows client transcripts are not mounted on the Linux home server; level-3 approvals route upfront to the review page or terminal review."
+        ]
+      },
+      {
+        "platform": "claude",
+        "hostRole": "macos-laptop",
+        "os": "macos",
+        "shell": "zsh-over-ssh",
+        "checks": {
+          "statusChatProvenance": false,
+          "upfrontLevel3Route": "review-page",
+          "defensiveFromChatExit18": "pass",
+          "ptyTerminalReviewChannel": "terminal-review",
+          "ptyTerminalReviewVerified": "channel"
+        },
+        "knownBoundaries": [
+          "The Claude CLI OAuth session on the macOS host was expired during the run; live macOS Seatbelt sandbox execution requires interactive re-authentication on that host."
+        ]
+      },
+      {
+        "platform": "codex",
+        "hostRole": "linux-home-server",
+        "os": "linux",
+        "shell": "bash-over-ssh",
+        "checks": {
+          "sandboxBeforeNetworkAllowExit32": "pass",
+          "sandboxAfterNetworkAllowExit0": "pass",
+          "sandboxServiceStoppedExit32": "pass",
+          "serviceRestoredExit0": "pass"
+        },
+        "knownBoundaries": [
+          "The Codex CLI OAuth refresh token on the Linux host was expired; sandbox enforcement was verified directly with codex sandbox on Linux, and live codex exec sandbox verification ran on macOS."
+        ]
+      },
+      {
+        "platform": "codex",
+        "hostRole": "windows-workstation",
+        "os": "windows",
+        "shell": "pwsh-and-git-bash",
+        "checks": {
+          "codexThreadIdUuid": "pass",
+          "sandboxBeforeNetworkAllowExit32": "pass",
+          "sandboxAfterNetworkAllowExit0": "pass",
+          "statusChatProvenance": false,
+          "upfrontLevel3Route": "review-page",
+          "defensiveFromChatExit18": "pass",
+          "reviewPageApprovalVerified": "channel",
+          "serviceStoppedExit32": "pass",
+          "serviceRestoredExit0": "pass"
+        },
+        "knownBoundaries": [
+          "Windows client transcripts are not mounted on the Linux home server; level-3 approvals route upfront to the review page or terminal review."
+        ]
+      },
+      {
+        "platform": "codex",
+        "hostRole": "macos-laptop",
+        "os": "macos",
+        "shell": "zsh-over-ssh",
+        "checks": {
+          "liveCodexExecBeforeSetupExit32": "pass",
+          "liveCodexExecAfterSetupExit0": "pass",
+          "statusChatProvenance": false,
+          "upfrontLevel3Route": "review-page",
+          "defensiveFromChatExit18": "pass",
+          "ptyTerminalReviewChannel": "terminal-review",
+          "ptyTerminalReviewVerified": "channel"
+        },
+        "knownBoundaries": []
+      },
+      {
+        "platform": "antigravity",
+        "hostRole": "windows-workstation",
+        "os": "windows",
+        "shell": "pwsh-and-git-bash",
+        "checks": {
+          "conversationIdUuid": "pass",
+          "setupPlanSandboxAndAdapterPath": "pass",
+          "statusChatProvenance": false,
+          "upfrontLevel3Route": "review-page",
+          "defensiveFromChatExit18": "pass",
+          "reviewPageApprovalVerified": "channel",
+          "serviceStoppedExit32": "pass",
+          "serviceRestoredExit0": "pass"
+        },
+        "knownBoundaries": [
+          "Antigravity has no server-verifiable chat transcript format in Phase 1; all level-3 approvals route upfront to the review page or terminal review.",
+          "Headless agy --sandbox --print hit the 30s print timeout during non-interactive testing; interactive sandbox reachability was verified in utp:adapters:access."
+        ]
+      }
+    ]
+  }
+}

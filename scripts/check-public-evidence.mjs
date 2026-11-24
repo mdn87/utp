@@ -11,6 +11,7 @@ function filesUnder(directory) {
 }
 
 const paths = [
+  ...filesUnder("adapters"),
   ...filesUnder("test/fixtures"),
   ...filesUnder("docs/decisions").filter((name) => /\.(?:answers|export)\.json$/.test(name)),
 ];

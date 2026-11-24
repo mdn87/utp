@@ -16,6 +16,7 @@
     "test": "node scripts/build.mjs && node scripts/test.mjs"
   },
   "files": [
+    "adapters",
     "dist/src",
     "LICENSE",
     "README.md"

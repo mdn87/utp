@@ -22,6 +22,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci
+      - run: node scripts/sync-adapters.mjs --check
       - run: npm test
       - run: node scripts/score-lint.mjs
       - run: node scripts/check-public-evidence.mjs

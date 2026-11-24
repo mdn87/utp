@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { EXIT } from "../core/types.js";
 import { CliError, readConfig, utpHome } from "./client.js";
 
@@ -8,6 +9,15 @@ export interface SetupPlan {
   program: string;
   args: string[];
   access: string;
+  adapter: string;
+}
+
+function adapterPath(platform: string): string {
+  const packaged = fileURLToPath(new URL(`../../../adapters/${platform}`, import.meta.url));
+  if (existsSync(packaged)) return packaged;
+  const local = path.resolve("adapters", platform);
+  if (existsSync(local)) return local;
+  return packaged;
 }
 
 export function setupPlan(platform: string): SetupPlan {
@@ -16,6 +26,7 @@ export function setupPlan(platform: string): SetupPlan {
       program: "codex",
       args: ["--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true"],
       access: "This Codex session's workspace-write sandbox can make outbound network requests.",
+      adapter: adapterPath("codex"),
     };
   }
   if (platform !== "claude" && platform !== "antigravity") {
@@ -31,6 +42,7 @@ export function setupPlan(platform: string): SetupPlan {
       program: "claude",
       args: ["--settings", JSON.stringify({ sandbox: { enabled: true, failIfUnavailable: true, network: { allowedDomains: [domain] } } })],
       access: `This Claude Code session adds ${domain} to its sandbox network allowlist on supported systems.`,
+      adapter: adapterPath("claude"),
     };
   }
   const config = path.resolve(utpHome(), "config.json");
@@ -41,6 +53,7 @@ export function setupPlan(platform: string): SetupPlan {
       permissions: { allow: [`read_url(${server.hostname})`, ...runtimeFiles.map((file) => `read_file(${file})`)] },
     })],
     access: `This Antigravity session adds ${server.hostname} and read access to Node and the UTP connection file.`,
+    adapter: adapterPath("antigravity"),
   };
 }
 

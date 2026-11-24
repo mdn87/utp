@@ -542,6 +542,10 @@ export class Engine {
       return { code: EXIT.OK, review_id: null, items: [], message: "nothing is queued" };
     }
     const questions = items.filter((k) => this.revs.get(k)?.body.kind !== "notice").length;
+    const needsVerified = items.some((k) => {
+      const body = this.revs.get(k)?.body;
+      return body !== undefined && body.level === 3 && (body.kind === "approve" || body.options?.some((o) => !!o.authorization));
+    });
     const digest = questions === 0 && delivery.digest === true;
     const route = digest ? "morning-report" : questions >= 3 ? "review-page" : "conversation";
     const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
@@ -552,7 +556,7 @@ export class Engine {
     });
     return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults,
       ...(delivery.notify === true && questions ? { notify_questions: questions } : {}), ...(digest ? { digest: true } : {}) },
-      { code: EXIT.OK, review_id: review.id, items, route, ...(digest ? { digest: true } : {}) }, opId,
+      { code: EXIT.OK, review_id: review.id, items, route, ...(needsVerified ? { needs_verified_channel: true } : {}), ...(digest ? { digest: true } : {}) }, opId,
       delivery.intent ? { intent: delivery.intent } : {});
   }
 

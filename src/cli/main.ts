@@ -225,6 +225,21 @@ const TEMPLATES: Record<string, RequestBody> = {
   },
 };
 
+const SESSION_VERBS = new Set([
+  "status", "consider", "decide", "ask", "flush", "presented", "answer", "wait",
+  "claim-default", "resolve-late", "begin", "applied", "reconcile", "release",
+  "takeover", "revise", "cancel", "reverse",
+]);
+
+function warnMissingSession(verb: string): void {
+  if (!SESSION_VERBS.has(verb)) return;
+  const session = process.env.UTP_SESSION?.trim();
+  if (session && session !== "default") return;
+  process.stderr.write(
+    "utp: warning: UTP_SESSION is unset or \"default\"; concurrent sessions can collide on grants and chat transcript verification is disabled. Set UTP_SESSION to a unique session ID.\n",
+  );
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
   const flags = values as Flags;
@@ -233,6 +248,7 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return verb || flags.help ? EXIT.OK : EXIT.OTHER;
   }
+  warnMissingSession(verb);
   const opId = flags["op-id"];
   const out = (r: OpResult, human?: string): number => {
     process.stdout.write(`${flags.json ? JSON.stringify(r, null, 2) : (human ?? resultText(r))}\n`);
@@ -244,7 +260,7 @@ async function main(argv: string[]): Promise<number> {
     case "setup": {
       const plan = setupPlan(need(rest[0], "a platform"));
       if (flags.apply) return launchSetup(plan, rest.slice(1), flags.launcher);
-      return out({ code: EXIT.OK, ...plan }, `${plan.access}\nAdd --apply to start the session with this setting.`);
+      return out({ code: EXIT.OK, ...plan }, `${plan.access}\nAdapter files: ${plan.adapter}\nAdd --apply to start the session with this setting.`);
     }
     case "serve": {
       const port = flags.port ? Number(flags.port) : DEFAULT_PORT;
@@ -395,11 +411,15 @@ async function main(argv: string[]): Promise<number> {
       }
       const r = await call("flush", args, { project, opId });
       if (r.code !== EXIT.OK || !r.review_id) return out(r);
-      if (r.route === "review-page") {
+      const needsVerifiedPage = r.route === "conversation" && r.needs_verified_channel === true && r.chat_provenance === false;
+      if (r.route === "review-page" || needsVerifiedPage) {
         const page = await call("review-page.prepare", { review: r.review_id }, { project });
         if (page.code !== EXIT.OK) return out({ ...page, review_id: r.review_id,
-          message: `The batch was prepared. Run utp page ${r.review_id} to obtain its link. ${page.message ?? ""}` });
-        return out({ ...r, url: page.url }, `Open this review page to answer the batch in one save.\n${String(page.url)}`);
+          message: `The review was prepared. Run utp page ${r.review_id} or utp review ${r.review_id} to answer it. ${page.message ?? ""}` });
+        const prompt = needsVerifiedPage
+          ? `This review includes a level-3 approval and verified chat is unavailable for this session. Open this review page or run utp review ${r.review_id} in your terminal.\n${String(page.url)}`
+          : `Open this review page to answer the batch in one save.\n${String(page.url)}`;
+        return out({ ...r, route: "review-page", url: page.url }, prompt);
       }
       if (flags.json) return out(r);
       if (r.digest === true) return out(r, "These notices are queued for the morning report.");
