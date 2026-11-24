@@ -5,9 +5,28 @@ import { Engine } from "../core/engine.js";
 import { EXIT } from "../core/types.js";
 import { escapeText, page } from "./review-html.js";
 import { answerable, ReviewPages, sendHtml } from "./review-page.js";
-import type { Service } from "./service.js";
+import { normalizeRemote, type ProjectInfo, type Service } from "./service.js";
 
 const actor = { machine: "review-inbox", session: "browser" };
+
+// Release directories use full Git object IDs. Short hexadecimal names may be intentional project names.
+const HASH_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const SAFE_BASENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** Extract only the repository folder name for display. */
+function remoteBasename(remote: string | undefined): string | undefined {
+  if (!remote) return undefined;
+  const location = normalizeRemote(remote.split(/[?#]/, 1)[0]?.replaceAll("\\", "/"));
+  if (!location?.includes("/")) return undefined;
+  const base = path.posix.basename(location).replace(/\.git$/i, "");
+  return SAFE_BASENAME.test(base) && !HASH_NAME.test(base) ? base : undefined;
+}
+
+/** Preserve the supplied name when it identifies the project. */
+export function inboxLabel(project: ProjectInfo): string {
+  if (project.name && !HASH_NAME.test(project.name)) return project.name;
+  return remoteBasename(project.remote) ?? "Unnamed project";
+}
 
 /** Only the authenticating proxy and the UTP service may reach this socket. */
 export function checkReviewerSocket(socket: string, origin?: URL): void {
@@ -48,7 +67,7 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
       }
       for (const [review, questions] of groups) {
         const items = questions.map((q) => `<li>${escapeText(q)}</li>`).join("");
-        sections.push(`<article class="inbox-review"><h2>${escapeText(project.name ?? project.id)}</h2><ul>${items}</ul>
+        sections.push(`<article class="inbox-review"><h2>${escapeText(inboxLabel(project))}</h2><ul>${items}</ul>
           <form method="post" action="/open/${encodeURIComponent(project.id)}/${encodeURIComponent(review)}">
           <button type="submit">Open review</button></form></article>`);
       }

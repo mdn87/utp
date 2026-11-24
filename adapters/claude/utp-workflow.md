@@ -53,14 +53,15 @@ record `reversal_reason` explaining why the reversal does not apply.
     Markdown in the conversation, then run
     `utp presented <review-id> --channel conversation`.
   - **3 or more questions**, or **any review with a level-3 consequential
-    approval when `chat_provenance` is `false`**: `utp flush` prepares a review
-    page URL (and never asks you to present level-3 chat Markdown). Give the
-    person the review page URL from `utp flush` (or `utp page <review-id>`) or
-    ask them to run `utp review <review-id>` in their own terminal.
-  - **Defensive fallback**: If `utp answer --from-chat` or `utp wait` ever
-    returns exit `18`, keep the same request ID and revision (do not create a
-    duplicate or downgrade the level), prepare a page with
-    `utp page <review-id>` or ask the person to run `utp review <review-id>`,
+    approval when `chat_provenance` is `false`**. Run `utp flush` to prepare
+    the review. If the reviewer supplied a permanent protected inbox address,
+    share it with them for access to all outstanding questions. Keep private
+    addresses out of shared files. Without a supplied address, or when the
+    reviewer requests a direct link, share the URL from `utp flush` or
+    `utp page <review-id>`. They can also run `utp review <review-id>` in their
+    own terminal.
+  - If `utp answer --from-chat` or `utp wait` returns exit `18`, keep the
+    request ID, revision and level. Use one of the verified channels above
     and resume with `utp wait <request-id>`.
 
 ## 3. File-only UTF-8 payloads
@@ -156,7 +157,7 @@ utp presented <review-id> --channel conversation --json
 # 3b. Record a chat reply (write the person's complete turn to quote.txt)
 utp answer <request-id@revision> --from-chat --presentation <presentation-id> --quote-file quote.txt
 
-# 3c. If routed to a verified channel: share the page URL or terminal command
+# 3c. Share the supplied protected inbox, or get a direct link for this review.
 utp page <review-id>
 # Person runs in their own terminal: utp review <review-id>
 
@@ -207,7 +208,7 @@ utp applied <grant-id> --evidence evidence.json
 | `15` | Default claimed | Default grant issued (`grant.id`). Run `utp begin <grant-id>` then `utp applied`. |
 | `16` | Person answered first | Run `utp wait <request-id>` and follow the person's answer instead of the default. |
 | `17` | Revoked | The grant or decision was revoked, superseded, or reversed. Do not act; inspect `utp show` or `utp wait`. |
-| `18` | Provenance required | Answer lacks proof for a level-3 action. Keep the same request ID and revision, route to `utp page <review-id>` or `utp review <review-id>`, and wait. |
+| `18` | Provenance required | Keep the request ID and revision. Use the supplied protected inbox, `utp page <review-id>`, or `utp review <review-id>` for a verified answer. |
 | `19` | Not allowed now | Wrong state or order (for example `applied` before `begin`). Check `utp show` and fix the step order. |
 | `20` | Check failed | Fix the reported schema/lint issues or add an explicit waiver with a plain reason. |
 | `21` | Clarification requested | Read `clarification.note`, explain clearly, and call `utp revise <request-id> <file>`. |

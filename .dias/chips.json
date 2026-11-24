@@ -1015,7 +1015,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-24T06:24:00Z"
+        "updatedAt": "2026-11-24T06:51:46.289Z"
       },
       "evidence": [
         {
@@ -1041,6 +1041,12 @@
           "at": "2026-11-24T06:24:00Z",
           "kind": "note",
           "message": "Both channels are live. The first post-activation review asks for the recipient's device observations in one three-card page save."
+        },
+        {
+          "entryId": "field-sample-progress",
+          "at": "2026-11-24T06:51:46.289Z",
+          "kind": "note",
+          "message": "Five tasks covered three agents. 10/15 real requests have been observed, with 0 waived. A native agent used a logged reversal. See phase1-field-evidence.json."
         }
       ]
     },
