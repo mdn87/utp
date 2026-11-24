@@ -320,6 +320,10 @@ the request as `body`, including its `level_reason`. Level 1 queues a
 for the person to answer. If the agent keeps a level at or below a prior reversed
 decision, add `reversal_reason` to explain why.
 
+If a level-1 decision changes after its notice was delivered, use `utp reverse`
+with the original decision ID and the reason. The notice stays closed. Agents
+considering a related decision see the correction through the shared tags.
+
 To cite the person's current authorization, put their words in
 `authority.instruction` and provide a notice as `body`. To cite an unused
 answer, provide `authority.decision_id` and `authority.authorization` with

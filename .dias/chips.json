@@ -707,7 +707,7 @@
       "projectId": "utp",
       "title": "Deliver one notification for each review",
       "summary": "Group waiting cards, show open requests in the existing open-items list and route notices with a review or the daily report. Retrying delivery must not send a second notification.",
-      "stage": "blocked",
+      "stage": "done",
       "sequence": 210,
       "prereqs": [
         "utp:core:service",
@@ -717,7 +717,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-24T05:34:33.498Z"
+        "updatedAt": "2026-11-24T06:24:00Z"
       },
       "evidence": [
         {
@@ -754,7 +754,13 @@
           "entryId": "delivery-choice-awaits-reviewer",
           "at": "2026-11-24T05:34:33.498Z",
           "kind": "note",
-          "message": "The earlier verified reply requested the shared inbox. The same request now offers both delivery channels, either channel, or inbox only. The protected inbox holds the revised level-3 choice."
+          "message": "The verified reply requested a shared inbox. The revised level-3 request offers both channels, either channel, or inbox only."
+        },
+        {
+          "entryId": "live-provider-and-report-confirmed",
+          "at": "2026-11-24T06:24:00Z",
+          "kind": "note",
+          "message": "The reviewer enabled both channels. Two attempts delivered one push for three cards. Two imports produced one Windows inbox item for the notice and zero pushes."
         }
       ]
     },
@@ -861,7 +867,7 @@
           "entryId": "platform-adapters-and-cross-shell-proof",
           "at": "2026-11-24T03:42:00Z",
           "kind": "stage-change",
-          "message": "Shipped self-contained adapters for Claude Code, Codex and Antigravity with drift and npm-pack checks, UTP_SESSION warnings, and upfront level-3 channel routing. All four shells (PowerShell 7, Git Bash, zsh and bash over SSH) matched the shared 108-step expected record, and Tier B real-host checks verified sandboxes, PTY terminal review, resume paths and service-down exit 32 with documented host boundaries."
+          "message": "All three adapters shipped. Four shells matched the 108-step record. Native checks covered sandboxes, terminal review, resume and outages. See adapters-acceptance-evidence.json."
         }
       ]
     },
@@ -894,7 +900,7 @@
           "entryId": "goal-reports-and-native-turns",
           "at": "2026-11-24T05:34:33.498Z",
           "kind": "note",
-          "message": "The CLI validates goal coverage and shows queued notices. All three agents closed real file-changing tasks with dated evidence and no acceptance wait. See test/fixtures/closeout-acceptance-evidence.json."
+          "message": "All three agents closed file-changing tasks with dated goal evidence and queued notices, without waiting for acceptance. See closeout-acceptance-evidence.json."
         }
       ]
     },
@@ -990,7 +996,7 @@
       "projectId": "utp",
       "title": "Prove the first release on real tasks",
       "summary": "Run at least five real tasks across all three agents. Check 80% clarity, duplicate questions, review frequency, notification counts and the waiver rate in the first 15 requests.",
-      "stage": "blocked",
+      "stage": "active",
       "sequence": 280,
       "prereqs": [
         "utp:review:record",
@@ -1009,7 +1015,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-24T05:34:33.498Z"
+        "updatedAt": "2026-11-24T06:24:00Z"
       },
       "evidence": [
         {
@@ -1029,6 +1035,12 @@
           "at": "2026-11-24T05:34:33.498Z",
           "kind": "note",
           "message": "AC5 has three real completion reports. The five-task field trial and the first fifteen requests still depend on the operator's delivery choice and live verification."
+        },
+        {
+          "entryId": "live-field-use-started",
+          "at": "2026-11-24T06:24:00Z",
+          "kind": "note",
+          "message": "Both channels are live. The first post-activation review asks for the recipient's device observations in one three-card page save."
         }
       ]
     },

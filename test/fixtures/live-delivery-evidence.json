@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "chipId": "utp:reviews:delivery",
+  "observedOn": "2026-11-24",
+  "approval": {
+    "level": 3,
+    "channel": "review-page",
+    "verification": "channel",
+    "selected": "both channels",
+    "grantOutcome": "applied",
+    "scopeMismatches": 0
+  },
+  "notifications": {
+    "questionsInReview": 3,
+    "acceptedProviderAttempts": 2,
+    "distinctEventIds": 1,
+    "persistedProviderEvents": 1,
+    "openItemsEntries": 1,
+    "successfulPushReceipts": 1,
+    "destination": "protected review inbox",
+    "method": "After the provider accepted the event, the adapter withheld its first acknowledgment from the shared service. The service retried the same event. The event log and the push provider's delivery record supplied the counts."
+  },
+  "morningReport": {
+    "noticeOnlyBatches": 1,
+    "firstImport": 1,
+    "secondImport": 0,
+    "matchingWindowsInboxItems": 1,
+    "pushEventsForNotice": 0,
+    "method": "Ran the import step from the installed Windows morning report twice. Checked the item's schema, producer and review reference in the actual inbox."
+  }
+}
