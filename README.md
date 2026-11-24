@@ -170,10 +170,41 @@ An action still goes through `utp begin` and `utp applied`.
 ## Platforms
 
 UTP is built command line first, so any agent that can run a shell command
-can use it. Adapters are planned for Claude Code, OpenAI Codex, and Google
-Antigravity. Desktop-app features are optional conveniences on top. The
-decision log lives in one small service on a home server, so every machine
-and every agent sees the same decisions.
+can use it. Thin, self-contained adapters for **Claude Code**, **OpenAI Codex**,
+and **Google Antigravity** ship under `adapters/` and are included in the npm
+package. Each platform folder contains its own copy of `utp-workflow.md` so
+copying that single folder into your platform's skills directory works
+standalone.
+
+Run `utp setup <claude|codex|antigravity>` to preview sandbox network settings
+and print the resolved `Adapter files:` directory path. Copy the folder once
+for each platform you use:
+
+```sh
+# Claude Code (bash / zsh / Git Bash)
+cp -R adapters/claude "$HOME/.claude/skills/utp"
+
+# OpenAI Codex (bash / zsh / Git Bash)
+cp -R adapters/codex "$HOME/.codex/skills/utp"
+
+# Google Antigravity (bash / zsh / Git Bash)
+cp -R adapters/antigravity "$HOME/.gemini/config/skills/utp"
+```
+
+```powershell
+# PowerShell 7 (Windows)
+Copy-Item -Recurse -Force adapters\claude "$HOME\.claude\skills\utp"
+Copy-Item -Recurse -Force adapters\codex "$HOME\.codex\skills\utp"
+Copy-Item -Recurse -Force adapters\antigravity "$HOME\.gemini\config\skills\utp"
+```
+
+Optional instruction snippets are included in `adapters/codex/AGENTS.snippet.md`
+and `adapters/antigravity/RULES.snippet.md`. For Claude Code, wire the bundled
+`session-env.mjs` helper into a `SessionStart` hook (shown in
+`adapters/claude/SKILL.md`) so `UTP_SESSION` automatically carries the native
+session UUID. Desktop-app conveniences stay optional on top of the CLI, and the
+decision log lives in one small service on a home server so every machine and
+every agent shares the same decisions.
 
 ## License
 

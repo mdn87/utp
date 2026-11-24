@@ -10,11 +10,11 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Finish first-release verification. Seven request kinds and the selected chat, page and terminal answer routes are implemented.",
-  "remainingSummary": "Connect the three agent platforms and prove their review and resume paths on real tasks. Wire the notification provider and daily report.",
-  "nextChipId": "utp:adapters:platforms",
+  "currentMilestone": "Finish first-release verification. Seven request kinds, verified answer routes, and thin CLI adapters for Claude Code, Codex, and Antigravity are implemented.",
+  "remainingSummary": "Close changed work with goal-mapped completion reports and the optional Claude Code Stop hook, then prove real-task use and wire live notifications.",
+  "nextChipId": "utp:adapters:closeout",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
-    "updatedAt": "2026-11-23"
+    "updatedAt": "2026-11-24"
   }
 }

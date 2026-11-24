@@ -13,7 +13,7 @@ import { ReviewPages } from "./review-page.js";
 import { checkReviewerSocket, handleReviewerInbox } from "./reviewer-inbox.js";
 import { ReviewDeliveries, type NotificationOptions } from "./review-delivery.js";
 import { TokenBook, tokenFile } from "./tokens.js";
-import { readNativeTurns, type TranscriptRoots } from "./transcripts.js";
+import { hasNativeTranscript, readNativeTurns, type TranscriptRoots } from "./transcripts.js";
 
 export const DEFAULT_PORT = 7340;
 const MAX_BODY = 1024 * 1024;
@@ -208,6 +208,10 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     const result = engine.run(body.op, body.op === "flush"
       ? { ...args, notify: !!opts.notifications, digest: !!opts.inboxDir || opts.reportExport === true } : args, actor, opId, turns);
     if (body.op === "flush") deliveries?.kick();
+    if (result.code === EXIT.OK && (body.op === "status" || body.op === "flush")) {
+      send(res, 200, { ...result, chat_provenance: await hasNativeTranscript(opts.transcriptRoots, actor) });
+      return;
+    }
     send(res, 200, result);
   }
 

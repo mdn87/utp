@@ -830,7 +830,7 @@
       "projectId": "utp",
       "title": "Connect Claude Code, Codex and Antigravity to the CLI",
       "summary": "Ship thin platform instructions for asking, independent work, lookup, batching, answering and resuming. Each adapter uses the same request and answer format.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 240,
       "prereqs": [
         "utp:adapters:access",
@@ -842,7 +842,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-24T03:42:00Z"
       },
       "evidence": [
         {
@@ -850,6 +850,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Script the full lifecycle in PowerShell, Git Bash, zsh and bash over SSH, including cancellations, grant recovery and late answers where D4 permits them."
+        },
+        {
+          "entryId": "platform-adapters-and-cross-shell-proof",
+          "at": "2026-11-24T03:42:00Z",
+          "kind": "stage-change",
+          "message": "Shipped self-contained adapters for Claude Code, Codex and Antigravity with drift and npm-pack checks, UTP_SESSION warnings, and upfront level-3 channel routing. All four shells (PowerShell 7, Git Bash, zsh and bash over SSH) matched the shared 108-step expected record, and Tier B real-host checks verified sandboxes, PTY terminal review, resume paths and service-down exit 32 with documented host boundaries."
         }
       ]
     },

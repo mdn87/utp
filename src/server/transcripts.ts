@@ -57,19 +57,33 @@ async function sessionFiles(root: string, platform: "claude" | "codex", session:
   return matches;
 }
 
-export async function readNativeTurns(roots: TranscriptRoots, actor: Actor): Promise<ChatTurn[] | undefined> {
+async function findSessionFile(roots: TranscriptRoots, actor: Actor): Promise<{ file: string; platform: "claude" | "codex" } | undefined> {
   if (!sessionId.test(actor.session) || !Object.hasOwn(roots, actor.machine)) return;
+  const matches: { file: string; platform: "claude" | "codex" }[] = [];
+  for (const platform of ["claude", "codex"] as const) {
+    const root = roots[actor.machine]?.[platform];
+    if (!root) continue;
+    try {
+      for (const file of await sessionFiles(root, platform, actor.session)) matches.push({ file, platform });
+    } catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err; }
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+export async function hasNativeTranscript(roots: TranscriptRoots | undefined, actor: Actor): Promise<boolean> {
+  if (!roots) return false;
   try {
-    const matches: { file: string; platform: "claude" | "codex" }[] = [];
-    for (const platform of ["claude", "codex"] as const) {
-      const root = roots[actor.machine]?.[platform];
-      if (!root) continue;
-      try {
-        for (const file of await sessionFiles(root, platform, actor.session)) matches.push({ file, platform });
-      } catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err; }
-    }
-    if (matches.length !== 1) return;
-    const { file, platform } = matches[0]!;
+    return (await findSessionFile(roots, actor)) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+export async function readNativeTurns(roots: TranscriptRoots, actor: Actor): Promise<ChatTurn[] | undefined> {
+  try {
+    const found = await findSessionFile(roots, actor);
+    if (!found) return;
+    const { file, platform } = found;
     const stream = createReadStream(file, { encoding: "utf8" });
     const lines = createInterface({ input: stream, crlfDelay: Infinity });
     const turns: ChatTurn[] = [];
