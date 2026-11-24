@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "chipId": "utp:phase1:use",
-  "observedAt": "2026-11-24T07:32:12.950244+00:00",
+  "observedAt": "2026-11-24T08:00:18.302393+00:00",
   "phase": "in progress",
   "fieldTasks": [
     {
@@ -23,14 +23,18 @@
     {
       "platform": "Antigravity",
       "task": "Update the platform instructions for sharing the protected inbox after checking the earlier decision."
+    },
+    {
+      "platform": "Codex",
+      "task": "Carry the authored task name through the real notification provider to the phone."
     }
   ],
   "AC1": {
-    "eligibleUniqueRequests": 10,
+    "eligibleUniqueRequests": 11,
     "targetRequests": 15,
     "requestsWithWaivers": 0,
-    "revisionsChecked": 13,
-    "postActivationRequests": 5,
+    "revisionsChecked": 14,
+    "postActivationRequests": 6,
     "historicalEntriesExcluded": 1,
     "scope": "The first fifteen distinct requests in the real shared project. Revisions count once. Historical backfills, prototype reviews and synthetic service projects are outside the sample."
   },
@@ -48,21 +52,21 @@
     "evidence": "The cross-platform suite includes lifecycle, recovery, rendering, adapter and close-out tests. The reviewer socket also runs on a POSIX host."
   },
   "AC3": {
-    "tasks": 5,
+    "tasks": 6,
     "clarity": {
       "cardsRated": 0,
       "clear": 0,
       "clearPercent": null,
       "targetPercent": 80
     },
-    "questionCards": 3,
+    "questionCards": 4,
     "duplicateQuestions": 0,
-    "duplicateEvidence": "The three field questions ask separately about the alert count, its destination and whether the wording gave enough context.",
-    "questionReviewsFlushed": 1,
+    "duplicateEvidence": "The initial questions covered alert count, destination and wording. A later question tested whether the newly added task name was recognizable on the device.",
+    "questionReviewsFlushed": 2,
     "questionReviewsPresented": 1,
     "noticeOnlyReviewsPresented": 2,
-    "allReviewsPresentedPerTask": 0.6,
-    "pushReceipts": 1,
+    "allReviewsPresentedPerTask": 0.5,
+    "pushReceipts": 2,
     "cardActiveResponseMs": [],
     "pageActiveResponseMs": [
       58819
@@ -73,6 +77,12 @@
       "structuredQuestionRounds": 50,
       "roundsPerSession": 0.98,
       "scope": "Human-started top-level Claude Code and Codex sessions active on one Windows machine. A session approximates one task. A question tool call counts as one round even when it contains several cards."
+    },
+    "titledReviewDelivery": {
+      "pushDeliveries": 1,
+      "providerAccepted": 1,
+      "titleInBothPushFormats": true,
+      "deviceRecognition": "awaiting observation"
     }
   },
   "AC4": {

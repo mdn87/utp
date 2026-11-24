@@ -1015,7 +1015,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-24T07:32:12.950Z"
+        "updatedAt": "2026-11-24T08:00:18.302Z"
       },
       "evidence": [
         {
@@ -1044,9 +1044,9 @@
         },
         {
           "entryId": "field-sample-progress",
-          "at": "2026-11-24T07:32:12.950Z",
+          "at": "2026-11-24T08:00:18.302Z",
           "kind": "note",
-          "message": "Five tasks covered three agents. 10/15 real requests have been observed, with 0 waived. A native agent used a logged reversal. See phase1-field-evidence.json."
+          "message": "6 tasks covered three agents. The three-card page save is verified. 11/15 real requests arrived, with 0 waived. 0 cards have clarity feedback. See phase1-field-evidence.json."
         }
       ]
     },
