@@ -10,9 +10,9 @@
   "displayPriority": 500,
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
-  "currentMilestone": "Verify live delivery, then measure the first release across five real tasks.",
-  "remainingSummary": "The three adapters have demonstrated goal-mapped close-out. The reviewer can choose delivery channels in the protected inbox. Live retry and morning-report checks precede the field trial.",
-  "nextChipId": "utp:reviews:delivery",
+  "currentMilestone": "Measure the first release across five real tasks on all three platforms.",
+  "remainingSummary": "Both delivery channels passed live verification. The field trial is collecting actual requests, reviewer feedback, batch saves and a shared-tag reversal lookup.",
+  "nextChipId": "utp:phase1:use",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
     "updatedAt": "2026-11-24"

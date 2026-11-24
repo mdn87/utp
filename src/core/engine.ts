@@ -1076,8 +1076,9 @@ export class Engine {
   private reverse(a: Args, actor: Actor, opId?: string): OpResult {
     const rev = this.resolve(str(a, "id"));
     if (!rev) return notFound(a.id);
-    if (!rev.answer && rev.status !== "applied") {
-      return { code: EXIT.NOT_ALLOWED, message: "only an answered or applied decision can be reversed" };
+    const closedDecision = rev.status === "closed" && rev.body.kind === "notice" && rev.body.level === 1 && !!rev.policy;
+    if (!rev.answer && rev.status !== "applied" && !closedDecision) {
+      return { code: EXIT.NOT_ALLOWED, message: "a reversal needs an answered or applied decision, or a delivered level-1 decision recorded with utp decide" };
     }
     const reason = str(a, "reason");
     const tags = Array.isArray(a.tags) ? a.tags.filter((t): t is string => typeof t === "string") : [];

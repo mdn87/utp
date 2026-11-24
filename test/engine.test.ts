@@ -728,6 +728,32 @@ test("only the owner cancels, and cancelling ends the wait", () => {
   assert.equal(h.run("wait", { id }).code, 12);
 });
 
+test("a delivered level-1 decision can be reversed without answering or reopening its notice", () => {
+  const h = new Harness();
+  try {
+    const body: RequestBody = { kind: "notice", level: 1, question: "Use separate review links.",
+      why_now: "Each review opens at its own address.", level_reason: "The link can change later.",
+      stakes: { reversibility: "easy" }, tags: ["review-access"] };
+    const { id, review_id } = h.ok("decide", { level: 1, body });
+    const ordinary = h.ok("ask", { body: { ...body, question: "A review was published." } });
+    const reason = "The reviewer switched to one protected inbox.";
+    assert.equal(h.run("reverse", { id, reason }).code, 19);
+    h.ok("flush", { review: review_id });
+    h.ok("presented", { review: review_id, channel: "conversation" });
+    assert.equal(h.run("reverse", { id: ordinary.id, reason }).code, 19);
+    assert.equal(h.run("reverse", { id, reason }, AGENT, "record-correction").code, 0);
+    h.engine = h.reopen();
+    assert.equal(h.run("reverse", { id, reason }, AGENT, "record-correction").code, 0);
+    const lookup = h.ok("consider", { level: 1, tags: ["review-access"] });
+    assert.deepEqual((lookup.reversals as { id: string; reversals: { reason: string }[] }[])
+      .map(entry => [entry.id, entry.reversals.map(item => item.reason)]), [[id, [reason]]]);
+    const after = h.ok("show", { id }).request as { status: string; answer: unknown; grants: unknown[] };
+    assert.equal(after.status, "closed");
+    assert.equal(after.answer, null);
+    assert.deepEqual(after.grants, []);
+  } finally { h.store.close(); }
+});
+
 test("a recorded reversal is found by its tag", () => {
   const h = new Harness();
   const id = h.present(choose({ tags: ["parser"] }));
