@@ -102,12 +102,38 @@ check for open, answered, or interrupted work:
 
 ## 5. Close-out completion report
 
-When you finish a task that changed files, end with a plain-language completion
-report that maps each stated goal from the person's request to observed
-evidence (commands, tests, or files verified), lists any queued notices or
-remaining limitations, and states what remains if anything. Do not create an
-`accept` request just to close routine completed work; reserve `accept` cards
-for results that genuinely require the person's judgment.
+After changing files or external state, map each goal or risk the person
+stated to evidence they can check. Write a UTF-8 JSON file and run
+`utp closeout report.json`. Show the rendered report, including its queued
+project notices, in your final response.
+
+```json
+{
+  "goals": [{
+    "id": "G1",
+    "goal": "Include the date in each exported row",
+    "coverage": "covered",
+    "evidence": [{
+      "claim": "Both exported rows include the expected date.",
+      "kind": "observed",
+      "source": "Export test and its output file",
+      "date": "2026-01-15"
+    }]
+  }]
+}
+```
+
+Use a unique ID for every goal. Choose `covered`, `partly_covered`, or
+`not_covered`. For incomplete goals, say what remains and how you know.
+Mark each evidence item as `observed` or `inferred` and give its date and
+source. Exit code `20` identifies fields to fix. Use `--json` for structured
+output.
+
+Rendering leaves queued notices available for their usual delivery. If the
+service is unavailable, the report still shows the goals and says the notice
+queue could not be checked. Routine completion needs no reply. Use `accept`
+when the person asked to sign off or only they can judge the result.
+Read-only questions can end with a direct answer.
 
 ## 6. Command reference
 

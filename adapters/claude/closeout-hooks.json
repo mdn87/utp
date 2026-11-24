@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "utp closeout-hook" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Write|Edit|NotebookEdit", "hooks": [{ "type": "command", "command": "utp closeout-hook" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "utp closeout-hook" }] }
+    ]
+  }
+}

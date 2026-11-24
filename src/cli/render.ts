@@ -1,6 +1,6 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
-import type { AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
+import type { AcceptanceGoal, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
 import { itemPrompts } from "../core/items.js";
 import { waiverNotes } from "../core/quality.js";
 
@@ -63,6 +63,21 @@ export function dependencyLabels(body: RequestBody, items: readonly RequestView[
 export const letter = (n: number): string =>
   n < 26 ? String.fromCharCode(65 + n) : letter(Math.floor(n / 26) - 1) + String.fromCharCode(65 + (n % 26));
 
+function goalLines(goals: AcceptanceGoal[]): string[] {
+  return goals.flatMap(goal => [
+    `**${goal.id}** · ${goal.goal} · ${goal.coverage?.replaceAll("_", " ") ?? ""}`, "",
+    ...(goal.evidence ?? []).map(e => `- ${e.claim} (${e.kind}, ${e.source}, ${e.date})`), "",
+  ]);
+}
+
+export function completionMarkdown(goals: AcceptanceGoal[], notices: RequestView[] | null): string {
+  const lines = ["## Completion report", "", ...goalLines(goals), "### Queued notices", ""];
+  if (notices === null) lines.push("UTP could not check queued notices. Run `utp status` when the project service is available.");
+  else if (!notices.length) lines.push("No notices are queued.");
+  else lines.push(...notices.map(n => cardMarkdown(n)));
+  return lines.join("\n").trimEnd();
+}
+
 export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView): string {
   const b = v.body;
   const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
@@ -101,10 +116,7 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
       step.command, "", `Expect ${step.expected_result}. ${step.tested ? "Tested in this shell." : "This step needs a shell check."}`,
       step.why_person, "");
   }
-  for (const goal of Array.isArray(b.goals) ? b.goals : []) {
-    out.push(`**${goal.id}** · ${goal.goal} · ${goal.coverage?.replaceAll("_", " ") ?? ""}`, "",
-      ...(goal.evidence ?? []).map((e) => `- ${e.claim} (${e.kind}, ${e.source}, ${e.date})`), "");
-  }
+  if (Array.isArray(b.goals)) out.push(...goalLines(b.goals));
   for (const item of Array.isArray(b.assumptions) ? b.assumptions : []) {
     out.push(`**${item.id}** · ${item.statement}. ${item.consequence}`, "");
   }

@@ -79,3 +79,30 @@ Check `chat_provenance` from `utp status --json` or `utp flush --json`:
 - Always pass payloads as UTF-8 files — never inline JSON on the command line.
 - When finishing a task that changed files, write a plain-language completion
   report mapping each stated goal to observed evidence.
+
+## 5. Optional close-out reminder hook
+
+The [hook settings](./closeout-hooks.json) require `utp` on `PATH` and the
+session identity setup from section 1. To enable the reminder for one session,
+run the following command.
+
+```sh
+claude --settings "$HOME/.claude/skills/utp/closeout-hooks.json"
+```
+
+For a persistent installation, append the three event entries to the
+corresponding arrays in your Claude Code settings. Keep the existing
+`SessionStart` entry.
+
+At the prompt, the hook records the workspace state. At Stop, a successful
+`Write`, `Edit` or `NotebookEdit`, or a change visible to Git, prompts Claude
+once to write a missing report. In an explicit non-Git `UTP_PROJECT`, the
+hook checks files in the starting directory and its subdirectories. Outside
+Git without `UTP_PROJECT`, only those three tools prompt Claude. Shell
+changes there, outside the workspace, or to Git-ignored files require the
+agent to write the report on its own.
+
+Run `utp closeout <report.json>` from the same workspace and session. The
+validated report is saved under `$UTP_HOME/closeout-hooks` for the current
+turn. Claude can finish immediately. If its final reply omits the rendered
+report, the hook displays it as a system message.

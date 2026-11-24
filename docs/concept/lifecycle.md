@@ -367,6 +367,7 @@ to map the UTP item into the report reader's required JSON format.
 | `utp setup <platform> [--apply]` | Previews access and applies it to a new agent session when requested |
 | `utp new <kind>` | Writes a request template with fix hints |
 | `utp check <file>` | Runs structural checks and heuristics; prints each failure with its rule id and how to fix it |
+| `utp closeout <report.json>` | Shows each stated goal, coverage, dated evidence and queued project notices. A valid report needs no reply. |
 | `utp consider <file>`, `utp decide <file>` | See relevant reversals, then record the asking level, reason, and any existing authority |
 | `utp ask <file>` | Checks, stores, attaches when equivalent, queues into the current review |
 | `utp flush [<review-id>] [--intent <file>]` | Prepares the queued review and saves its authored purpose and scope with those revisions. A complete draft must match the queued cards in order. Queues one notification when configured |

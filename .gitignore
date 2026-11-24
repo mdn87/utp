@@ -1,5 +1,6 @@
 # Private evidence: never commit
 private/
+.lugos-wip/
 .roundtable/
 __pycache__/
 *.pyc
