@@ -1,0 +1,61 @@
+{
+  "utp_export": "1",
+  "decisions": [
+    {
+      "kind": "choose",
+      "question": "How should batch reviews display shared context, next steps, and clarity ratings?",
+      "status": "answered",
+      "answer": "expanded-chips",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "Should batch reviews allow partial saves, and how should typed notes work on approvals?",
+      "status": "answered",
+      "answer": "strict-clarify",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "Should we add live pickup status, a pre-execution inbox edit window, and a single resume command?",
+      "status": "answered",
+      "answer": "build-all",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "Should revised cards automatically show a banner summarizing what changed since the prior revision?",
+      "status": "answered",
+      "answer": "build-banner",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "Should list-scoped approval options support selecting exact subsets in the browser and terminal?",
+      "status": "answered",
+      "answer": "defer",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "How should applied defaults, notice objections, and close-out notices work with the morning report?",
+      "status": "answered",
+      "answer": "dedupe-closeout",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "Should open draft review queues be isolated per agent session, and should we add single-file batch staging?",
+      "status": "answered",
+      "answer": "session-and-stage",
+      "reversals": []
+    },
+    {
+      "kind": "choose",
+      "question": "Should local commands check open reviews for file drift and warn on your phone before you answer?",
+      "status": "answered",
+      "answer": "defer",
+      "reversals": []
+    }
+  ]
+}
