@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { checkDocument, checkRequest, intentFailure, reviewRequestsHash, validReviewIntent } from "../core/check.js";
 import { transcriptRoots } from "../server/transcripts.js";
+import { DIALOG_PLATFORMS, mapDialogResponse, projectReviewToDialog, type DialogCardBinding, type DialogPlatform, type NativeDialogResponse } from "../core/native-dialog.js";
 import { waiverNotes } from "../core/quality.js";
 import type { DeliveryAdapter } from "../core/delivery-adapter.js";
 import type { DecisionLogEntry, NoticeDigest, ResumeCardPacket } from "../core/engine.js";
@@ -45,6 +46,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge>
             stage <batch.json> [--flush]
             flush [<review-id>] [--intent <intent-or-review.json>]
             page <review-id>
+            dialog <review-id|request-id> --platform <claude|codex|antigravity> [--tool <name>] [--preselects] [--non-interactive] [--map-response <file>]
             presented <review> [--channel <name>]
             show <id>
             status
@@ -115,6 +117,12 @@ const OPTIONS = {
   flush: { type: "boolean" },
   "keep-notices": { type: "boolean" },
   recent: { type: "boolean" },
+  platform: { type: "string" },
+  tool: { type: "string" },
+  preselects: { type: "boolean" },
+  "non-interactive": { type: "boolean" },
+  "verified-channel": { type: "boolean" },
+  "map-response": { type: "string" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -559,6 +567,61 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       const r = await call("review-page.prepare", { review: need(rest[0], "a review id") }, { project });
       return out(r, r.code === EXIT.OK ? `Open the review page in your browser.\n${String(r.url)}` : undefined);
+    }
+    case "dialog": {
+      const { project } = projectFor();
+      const targetId = need(rest[0], "a review id or request id");
+      const rawPlatform = need(flags.platform, "--platform (claude, codex, or antigravity)");
+      if (!DIALOG_PLATFORMS.includes(rawPlatform as DialogPlatform)) {
+        throw new CliError(EXIT.OTHER, `platform must be one of: ${DIALOG_PLATFORMS.join(", ")}`);
+      }
+      const platform = rawPlatform as DialogPlatform;
+      const shown = await call("show", { id: targetId }, { project });
+      if (shown.code !== EXIT.OK) return out(shown);
+      const review: ReviewView = shown.review
+        ? (shown.review as ReviewView)
+        : { id: (shown.request as RequestView).review_id ?? targetId, items: [shown.request as RequestView] };
+      const projection = projectReviewToDialog(review, {
+        platform,
+        tool: flags.tool,
+        interactive: flags["non-interactive"] ? false : true,
+        preselectsOption: flags.preselects === true,
+        verifiedChannel: flags["verified-channel"] === true,
+      });
+      if (flags["map-response"]) {
+        const raw = readJson(flags["map-response"], "dialog response") as NativeDialogResponse & { binding?: DialogCardBinding };
+        const explicitRef = (typeof raw.ref === "string" && raw.ref.trim() ? raw.ref.trim() : undefined)
+          ?? (typeof raw.binding?.ref === "string" && raw.binding.ref.trim() ? raw.binding.ref.trim() : undefined);
+        if (!explicitRef) {
+          throw new CliError(EXIT.OTHER, "dialog response must include ref (id@revision) or binding.ref");
+        }
+        const targetReqId = explicitRef.split("@")[0];
+        const card = review.items.find((c) => `${c.id}@${c.revision}` === explicitRef)
+          ?? review.items.find((c) => c.id === targetReqId && c.current);
+        if (!card) throw new CliError(EXIT.NOT_FOUND, `no matching card for ${explicitRef}`);
+        const binding: DialogCardBinding = raw.binding && typeof raw.binding === "object"
+          ? raw.binding
+          : {
+            ref: explicitRef,
+            question: card.body.question,
+            option_ids: (card.body.options ?? []).map((o) => o.id),
+            label_to_id: Object.create(null) as Record<string, string>,
+            has_authorization: card.body.kind === "approve" || (card.body.options ?? []).some((o) => !!o.authorization),
+          };
+        const mapped = mapDialogResponse(card, binding, raw);
+        if (!mapped.ok) return out({ code: mapped.code, error: mapped.error, message: mapped.message });
+        if (!projection.eligible) {
+          return out({ code: EXIT.NOT_ALLOWED, error: "dialog_ineligible", reasons: projection.reasons,
+            message: `Dialog is ineligible for ${projection.platform} ${projection.tool} (${projection.reasons.map((r) => r.code).join(", ")}); use ${projection.fallback}.` });
+        }
+        return out({ code: EXIT.OK, ...mapped }, "skipped" in mapped ? mapped.message
+          : "clarification" in mapped ? `Clarification requested for ${mapped.clarification.id}: ${mapped.clarification.note}`
+          : `Mapped answer for ${mapped.answer.id}: ${mapped.answer.value ?? mapped.answer.custom}`);
+      }
+      const human = projection.eligible
+        ? `Eligible for ${projection.platform} ${projection.tool} (${projection.payload!.questions.length} question${projection.payload!.questions.length === 1 ? "" : "s"}).\nUse --json for the native payload and revision binding.`
+        : `Native dialog refused for ${projection.platform} ${projection.tool} (${projection.reasons.map((r) => r.code).join(", ")}). Fall back to ${projection.fallback}:\n\n${projection.fallback_markdown}`;
+      return out({ code: EXIT.OK, ...projection }, human);
     }
     case "show": {
       const { project } = projectFor();

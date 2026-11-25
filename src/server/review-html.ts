@@ -130,7 +130,7 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
     const b = item.body;
     const ref = `${item.id}@${item.revision}`;
     const hasAuth = cardHasAuthorization(b);
-    const editable = item.status === "answered" || item.status === "granted";
+    const editable = b.kind !== "judge" && (item.status === "answered" || item.status === "granted");
     const currentAnswer = item.answer ? answerValue(item.answer, b) : undefined;
     const noteText = item.answer?.note ? `<p class="muted">Note: ${escapeText(item.answer.note)}</p>` : "";
     if (!editable) {
@@ -141,10 +141,14 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
       const clarHtml = item.clarification
         ? `<p role="status">Held for clarification: "${escapeText(item.clarification.note ?? "")}"</p>`
         : "";
+      const revealHtml = b.kind === "judge" && item.blind_reveal
+        ? `<p class="muted">Candidate A: ${escapeText(item.blind_reveal.identities.a)} · Candidate B: ${escapeText(item.blind_reveal.identities.b)}</p>`
+        : "";
+      const lockBadge = b.kind === "judge" && item.answer ? "Immutable blind ballot" : `Locked · ${item.status.replaceAll("_", " ")}`;
       return `<article class="locked-card"><h2>${escapeText(b.question)}</h2>
-        <p class="card-badges"><span class="badge">Locked · ${escapeText(item.status.replaceAll("_", " "))}</span></p>
+        <p class="card-badges"><span class="badge">${escapeText(lockBadge)}</span></p>
         ${currentAnswer ? `<p class="preserve"><strong>Recorded answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
-        ${clarHtml}${effectHtml}
+        ${revealHtml}${clarHtml}${effectHtml}
         <p class="card-reference"><code>${escapeText(ref)}</code></p></article>`;
     }
     const controls: string[] = [];

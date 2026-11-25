@@ -29,8 +29,9 @@ export const BALLOT_OPTIONS = [
 
 const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const imageChunks = new Set(["IHDR", "PLTE", "tRNS", "IDAT", "IEND"]);
-const videoContainers = new Set(["moov", "trak", "mdia", "minf", "stbl", "edts", "dinf"]);
-const videoMetadata = new Set(["udta", "meta", "uuid", "free", "skip"]);
+const videoContainers = new Set(["moov", "trak", "mdia", "minf", "stbl", "edts", "dinf", "moof", "traf"]);
+const videoMetadata = new Set(["udta", "meta", "uuid", "free", "skip", "cprt", "XMP_", "auth", "titl", "dscp", "perf", "gnre", "yrrc", "albm", "kywd", "loci", "url ", "urn "]);
+const visualSampleEntries = new Set(["avc1", "avc3", "hvc1", "hev1", "mp4v", "av01", "vp09"]);
 
 function anonymousPng(data: string): string | undefined {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return undefined;
@@ -74,6 +75,12 @@ function anonymousMp4(data: string): string | undefined {
         bytes.fill(0, start + header, start + size);
       } else if (videoContainers.has(type) && !strip(start + header, start + size, depth + 1)) {
         return false;
+      } else if ((type === "dref" || type === "stsd") && size > header + 8) {
+        // Both dref and stsd have an 8-byte version+flags+entryCount header before child boxes.
+        if (!strip(start + header + 8, start + size, depth + 1)) return false;
+      } else if (visualSampleEntries.has(type) && size >= header + 82) {
+        // Clear the 32-byte compressorname field inside visual sample entries without moving sample offsets.
+        bytes.fill(0, start + header + 50, start + header + 82);
       } else if (type === "hdlr" && size > header + 24) {
         bytes.fill(0, start + header + 24, start + size);
       }
@@ -117,7 +124,10 @@ export function normalizeBlind(value: unknown): BlindComparison | string {
 }
 
 export function exposesBlindIdentity(body: Partial<RequestBody>, blind: BlindComparison): boolean {
-  const visible = [body.question, body.summary, body.why_now, body.level_reason,
+  const origin = body.origin && typeof body.origin === "object" ? Object.values(body.origin) : [];
+  const basisFiles = Array.isArray(body.basis?.files) ? body.basis.files : [];
+  const visible = [body.id, body.question, body.summary, body.why_now, body.level_reason,
+    ...origin, ...basisFiles,
     ...[body.tags, body.related, body.depends_on].flatMap((items) => Array.isArray(items) ? items : []),
     ...blind.candidates.map(({ artifact }) => "text" in artifact ? artifact.text : undefined)];
   return blind.candidates.some(({ identity }) => {
@@ -134,12 +144,18 @@ export function publicJudgment(body: RequestBody, swapped: boolean): RequestBody
   const previews: RequestPreview[] = ordered.map(({ artifact }, i) => ({ ...artifact, label: i ? "Candidate B" : "Candidate A" }));
   const textOnly = (items?: string[]): string[] | undefined => Array.isArray(items)
     ? items.filter((item) => typeof item === "string") : undefined;
+  const safeOrigin = origin && typeof origin === "object"
+    ? {
+      ...(typeof origin.platform === "string" && origin.platform.trim() ? { platform: origin.platform } : {}),
+      ...(typeof origin.agent === "string" && origin.agent.trim() ? { agent: origin.agent } : {}),
+    }
+    : undefined;
   return {
-    ...(id ? { id } : {}),
+    ...(typeof id === "string" && id.trim() ? { id } : {}),
     kind: "judge", question, summary, why_now, level, level_reason,
     stakes: { reversibility: stakes.reversibility },
     tags: textOnly(tags), related: textOnly(related), depends_on: textOnly(depends_on),
-    ...(origin ? { origin } : {}),
+    ...(safeOrigin && Object.keys(safeOrigin).length ? { origin: safeOrigin } : {}),
     previews, options: BALLOT_OPTIONS,
   };
 }

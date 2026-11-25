@@ -365,7 +365,7 @@ export class ReviewPages {
           const savedMap = new Map(receipt.answers.map((a) => [`${a.id}@${a.revision}`, ballotContent(a.answer)]));
           const mismatch = !!parsed.error || judgeItems.some((jc) => {
             const k = `${jc.id}@${jc.revision}`;
-            const savedBallot = savedMap.get(k);
+            const savedBallot = savedMap.get(k) ?? (jc.answer ? ballotContent(jc.answer) : undefined);
             if (!savedBallot) return false;
             const submitted = parsed.answers.find((a) => `${a.id}@${a.revision}` === k);
             if (!submitted) return true;

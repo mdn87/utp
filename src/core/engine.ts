@@ -515,7 +515,12 @@ export class Engine {
     const at = this.now().toISOString();
     const st = this.effective(rev, at);
     if (!this.preBeginEditable(rev, st)) {
-      return { code: EXIT.NOT_ALLOWED, message: `Work is already ${st}; answers lock once execution begins.` };
+      return {
+        code: EXIT.NOT_ALLOWED,
+        message: rev.body.kind === "judge"
+          ? "Blind ballots are immutable once saved."
+          : `Work is already ${st}; answers lock once execution begins.`,
+      };
     }
     const op = browser ? "review-page.edit" : "edit";
     const channel = browser ? "review-page" : str(a, "channel");
@@ -745,7 +750,7 @@ export class Engine {
     const failures = checkRequest(a.body, shared);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
     const body = blindBody(a.body as RequestBody);
-    const basis = this.basisFor(body, basisArg(a.basis));
+    const basis = body.kind === "judge" ? {} : this.basisFor(body, basisArg(a.basis));
     let near: string | undefined;
     if (body.dedupe_key) {
       const ck = contentKey(body, basis);
@@ -878,6 +883,18 @@ export class Engine {
     }
     if (rev.body.kind === "notice") return { code: EXIT.NOT_ALLOWED, message: "notices need no answer" };
     const ref = { id: rev.id, revision: rev.revision };
+    if (rev.body.kind === "judge" && rev.answer) {
+      const fixed = { code: EXIT.REVOKED, message: "this blind ballot has already been saved" };
+      if (a.withdraw === true || a.hide_until !== undefined || a.clarify === true || a.channel === "conversation") return fixed;
+      try {
+        const submitted = this.answerRecord(rev, a, actor, at);
+        return ballotContent(submitted) === ballotContent(rev.answer)
+          ? { code: EXIT.OK, ...ref, answer: rev.answer } : fixed;
+      } catch (error) {
+        if (error instanceof UsageError) return fixed;
+        throw error;
+      }
+    }
     let chat: Partial<AnswerRecord> | undefined;
     if (a.channel === "conversation" && (a.quote !== undefined || rev.body.level === 3 || a.presentation !== undefined)) {
       const check = this.chatReply(rev, a, actor, turns, opId);
@@ -904,18 +921,6 @@ export class Engine {
       const clarification: ClarificationRequest = { at, channel, ...(note ? { note } : {}), ...(outcome ? { outcome } : {}) };
       return this.commit("answer", "request.clarification-requested", actor, { ...ref, clarification, presentation_id: receiptId },
         { code: EXIT.OK, ...ref, clarification }, opId);
-    }
-    if (rev.body.kind === "judge" && rev.answer) {
-      const fixed = { code: EXIT.REVOKED, message: "this blind ballot has already been saved" };
-      if (a.withdraw === true || a.hide_until !== undefined) return fixed;
-      try {
-        const submitted = this.answerRecord(rev, a, actor, at);
-        return ballotContent(submitted) === ballotContent(rev.answer)
-          ? { code: EXIT.OK, ...ref, answer: rev.answer } : fixed;
-      } catch (error) {
-        if (error instanceof UsageError) return fixed;
-        throw error;
-      }
     }
     if (a.withdraw === true) {
       if (!rev.answer) return { code: EXIT.NOT_ALLOWED, message: "there is no answer to withdraw" };
@@ -1295,7 +1300,7 @@ export class Engine {
     const failures = checkRequest(a.body);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
     const body = blindBody(a.body as RequestBody);
-    const basis = this.basisFor(body, basisArg(a.basis));
+    const basis = body.kind === "judge" ? {} : this.basisFor(body, basisArg(a.basis));
     const revision = rev.revision + 1;
     const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", this.now().toISOString());
     return this.commit("revise", "request.revised", actor, { id: req.id, revision, basis, review_id,
@@ -1396,7 +1401,7 @@ export class Engine {
         return !TERMINAL.has(st) && st !== "applied" && st !== "closed";
       });
     }
-    const basisFiles = [...new Set(revs.flatMap((r) => Object.keys(r.expected_basis)))].sort();
+    const basisFiles = [...new Set(revs.flatMap((r) => r.body.kind === "judge" ? [] : Object.keys(r.expected_basis)))].sort();
     if (a.files_only === true) {
       return { code: EXIT.OK, ...(reviewId ? { review_id: reviewId } : {}), basis_files: basisFiles };
     }
@@ -1425,9 +1430,11 @@ export class Engine {
     const cards: ResumeCardPacket[] = ordered.map((r) => {
       const req = this.reqOf(r);
       const st = this.effective(r, at);
-      const stale_files = supplied
-        ? Object.keys(r.expected_basis).filter((p) => p in supplied && supplied[p] !== r.expected_basis[p])
-        : (r.stale_changed ?? []);
+      const stale_files = r.body.kind === "judge"
+        ? []
+        : supplied
+          ? Object.keys(r.expected_basis).filter((p) => p in supplied && supplied[p] !== r.expected_basis[p])
+          : (r.stale_changed ?? []);
       const auth = r.answer ? (this.authorizationFor(r, r.answer) ?? null) : null;
       const needs_takeover = !sameActor(req.owner, actor)
         && !TERMINAL.has(st) && !["executing", "outcome_unknown", "applied", "closed"].includes(st);
@@ -1684,7 +1691,7 @@ export class Engine {
         r.reply_seq = e.seq;
         r.reply_presentation = d.presentation_id as string | undefined;
         this.acknowledge(r, d.presentation_id, e.at);
-        if (d.chat_reply === true || d.clear_answer === true) {
+        if ((d.chat_reply === true || d.clear_answer === true) && !(r.body.kind === "judge" && r.answer)) {
           if (d.retain_answer !== true) delete r.answer;
           if (r.status === "granted") this.revoke(r);
           if (["granted", "answered", "hidden"].includes(r.status)) this.move(r, "presented", e.at);
