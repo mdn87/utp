@@ -11,7 +11,7 @@
   "assessedAt": "2026-11-22T18:15:46Z",
   "confidence": "reported",
   "currentMilestone": "Measure reviewer clarity and count waivers on the first fifteen real requests.",
-  "remainingSummary": "The three-card batch save is verified. 11 of 15 real requests have arrived. 0 cards have clarity feedback.",
+  "remainingSummary": "The trial has 11 of 15 real requests. The reviewer has rated 0 cards for clarity.",
   "nextChipId": "utp:phase1:use",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",

@@ -99,6 +99,12 @@ the same treatment when their phase starts.
 
 ## Measures
 
+To reproduce the Phase 1 counts, pass the anonymized `requests` and `reviews`
+arrays, the UTC `fieldStart` and the verified `taskCount` as one JSON object
+on standard input to `node scripts/phase1-field-counts.mjs`. It prints aggregate
+counts. Each review's `pushReceipts` comes from the delivery provider. If that
+evidence is missing, the total is reported as unknown.
+
 | Measure | Definition | Source | Baseline |
 |---|---|---|---|
 | Reversal rate, answered | Answered decisions reversed within 30 days, divided by answered decisions whose 30 days have passed | UTP log | Retrospective: structured questions answered in the two weeks before UTP starts, found by the same transcript extractor |

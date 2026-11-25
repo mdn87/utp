@@ -1015,7 +1015,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-24T08:37:36.388Z"
+        "updatedAt": "2026-11-25T01:46:05.893Z"
       },
       "evidence": [
         {
@@ -1044,9 +1044,9 @@
         },
         {
           "entryId": "field-sample-progress",
-          "at": "2026-11-24T08:37:36.388Z",
+          "at": "2026-11-25T01:46:05.893Z",
           "kind": "note",
-          "message": "6 tasks across 3 agents. One three-card batch saved. 11/15 requests recorded, 0 waived, 0 clarity ratings. The reviewer recognized the task name on the phone."
+          "message": "The trial covers 6 tasks across 3 agents. Of the first 15 requests, 11 have arrived and 0 used a waiver. The reviewer rated 0 cards for clarity."
         }
       ]
     },
