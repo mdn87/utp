@@ -73,9 +73,52 @@ article, .empty {
   background: linear-gradient(150deg, #121821, #0a0e14);
 }
 .inbox-review { border-color: var(--cyan-edge); box-shadow: inset 3px 0 var(--amber); }
+.inbox-title { margin: .35rem 0 .25rem; font-weight: 600; color: var(--text); }
+.inbox-meta { margin: 0 0 .5rem; font-size: .85rem; color: var(--muted); }
 .inbox-review ul { padding-inline-start: 1.25rem; margin: .625rem 0 1rem; color: var(--soft); }
 .inbox-review li + li { margin-top: .4rem; }
 .inbox-review li::marker { color: var(--amber); }
+.card-badges { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 .75rem; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: .15rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--soft);
+  background: var(--canvas);
+}
+.badge-rec { border-color: var(--cyan-edge); color: var(--cyan); background: var(--cyan-tint); }
+.badge-default { border-color: #ffbd5955; color: var(--amber); }
+.badge-easy { border-color: #6de39a44; color: var(--green); }
+.badge-warn { border-color: #ffbd5955; color: var(--amber); }
+.badge-danger { border-color: #ff685f66; color: var(--red); }
+.agent-next { display: inline-block; margin-top: .25rem; color: var(--soft); }
+.item-card { padding: .75rem; border: 1px solid var(--line); border-radius: .5rem; background: #0c1017; }
+.item-card legend { padding: 0 .35rem; }
+.item-evidence { margin: .35rem 0 .75rem; padding-inline-start: 1.2rem; color: var(--soft); }
+.chip-group { margin: 0; }
+.chip-group legend { font-size: .85rem; font-weight: 600; color: var(--soft); margin-bottom: .4rem; }
+.chip-row { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: .35rem .75rem;
+  border: 1px solid var(--field-edge);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--soft);
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.chip:has(:checked) { border-color: var(--cyan); background: var(--cyan-tint); color: var(--text); }
+.chip:has(:focus-visible) { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .empty { display: flex; align-items: center; gap: .75rem; border-color: var(--cyan-edge); }
 .check {
   display: grid;
@@ -153,6 +196,39 @@ a { display: inline-flex; align-items: center; min-height: 44px; color: var(--cy
 .receipt { border-inline-start: 3px solid var(--green); }
 .error { border-inline-start: 3px solid var(--red); }
 [role="status"] { border-inline-start: 3px solid var(--amber); }
+.revision-banner {
+  margin: .75rem 0 1rem;
+  padding: .75rem 1rem;
+  border: 1px solid #ffbd5955;
+  border-inline-start: 3px solid var(--amber);
+  border-radius: .5rem;
+  background: #141923;
+}
+.revision-banner .banner-title { margin: 0 0 .4rem; font-weight: 600; color: var(--amber); }
+.revision-banner ul, .combined-summary ul, .remaining-cards ul { margin: .35rem 0 0; padding-inline-start: 1.25rem; color: var(--soft); }
+.combined-summary { margin: 0 0 1rem; }
+.combined-summary h3 { margin: 0 0 .4rem; }
+.remaining-cards { margin: .75rem 0 1rem; }
+.card-defer { margin: 1rem 0; padding-top: .75rem; border-top: 1px solid var(--line); }
+.form-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+.button-secondary { color: var(--soft); border-color: var(--field-edge); background: var(--panel); }
+.default-notice {
+  margin: 0 0 1rem;
+  padding: .875rem 1rem;
+  border: 1px solid #ffbd5955;
+  border-inline-start: 3px solid var(--amber);
+  border-radius: .5rem;
+  background: var(--panel);
+}
+.notice-object { margin-top: .75rem; }
+.pickup-status { margin: .75rem 0 1rem; padding: .75rem 1rem; border: 1px solid var(--line); border-inline-start: 3px solid var(--amber); border-radius: .5rem; background: var(--panel); }
+.pickup-live { border-color: #6de39a55; border-inline-start-color: var(--green); }
+.recent-section { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.recent-review { border-color: var(--line); }
+.recent-review h4 { margin: 0 0 .35rem; font-size: 1rem; font-weight: 600; color: var(--text); }
+.recent-review ul { padding-inline-start: 1.25rem; margin: .5rem 0 1rem; color: var(--soft); }
+.recent-review li + li { margin-top: .45rem; }
+.locked-card { opacity: .9; }
 @media (max-width: 36rem) {
   button { width: 100%; }
 }

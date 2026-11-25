@@ -11,7 +11,7 @@ import { checkDocument, checkRequest, intentFailure, reviewRequestsHash, validRe
 import { transcriptRoots } from "../server/transcripts.js";
 import { waiverNotes } from "../core/quality.js";
 import type { DeliveryAdapter } from "../core/delivery-adapter.js";
-import type { DecisionLogEntry, NoticeDigest } from "../core/engine.js";
+import type { DecisionLogEntry, NoticeDigest, ResumeCardPacket } from "../core/engine.js";
 import { leakKinds, redactedDecisions } from "../core/redact.js";
 import { writeNoticeDigest } from "../core/report-inbox.js";
 import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types.js";
@@ -22,7 +22,7 @@ import { closeout } from "./closeout.js";
 import { closeoutHook } from "./closeout-hook.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
 import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
-import { runReview } from "./review.js";
+import { runRecentReview, runReview } from "./review.js";
 import { launchSetup, setupPlan } from "./setup.js";
 
 const HELP = `utp: hand a person structured decisions, and get structured answers back.
@@ -37,11 +37,12 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             link <project-id>
 Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
             check <file>
-            closeout <report.json>
+            closeout <report.json> [--keep-notices]
             closeout-hook               (Claude Code hook JSON on standard input)
             consider <decision.json>
             decide <decision.json>
             ask <file>
+            stage <batch.json> [--flush]
             flush [<review-id>] [--intent <intent-or-review.json>]
             page <review-id>
             presented <review> [--channel <name>]
@@ -51,10 +52,11 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             export <id>... --redact --file <output>
             leak-check <file>... [--generic]
             report-import --inbox <directory>
-Answers     review [<review-id>] [--feedback]
+Answers     review [<review-id>] [--feedback] [--recent]
             answer <id@revision> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--presentation <id>]]
                         [--clarify] [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
             wait <id> [--timeout <seconds>] [--authority-file <decision.json>]
+            resume [<review-id>]
 Execution   claim-default <id>
             resolve-late <id> --resolution keep|redo
             begin <grant>
@@ -110,6 +112,9 @@ const OPTIONS = {
   inbox: { type: "string" },
   apply: { type: "boolean" },
   launcher: { type: "string" },
+  flush: { type: "boolean" },
+  "keep-notices": { type: "boolean" },
+  recent: { type: "boolean" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -230,7 +235,7 @@ const TEMPLATES: Record<string, RequestBody> = {
 };
 
 const SESSION_VERBS = new Set([
-  "status", "consider", "decide", "ask", "flush", "presented", "answer", "wait",
+  "status", "consider", "decide", "ask", "stage", "flush", "presented", "answer", "wait", "resume",
   "claim-default", "resolve-late", "begin", "applied", "reconcile", "release",
   "takeover", "revise", "cancel", "reverse",
 ]);
@@ -271,7 +276,7 @@ async function main(argv: string[]): Promise<number> {
       return EXIT.OK;
     }
     case "closeout": {
-      const report = await closeout(readJson(rest[0], "completion report"));
+      const report = await closeout(readJson(rest[0], "completion report"), { keepNotices: flags["keep-notices"] === true });
       return out(report, report.markdown as string | undefined);
     }
     case "setup": {
@@ -409,6 +414,95 @@ async function main(argv: string[]): Promise<number> {
         + (r.near_duplicate ? ` A similar request is open: ${String(r.near_duplicate)}.` : "")
         + " Run utp flush at a natural stopping point.");
     }
+    case "stage": {
+      const document = readJson(rest[0], "review batch");
+      if (!Object.hasOwn(document, "review") || Object.hasOwn(document, "kind")) {
+        throw new CliError(EXIT.CHECK_FAILED, "stage needs a batch file with review.intent and review.requests");
+      }
+      const failures = checkDocument(document, { strictDefaults: true });
+      if (failures.length) return out({ code: EXIT.CHECK_FAILED, failures });
+      const batch = document.review as { intent: unknown; requests: RequestBody[] };
+      const { project, root } = projectFor();
+      const allTags = [...new Set(batch.requests.flatMap(r => r.tags ?? []))];
+      const allRelated = [...new Set(batch.requests.flatMap(r => r.related ?? []))];
+      const maxLevel = Math.max(...batch.requests.map(r => r.level)) as 0 | 1 | 2 | 3;
+      const considered = maxLevel > 0 && (allTags.length || allRelated.length)
+        ? await call("consider", { level: maxLevel, tags: allTags, related: allRelated }, { project })
+        : { code: EXIT.OK, reversals: [] };
+      if (considered.code !== EXIT.OK) return out(considered);
+      const reversals = (considered.reversals as DecisionLogEntry[] | undefined) ?? [];
+      const warnings: string[] = [];
+      const statusRes = await call("status", {}, { project });
+      if (statusRes.code === EXIT.OK) {
+        const queuedNotices = (statusRes.requests as { id: string; revision: number; kind: string; status: string }[])
+          .filter(r => r.kind === "notice" && r.status === "queued");
+        if (queuedNotices.length) {
+          const level3Cards = batch.requests.filter(r => r.level === 3 && (r.kind === "approve" || r.options?.some(o => o.authorization)));
+          if (level3Cards.length) {
+            const shownNotices = await Promise.all(queuedNotices.map(n => call("show", { id: `${n.id}@${n.revision}` }, { project })));
+            for (const shown of shownNotices) {
+              if (shown.code !== EXIT.OK) continue;
+              const notice = shown.request as { id: string; body: RequestBody; basis_files?: string[] };
+              const noticeTags = new Set(notice.body.tags ?? []);
+              const noticeFiles = new Set(notice.basis_files ?? []);
+              for (const card of level3Cards) {
+                const linked = (card.depends_on ?? []).some(dep => dep === notice.id || dep.startsWith(`${notice.id}@`))
+                  || (card.related ?? []).includes(notice.id);
+                if (linked) continue;
+                const sharedTag = (card.tags ?? []).find(t => noticeTags.has(t));
+                const sharedFile = (card.basis?.files ?? []).find(f => noticeFiles.has(f));
+                if (sharedTag || sharedFile) {
+                  warnings.push(`Level-3 card "${card.question}" shares ${sharedFile ? `basis file ${sharedFile}` : `tag ${sharedTag}`} with unlinked queued notice ${notice.id}.`);
+                }
+              }
+            }
+          }
+        }
+      }
+      const batchIntent = batch.intent as { shared_glossary?: Record<string, string>; shared_evidence?: unknown[] } | undefined;
+      const shared = batchIntent && (batchIntent.shared_glossary || batchIntent.shared_evidence)
+        ? { ...(batchIntent.shared_glossary ? { glossary: batchIntent.shared_glossary } : {}),
+            ...(batchIntent.shared_evidence ? { evidence: batchIntent.shared_evidence } : {}) }
+        : undefined;
+      const queued: { id: string; revision: number; review_id: string }[] = [];
+      for (const [index, body] of batch.requests.entries()) {
+        const basis = fingerprints(root, body.basis?.files ?? []);
+        const cardOp = opId ? `${opId}:card-${index + 1}` : undefined;
+        const r = await call("ask", { body, basis, ...(shared ? { shared } : {}) }, { project, opId: cardOp });
+        if (r.code !== EXIT.OK) return out(r);
+        queued.push({ id: String(r.id), revision: Number(r.revision), review_id: String(r.review_id) });
+      }
+      const reviewId = queued[0]?.review_id ?? null;
+      if (!flags.flush) {
+        const lines = [
+          `Staged ${queued.length} card${queued.length === 1 ? "" : "s"} in review ${String(reviewId)}.`,
+          ...reversals.flatMap(p => p.reversals.map(rv => `Prior reversal of ${p.id}: ${rv.reason}`)),
+          ...warnings.map(w => `Warning: ${w}`),
+          `Run utp flush ${String(reviewId)} --intent ${rest[0]} when ready.`,
+        ];
+        return out({ code: EXIT.OK, review_id: reviewId, items: queued.map(q => `${q.id}@${q.revision}`),
+          flushed: false, reversals, warnings }, lines.join("\n"));
+      }
+      const flushArgs = { review: reviewId, intent: batch.intent, requests_hash: reviewRequestsHash(batch.requests) };
+      const flushed = await call("flush", flushArgs, { project, opId: opId ? `${opId}:flush` : undefined });
+      if (flushed.code !== EXIT.OK || !flushed.review_id) return out(flushed);
+      const needsVerifiedPage = flushed.route === "conversation" && flushed.needs_verified_channel === true && flushed.chat_provenance === false;
+      if (flushed.route === "review-page" || needsVerifiedPage) {
+        const page = await call("review-page.prepare", { review: flushed.review_id }, { project });
+        if (page.code !== EXIT.OK) return out({ ...page, review_id: flushed.review_id, reversals, warnings,
+          message: `The review was prepared. Run utp page ${flushed.review_id} or utp review ${flushed.review_id} to answer it. ${page.message ?? ""}` });
+        const prompt = needsVerifiedPage
+          ? `This review includes a level-3 approval and verified chat is unavailable for this session. Open this review page or run utp review ${flushed.review_id} in your terminal.\n${String(page.url)}`
+          : `Open this review page to answer the batch in one save.\n${String(page.url)}`;
+        return out({ ...flushed, route: "review-page", url: page.url, flushed: true, reversals, warnings }, prompt);
+      }
+      if (flags.json) return out({ ...flushed, flushed: true, reversals, warnings });
+      if (flushed.digest === true) return out({ ...flushed, flushed: true, reversals, warnings }, "These notices are queued for the morning report.");
+      const shown = await call("show", { id: flushed.review_id }, { project });
+      const review = shown.review as ReviewView;
+      return out({ ...flushed, flushed: true, reversals, warnings },
+        `${reviewMarkdown(review)}\n\nAfter this review appears in your message to the person, run: utp presented ${review.id} --channel conversation`);
+    }
     case "flush": {
       const { project } = projectFor();
       const args: Record<string, unknown> = {};
@@ -527,8 +621,32 @@ async function main(argv: string[]): Promise<number> {
     case "review": {
       const { project } = projectFor();
       readConfig();
-      return runReview(project, { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) },
-        flags.feedback, rest[0]);
+      const io = { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) };
+      if (flags.recent) return runRecentReview(project, io);
+      return runReview(project, io, flags.feedback, rest[0]);
+    }
+    case "resume": {
+      const { project, root } = projectFor();
+      const review = rest[0];
+      const probe = await call("resume", { ...(review ? { review } : {}), files_only: true }, { project });
+      if (probe.code !== EXIT.OK) return out(probe);
+      const files = (probe.basis_files as string[] | undefined) ?? [];
+      const basis = fingerprints(root, files);
+      const r = await call("resume", { ...(review ? { review } : {}), basis }, { project });
+      if (r.code !== EXIT.OK || flags.json) return out(r);
+      const cards = (r.cards as ResumeCardPacket[] | undefined) ?? [];
+      if (!cards.length) return out(r, review ? `No active cards in review ${review}.` : "Nothing open to resume.");
+      const lines = cards.map((c) => {
+        const extras: string[] = [];
+        if (c.answer?.value) extras.push(`answer=${c.answer.value}`);
+        else if (c.answer?.custom) extras.push(`custom="${c.answer.custom}"`);
+        else if (c.answer?.disposition) extras.push(`disposition=${c.answer.disposition}`);
+        if (c.clarification) extras.push(`clarify="${c.clarification.note ?? ""}"`);
+        if (c.stale_files.length) extras.push(`stale=[${c.stale_files.join(", ")}]`);
+        if (c.needs_takeover) extras.push(`takeover from ${c.owner.session}@${c.owner.machine}`);
+        return `${c.id}@${c.revision}  ${c.status.padEnd(14)}  next=${c.next_action}${extras.length ? `  (${extras.join("; ")})` : ""}  — ${c.question}`;
+      });
+      return out(r, lines.join("\n"));
     }
     case "report-import": {
       const inbox = need(flags.inbox, "--inbox with the morning report inbox directory");

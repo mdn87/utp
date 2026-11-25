@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "chipId": "utp:phase1:use",
-  "observedAt": "2026-11-25T01:46:05.893814+00:00",
+  "observedAt": "2026-11-25T07:25:09.118782+00:00",
   "phase": "in progress",
   "fieldTasks": [
     {
@@ -30,11 +30,11 @@
     }
   ],
   "AC1": {
-    "eligibleUniqueRequests": 11,
+    "eligibleUniqueRequests": 15,
     "targetRequests": 15,
     "requestsWithWaivers": 0,
-    "revisionsChecked": 14,
-    "postActivationRequests": 6,
+    "revisionsChecked": 18,
+    "postActivationRequests": 14,
     "historicalEntriesExcluded": 1,
     "scope": "The first fifteen distinct requests in the real shared project. Revisions count once. Historical backfills, prototype reviews and synthetic service projects are outside the sample."
   },
@@ -59,18 +59,19 @@
       "clearPercent": null,
       "targetPercent": 80
     },
-    "questionCards": 4,
+    "questionCards": 12,
     "repeatedQuestionTexts": 0,
     "duplicateQuestions": 0,
-    "questionReviewsFlushed": 2,
-    "questionReviewsPresented": 2,
+    "questionReviewsFlushed": 3,
+    "questionReviewsPresented": 3,
     "noticeOnlyReviewsPresented": 2,
-    "allReviewsPresentedPerTask": 0.6666666666666666,
-    "pushReceipts": 2,
+    "allReviewsPresentedPerTask": 0.8333333333333334,
+    "pushReceipts": 3,
     "cardActiveResponseMs": [],
     "pageActiveResponseMs": [
       58819,
-      6028
+      6028,
+      252020
     ],
     "duplicateEvidence": "The count compares normalized wording across distinct requests. Repeated wording requires checking whether the decision changed.",
     "retrospective": {
@@ -97,8 +98,8 @@
     }
   },
   "AC4": {
-    "largestPostActivationQuestionBatch": 3,
-    "verifiedPageSavesOfThreeOrMore": 1
+    "largestPostActivationQuestionBatch": 8,
+    "verifiedPageSavesOfThreeOrMore": 2
   },
   "AC5": {
     "fileChangingTasksWithReports": 3,

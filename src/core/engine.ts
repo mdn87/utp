@@ -13,6 +13,8 @@ import { EventEmitter } from "node:events";
 import { reviewMarkdown, type ReviewView } from "../cli/render.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
+import { computeRevisionDiff } from "./diff.js";
+import type { SharedContext } from "./quality.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
@@ -61,6 +63,8 @@ export interface Rev {
   default_notice_pending?: boolean;
   reconciliations: { at: string; outcome: string; grant: string }[];
   policy?: PolicyRecord;
+  stale_changed?: string[];
+  applied_evidence?: { action: string; target: string; scope: string; effect: string };
 }
 
 export interface Req {
@@ -75,6 +79,7 @@ export interface Req {
 export interface Review {
   id: string;
   status: "open" | "prepared";
+  owner?: Actor;
   items: string[];
   intent?: ReviewIntent;
   presentations: { id: string; channel: string; at: string; actor?: Actor; items?: string[];
@@ -95,7 +100,9 @@ export interface ReviewDelivery {
 export interface NoticeDigest {
   review: string;
   at: string;
-  notices: { title: string; consequence: string }[];
+  project_name?: string;
+  task_title?: string;
+  notices: { id: string; title: string; consequence: string }[];
 }
 
 export interface BrowserAnswer {
@@ -105,6 +112,10 @@ export interface BrowserAnswer {
   custom?: string;
   items?: Record<string, string>;
   details?: Record<string, string>;
+  disposition?: Disposition;
+  note?: string;
+  hide_until?: string;
+  clarify_note?: string;
   sureness?: string;
   feedback?: string;
 }
@@ -114,6 +125,50 @@ export type RecordedBrowserAnswer = {
   revision: number;
   answer: AnswerRecord;
 };
+
+export interface BrowserBatchReceipt {
+  answers: RecordedBrowserAnswer[];
+  hidden: { id: string; revision: number; until: string }[];
+  clarifications: { id: string; revision: number; clarification: ClarificationRequest }[];
+}
+
+export interface RecentCardSummary {
+  id: string;
+  revision: number;
+  question: string;
+  status: State;
+  answer_summary?: string;
+  editable: boolean;
+  applied_evidence?: { action: string; target: string; scope: string; effect: string };
+  flags: string[];
+}
+
+export interface RecentReviewSummary {
+  review_id: string;
+  task_title?: string;
+  updated_at: string;
+  owner?: Actor;
+  editable_count: number;
+  cards: RecentCardSummary[];
+}
+
+export interface ResumeCardPacket {
+  id: string;
+  revision: number;
+  review_id: string;
+  kind: RequestBody["kind"];
+  level: RequestBody["level"];
+  question: string;
+  status: State;
+  owner: Actor;
+  answer: AnswerRecord | null;
+  authorization: Authorization | null;
+  clarification?: ClarificationRequest;
+  hidden_until?: string;
+  stale_files: string[];
+  needs_takeover: boolean;
+  next_action: string;
+}
 
 export interface DecisionLogEntry {
   id: string;
@@ -152,6 +207,7 @@ interface PolicyRecord {
 
 const SYSTEM: Actor = { machine: "service", session: "sweep" };
 const key = (id: string, revision: number) => `${id}@${revision}`;
+const actorKey = (a: Actor) => `${a.machine}\0${a.session}`;
 const sameActor = (a: Actor, b: Actor) => a.machine === b.machine && a.session === b.session;
 const newId = (prefix: string, at: string) =>
   `${prefix}-${at.slice(0, 10).replaceAll("-", "")}-${randomBytes(4).toString("hex")}`;
@@ -268,7 +324,7 @@ export class Engine {
   private readonly grants = new Map<string, Grant>();
   private readonly archives = new Map<string, DecisionArchive>();
   private readonly routineCounts = new Map<string, number>();
-  private openReviewId: string | undefined;
+  private readonly openReviews = new Map<string, string>();
 
   constructor(
     private readonly store: EventStore,
@@ -303,15 +359,21 @@ export class Engine {
       state: delivery.action === "request" ? "sent" : "resolved" }, { code: EXIT.OK });
   }
 
-  noticeDigests(): NoticeDigest[] {
+  noticeDigests(projectName?: string): NoticeDigest[] {
     return [...this.reviews.values()].flatMap<NoticeDigest>((review) => {
       if (!review.digest || review.digest.recorded) return [];
       const notices = review.items.flatMap((ref) => {
         const card = this.revs.get(ref);
         if (!card || card.body.kind !== "notice" || !this.isCurrentRev(card) || card.status !== "queued") return [];
-        return [{ title: card.body.question, consequence: card.body.why_now }];
+        return [{ id: card.id, title: card.body.question, consequence: card.body.why_now }];
       });
-      return [{ review: review.id, at: review.digest.at, notices }];
+      if (!notices.length) return [];
+      const title = validTaskTitle(review.intent?.task_title) ? review.intent!.task_title : undefined;
+      return [{
+        review: review.id, at: review.digest.at, notices,
+        ...(projectName ? { project_name: projectName } : {}),
+        ...(title ? { task_title: title } : {}),
+      }];
     });
   }
 
@@ -330,6 +392,18 @@ export class Engine {
     return undefined;
   }
 
+  browserBatchReceipt(reviewId: string, opId: string): BrowserBatchReceipt | undefined {
+    const event = this.store.findOp(opId);
+    if (event?.data.op === "review-page.save" && event.data.review_id === reviewId) {
+      return {
+        answers: (event.data.answers as RecordedBrowserAnswer[] | undefined) ?? [],
+        hidden: (event.data.hidden as { id: string; revision: number; until: string }[] | undefined) ?? [],
+        clarifications: (event.data.clarifications as { id: string; revision: number; clarification: ClarificationRequest }[] | undefined) ?? [],
+      };
+    }
+    return undefined;
+  }
+
   /** A browser presentation can save its whole batch in one event. */
   browserPresentation(reviewId: string, presentationOp: string): string | undefined {
     const event = this.store.findOp(presentationOp);
@@ -342,10 +416,13 @@ export class Engine {
     this.sweep();
     const review = this.reviews.get(reviewId);
     if (!review || review.status !== "prepared") return notFound(reviewId);
+    if (!inputs.length) return { code: EXIT.OTHER, message: "Answer, hide, or clarify at least one card before saving." };
     const at = this.now().toISOString();
     const receipt = presentationOp && this.browserPresentation(reviewId, presentationOp);
     if (presentationOp && !receipt) return { code: EXIT.NOT_ALLOWED, message: "Reopen the page before saving." };
     const answers: RecordedBrowserAnswer[] = [];
+    const hidden: { id: string; revision: number; until: string }[] = [];
+    const clarifications: { id: string; revision: number; clarification: ClarificationRequest; presentation_id?: string }[] = [];
     try {
       for (const input of inputs) {
         const rev = this.revs.get(key(input.id, input.revision));
@@ -355,6 +432,22 @@ export class Engine {
             || (rev.status !== "presented" && !usedDefault) || rev.body.kind === "notice") {
           return { code: EXIT.REVOKED, message: "a displayed request changed; reopen the review before saving" };
         }
+        if (input.hide_until) {
+          if (Number.isNaN(Date.parse(input.hide_until))) throw new UsageError("hide_until must be a date and time");
+          if (rev.status !== "presented") throw new UsageError(`only a presented request can be hidden; this one is ${rev.status}`);
+          hidden.push({ id: rev.id, revision: rev.revision, until: input.hide_until });
+          continue;
+        }
+        if (input.clarify_note) {
+          if (!["presented", "default_claimed"].includes(rev.status)) {
+            throw new UsageError(`cannot request clarification once the default is ${rev.status}`);
+          }
+          const clarification: ClarificationRequest = {
+            at, channel: "review-page", note: input.clarify_note, outcome: "needs_clarification",
+          };
+          clarifications.push({ id: rev.id, revision: rev.revision, clarification, ...(receipt ? { presentation_id: receipt } : {}) });
+          continue;
+        }
         const answer = this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true);
         if (receipt) answer.presentation_id = receipt;
         answers.push({ id: rev.id, revision: rev.revision, answer });
@@ -363,11 +456,136 @@ export class Engine {
       if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
       throw error;
     }
-    return this.commit("review-page.save", "review.answered", actor, { review_id: reviewId, answers, page_response_ms: pageResponseMs },
-      { code: EXIT.OK, review_id: reviewId, saved: answers.length }, opId);
+    return this.commit("review-page.save", "review.answered", actor, {
+      review_id: reviewId, answers, page_response_ms: pageResponseMs,
+      ...(hidden.length ? { hidden } : {}),
+      ...(clarifications.length ? { clarifications } : {}),
+    }, { code: EXIT.OK, review_id: reviewId, saved: answers.length, hidden: hidden.length, clarifications: clarifications.length }, opId);
   }
 
-  /** Snapshots the source and its prior archives without exposing them to write operations. */
+  /** Record a browser-verified Keep or Switch decision on an applied default notice. */
+  recordBrowserDefaultAction(requestRef: string, optionId: string, actor: Actor): OpResult {
+    this.sweep();
+    const rev = this.resolve(requestRef);
+    const st = rev ? this.effective(rev, this.now().toISOString()) : undefined;
+    if (!rev || !this.isCurrentRev(rev) || !rev.default_application || rev.default_resolution
+        || (st !== "applied" && st !== "late_conflict")) {
+      return { code: EXIT.NOT_ALLOWED, message: "That applied default is no longer active." };
+    }
+    const at = this.now().toISOString();
+    try {
+      const answer = this.answerRecord(rev, { value: optionId, channel: "review-page" }, actor, at, true);
+      const grant = this.mustGrant(rev.default_application.grant);
+      const kept = optionId === grant.option;
+      const result: OpResult = { code: EXIT.OK, id: rev.id, revision: rev.revision, answer, kept };
+      return this.commit("review-page.default", "answer.recorded", actor,
+        { id: rev.id, revision: rev.revision, answer, after_effect: true, clear_default_notice: kept }, result);
+    } catch (error) {
+      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
+      throw error;
+    }
+  }
+
+  private preBeginEditable(rev: Rev, st: State): boolean {
+    return (st === "answered" || st === "granted") && !rev.remaining_scope && !rev.default_application;
+  }
+
+  /** Pre-begin edit or withdraw for an answered or granted card (locks once execution begins). */
+  private editAnswer(a: Args, actor: Actor, opId?: string, browser = false): OpResult {
+    const requestRef = str(a, "id");
+    const rev = this.resolve(requestRef);
+    if (!rev || !this.isCurrentRev(rev)) return notFound(requestRef);
+    const at = this.now().toISOString();
+    const st = this.effective(rev, at);
+    if (!this.preBeginEditable(rev, st)) {
+      return { code: EXIT.NOT_ALLOWED, message: `Work is already ${st}; answers lock once execution begins.` };
+    }
+    const op = browser ? "review-page.edit" : "edit";
+    const channel = browser ? "review-page" : str(a, "channel");
+    if (a.withdraw === true) {
+      return this.commit(op, "answer.withdrawn", actor, { id: rev.id, revision: rev.revision },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, withdrawn: true }, opId);
+    }
+    const clarifyNote = optStr(a, "clarify_note")?.trim();
+    if (clarifyNote) {
+      const clarification: ClarificationRequest = {
+        at, channel, note: clarifyNote, outcome: "needs_clarification",
+      };
+      return this.commit(op, "request.clarification-requested", actor,
+        { id: rev.id, revision: rev.revision, clarification, clear_answer: true },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, clarification }, opId);
+    }
+    try {
+      const answer = this.answerRecord(rev, { ...a, channel }, actor, at, browser);
+      return this.commit(op, "answer.recorded", actor,
+        { id: rev.id, revision: rev.revision, answer, after_effect: false },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, answer }, opId);
+    } catch (error) {
+      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
+      throw error;
+    }
+  }
+
+  /** Pre-begin browser edit or withdraw for an answered or granted card. */
+  editBrowserAnswer(requestRef: string, input: {
+    withdraw?: boolean;
+    value?: string;
+    custom?: string;
+    note?: string;
+    items?: Record<string, string>;
+    details?: Record<string, string>;
+    clarify_note?: string;
+  }, actor: Actor): OpResult {
+    this.sweep();
+    return this.editAnswer({ id: requestRef, ...input }, actor, undefined, true);
+  }
+
+  /** Recent and in-flight prepared reviews for inbox carry-through visibility. */
+  recentReviews(limit = 10): RecentReviewSummary[] {
+    this.sweep();
+    const at = this.now().toISOString();
+    const tracked = new Set<State>(["answered", "granted", "executing", "applied", "stale", "outcome_unknown", "late_conflict", "hidden"]);
+    const out: RecentReviewSummary[] = [];
+    for (const review of this.reviews.values()) {
+      if (review.status !== "prepared") continue;
+      const cards: RecentCardSummary[] = [];
+      let latest = "";
+      for (const ref of review.items) {
+        const rev = this.revs.get(ref);
+        if (!rev || !this.isCurrentRev(rev) || rev.body.kind === "notice") continue;
+        const st = this.effective(rev, at);
+        if (!tracked.has(st)) continue;
+        const ts = rev.answer?.at ?? rev.presented_at ?? rev.asked_at;
+        if (ts > latest) latest = ts;
+        const ansVal = rev.answer ? (
+          rev.answer.authorization ? `${rev.answer.authorization.action} ${rev.answer.authorization.target}`
+            : rev.answer.disposition ? rev.answer.disposition.replaceAll("_", " ")
+            : typeof rev.answer.value === "string"
+              ? (rev.body.options?.find((o) => o.id === rev.answer!.value)?.label ?? rev.answer.value)
+            : rev.answer.custom ? `"${rev.answer.custom}"`
+            : Object.entries(rev.answer.items ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ")
+        ) : undefined;
+        cards.push({
+          id: rev.id, revision: rev.revision, question: rev.body.question, status: st,
+          ...(ansVal ? { answer_summary: ansVal } : {}),
+          editable: this.preBeginEditable(rev, st),
+          ...(rev.applied_evidence ? { applied_evidence: rev.applied_evidence } : {}),
+          flags: rev.flags,
+        });
+      }
+      if (!cards.length) continue;
+      const title = validTaskTitle(review.intent?.task_title) ? review.intent!.task_title : undefined;
+      out.push({
+        review_id: review.id,
+        ...(title ? { task_title: title } : {}),
+        updated_at: latest || at,
+        ...(review.owner ? { owner: review.owner } : {}),
+        editable_count: cards.filter((c) => c.editable).length,
+        cards,
+      });
+    }
+    return out.sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, limit);
+  }
   relinkFrom(source: Engine, from: string, to: string, actor: Actor, opId?: string): OpResult {
     const previous = opId ? this.store.findOp(opId) : undefined;
     if (previous) {
@@ -411,6 +629,7 @@ export class Engine {
         case "flush": return this.flush(actor, opId, args);
         case "presented": return this.presented(args, actor, opId, false, turns);
         case "answer": return this.answer(args, actor, opId, turns);
+        case "edit": return this.editAnswer(args, actor, opId, false);
         case "wait": return this.wait(args, actor, opId);
         case "claim-default": return this.claimDefault(args, actor, opId);
         case "resolve-late": return this.resolveLate(args, actor, opId);
@@ -423,8 +642,11 @@ export class Engine {
         case "takeover": return this.takeover(args, actor, opId);
         case "reverse": return this.reverse(args, actor, opId);
         case "show": return this.show(args);
-        case "status": return this.status();
+        case "status": return this.status(actor);
         case "log": return this.log(args);
+        case "recent": return { code: EXIT.OK, reviews: this.recentReviews() };
+        case "resume": return this.resume(args, actor);
+        case "closeout.deliver": return this.deliverCloseoutNotices(args, actor, opId);
         default: return { code: EXIT.OTHER, message: `unknown operation: ${op}` };
       }
     } catch (e) {
@@ -497,7 +719,13 @@ export class Engine {
 
   private ask(a: Args, actor: Actor, opId?: string, decision?: { policy: PolicyRecord; result: OpResult }): OpResult {
     const body = a.body as RequestBody;
-    const failures = checkRequest(body);
+    const rawShared = a.shared as SharedContext | undefined;
+    const shared: SharedContext | undefined = rawShared && typeof rawShared === "object" && !Array.isArray(rawShared)
+      ? {
+        ...(rawShared.glossary && typeof rawShared.glossary === "object" && !Array.isArray(rawShared.glossary) ? { glossary: rawShared.glossary } : {}),
+        ...(Array.isArray(rawShared.evidence) ? { evidence: rawShared.evidence } : {}),
+      } : undefined;
+    const failures = checkRequest(body, shared);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
     const basis = this.basisFor(body, basisArg(a.basis));
     let near: string | undefined;
@@ -521,7 +749,7 @@ export class Engine {
     }
     const at = this.now().toISOString();
     const id = newId("R", at);
-    const review_id = this.openReviewId ?? newId("V", at);
+    const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", at);
     const result = {
       ...(decision?.result ?? { code: EXIT.OK }), id, revision: 1, review_id, role: "owner", attached: false,
       ...(near ? { near_duplicate: near } : {}),
@@ -531,7 +759,11 @@ export class Engine {
   }
 
   private flush(actor: Actor, opId: string | undefined, delivery: Args): OpResult {
-    const review = this.openReviewId ? this.reviews.get(this.openReviewId) : undefined;
+    const requestedReview = typeof delivery.review === "string" ? this.reviews.get(delivery.review) : undefined;
+    const ownReviewId = this.openReviews.get(actorKey(actor));
+    const review = delivery.review !== undefined
+      ? (requestedReview?.status === "open" && (!requestedReview.owner || sameActor(requestedReview.owner, actor)) ? requestedReview : undefined)
+      : (ownReviewId ? this.reviews.get(ownReviewId) : undefined);
     const items = review ? review.items.filter((k) => this.revs.get(k)?.status === "queued") : [];
     if (delivery.intent !== undefined && !validReviewIntent(delivery.intent)) {
       return { code: EXIT.CHECK_FAILED, failures: [intentFailure] };
@@ -554,8 +786,17 @@ export class Engine {
     const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
       if (!rev.default_notice_pending || !rev.default_application) return [];
       const grant = this.mustGrant(rev.default_application.grant);
-      return [{ request_id: rev.id, revision: rev.revision, question: rev.body.question,
-        option: grant.option, conflict: rev.status === "late_conflict" }];
+      const optLabel = rev.body.options?.find((o) => o.id === grant.option)?.label;
+      const undo = rev.body.default?.eligibility?.undo;
+      const options = (rev.body.options ?? []).map((o) => ({ id: o.id, label: o.label }));
+      return [{
+        request_id: rev.id, revision: rev.revision, question: rev.body.question,
+        option: grant.option,
+        ...(optLabel ? { option_label: optLabel } : {}),
+        ...(undo ? { undo } : {}),
+        ...(options.length ? { options } : {}),
+        conflict: rev.status === "late_conflict",
+      }];
     });
     return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults,
       ...(delivery.notify === true && questions ? { notify_questions: questions } : {}), ...(digest ? { digest: true } : {}) },
@@ -632,10 +873,12 @@ export class Engine {
       }
       const channel = str(a, "channel");
       const note = optStr(a, "note")?.trim() || undefined;
-      if (rev.clarification && rev.clarification.channel === channel && rev.clarification.note === note) {
+      const rawOutcome = optStr(a, "outcome");
+      const outcome = rawOutcome === "unsure" || rawOutcome === "needs_clarification" ? rawOutcome : undefined;
+      if (rev.clarification && rev.clarification.channel === channel && rev.clarification.note === note && rev.clarification.outcome === outcome) {
         return { code: EXIT.OK, ...ref, clarification: rev.clarification };
       }
-      const clarification = { at, channel, ...(note ? { note } : {}) };
+      const clarification: ClarificationRequest = { at, channel, ...(note ? { note } : {}), ...(outcome ? { outcome } : {}) };
       return this.commit("answer", "request.clarification-requested", actor, { ...ref, clarification, presentation_id: receiptId },
         { code: EXIT.OK, ...ref, clarification }, opId);
     }
@@ -1019,7 +1262,7 @@ export class Engine {
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
     const basis = this.basisFor(body, basisArg(a.basis));
     const revision = rev.revision + 1;
-    const review_id = this.openReviewId ?? newId("V", this.now().toISOString());
+    const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", this.now().toISOString());
     return this.commit("revise", "request.revised", actor, { id: req.id, revision, basis, review_id },
       { code: EXIT.OK, id: req.id, revision, review_id, superseded: rev.revision }, opId, { body });
   }
@@ -1089,6 +1332,93 @@ export class Engine {
       { code: EXIT.OK, id: rev.id, revision: rev.revision, reversed: true }, opId);
   }
 
+  private deliverCloseoutNotices(a: Args, actor: Actor, opId?: string): OpResult {
+    const ids = textList(a.ids, "ids");
+    const delivered: string[] = [];
+    for (const ref of ids) {
+      const rev = this.resolve(ref);
+      if (!rev || !this.isCurrentRev(rev) || rev.body.kind !== "notice" || rev.status !== "queued") continue;
+      if (!delivered.includes(rev.key)) delivered.push(rev.key);
+    }
+    if (!delivered.length) return { code: EXIT.OK, delivered: [] };
+    return this.commit("closeout.deliver", "closeout.notices-delivered", actor, { items: delivered, channel: "closeout-report" },
+      { code: EXIT.OK, delivered }, opId);
+  }
+
+  private resume(a: Args, actor: Actor): OpResult {
+    const at = this.now().toISOString();
+    const reviewId = optStr(a, "review");
+    let revs: Rev[];
+    if (reviewId) {
+      const v = this.reviews.get(reviewId);
+      if (!v) return notFound(reviewId);
+      revs = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined && this.isCurrentRev(r));
+    } else {
+      revs = [...this.revs.values()].filter((r) => {
+        if (!this.isCurrentRev(r) || r.body.kind === "notice") return false;
+        const st = this.effective(r, at);
+        return !TERMINAL.has(st) && st !== "applied" && st !== "closed";
+      });
+    }
+    const basisFiles = [...new Set(revs.flatMap((r) => Object.keys(r.expected_basis)))].sort();
+    if (a.files_only === true) {
+      return { code: EXIT.OK, ...(reviewId ? { review_id: reviewId } : {}), basis_files: basisFiles };
+    }
+    const supplied = basisArg(a.basis);
+    // Order cards so dependencies appear before dependents when inside the same set.
+    const byRef = new Map<string, Rev>();
+    for (const r of revs) {
+      byRef.set(r.id, r);
+      byRef.set(r.key, r);
+      if (r.body.id) byRef.set(r.body.id, r);
+    }
+    const ordered: Rev[] = [];
+    const seen = new Set<string>();
+    const visit = (r: Rev, stack = new Set<string>()) => {
+      if (seen.has(r.key) || stack.has(r.key)) return;
+      stack.add(r.key);
+      for (const dep of r.body.depends_on ?? []) {
+        const target = byRef.get(dep);
+        if (target && revs.includes(target)) visit(target, stack);
+      }
+      seen.add(r.key);
+      ordered.push(r);
+    };
+    for (const r of revs) visit(r);
+
+    const cards: ResumeCardPacket[] = ordered.map((r) => {
+      const req = this.reqOf(r);
+      const st = this.effective(r, at);
+      const stale_files = supplied
+        ? Object.keys(r.expected_basis).filter((p) => p in supplied && supplied[p] !== r.expected_basis[p])
+        : (r.stale_changed ?? []);
+      const auth = r.answer ? (this.authorizationFor(r, r.answer) ?? null) : null;
+      const needs_takeover = !sameActor(req.owner, actor)
+        && !TERMINAL.has(st) && !["executing", "outcome_unknown", "applied", "closed"].includes(st);
+      let next_action: string;
+      if (st === "applied" || st === "closed") next_action = "done";
+      else if (st === "outcome_unknown") next_action = "reconcile";
+      else if (st === "late_conflict") next_action = "resolve_late";
+      else if (r.clarification) next_action = "revise_for_clarification";
+      else if (stale_files.length > 0 || st === "stale") next_action = "revise_stale";
+      else if (TERMINAL.has(st)) next_action = "stopped";
+      else if (st === "answered" || st === "granted") {
+        next_action = auth ? (needs_takeover ? "takeover_then_wait" : "wait_and_begin") : "continue";
+      } else if (st === "executing") next_action = "finish_or_reconcile";
+      else if (st === "hidden") next_action = "deferred_until";
+      else if (st === "queued" || st === "presented" || st === "default_claimed") next_action = "waiting_on_person";
+      else next_action = "stopped";
+      return {
+        id: r.id, revision: r.revision, review_id: r.review_id, kind: r.body.kind, level: r.body.level,
+        question: r.body.question, status: st, owner: req.owner, answer: r.answer ?? null, authorization: auth,
+        ...(r.clarification ? { clarification: r.clarification } : {}),
+        ...(r.hide_until ? { hidden_until: r.hide_until } : {}),
+        stale_files, needs_takeover, next_action,
+      };
+    });
+    return { code: EXIT.OK, ...(reviewId ? { review_id: reviewId } : {}), basis_files: basisFiles, cards };
+  }
+
   private show(a: Args): OpResult {
     const ref = str(a, "id");
     if (ref.startsWith("G-")) {
@@ -1099,19 +1429,38 @@ export class Engine {
     if (ref.startsWith("V-")) {
       const v = this.reviews.get(ref);
       if (!v) return notFound(ref);
-      const items = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined).map((r) => this.view(r));
+      const revList = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined);
+      const items = revList.map((r) => this.view(r));
+      const inReview = new Set(revList.flatMap((r) => [r.key, r.id]));
+      const resolved_dependencies: Record<string, string> = {};
+      for (const r of revList) {
+        for (const dep of r.body.depends_on ?? []) {
+          if (inReview.has(dep) || dep in resolved_dependencies) continue;
+          const target = this.resolve(dep);
+          if (target) {
+            const ans = target.answer ? (
+              typeof target.answer.value === "string"
+                ? (target.body.options?.find((o) => o.id === target.answer!.value)?.label ?? target.answer.value)
+                : target.answer.custom ? `"${target.answer.custom}"` : undefined
+            ) : undefined;
+            resolved_dependencies[dep] = `${target.key} · ${target.body.question}${ans ? ` — chose ${ans}` : ""} (${target.body.kind}, level ${target.body.level})`;
+          }
+        }
+      }
       return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.owner ? { owner: v.owner } : {}),
         ...(v.intent ? { intent: v.intent } : {}),
         ...(v.delivery ? { delivery: v.delivery.state } : {}),
         ...(v.page_response_ms !== undefined ? { page_response_ms: v.page_response_ms } : {}),
-        ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}) } };
+        ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}),
+        ...(Object.keys(resolved_dependencies).length ? { resolved_dependencies } : {}) } };
     }
     const rev = this.resolve(ref);
     if (!rev) return notFound(ref);
     return { code: EXIT.OK, request: this.view(rev) };
   }
 
-  private status(): OpResult {
+  private status(actor?: Actor): OpResult {
     const at = this.now().toISOString();
     const requests = [...this.revs.values()]
       .filter((r) => this.isCurrentRev(r) && this.isOpen(r))
@@ -1124,7 +1473,9 @@ export class Engine {
         return r !== undefined && this.isCurrentRev(r) && waiting.has(this.effective(r, at));
       }))
       .map((v) => ({ id: v.id, status: v.status, presentations: v.presentations.length, items: v.items }));
-    return { code: EXIT.OK, requests, reviews, open_review: this.openReviewId ?? null };
+    const open_review = actor ? (this.openReviews.get(actorKey(actor)) ?? null) : (this.openReviews.values().next().value ?? null);
+    const open_reviews = [...new Set(this.openReviews.values())];
+    return { code: EXIT.OK, requests, reviews, open_review, open_reviews };
   }
 
   private log(a: Args): OpResult {
@@ -1225,7 +1576,7 @@ export class Engine {
         v.default_notices = (d.default_notices as DefaultNotice[] | undefined) ?? [];
         if (typeof d.notify_questions === "number") v.delivery = { questions: d.notify_questions, state: "pending" };
         if (d.digest === true) v.digest = { at: e.at, recorded: false };
-        if (this.openReviewId === v.id) this.openReviewId = undefined;
+        for (const [ownerKey, id] of this.openReviews) if (id === v.id) this.openReviews.delete(ownerKey);
         break;
       }
       case "review.delivery-recorded": {
@@ -1263,7 +1614,33 @@ export class Engine {
         break;
       }
       case "answer.recorded": {
-        this.recordAnswer(this.mustRev(d), d.answer as AnswerRecord, e);
+        const rev = this.mustRev(d);
+        this.recordAnswer(rev, d.answer as AnswerRecord, e);
+        if (d.clear_default_notice === true) rev.default_notice_pending = false;
+        break;
+      }
+      case "closeout.notices-delivered": {
+        const items = (d.items as string[] | undefined) ?? [];
+        const touched = new Set<string>();
+        for (const k of items) {
+          const r = this.revs.get(k);
+          if (!r || !this.isCurrentRev(r) || r.body.kind !== "notice" || r.status !== "queued") continue;
+          this.move(r, "presented", e.at);
+          this.move(r, "closed", e.at);
+          r.presented_at = e.at;
+          touched.add(r.review_id);
+        }
+        for (const reviewId of touched) {
+          const review = this.reviews.get(reviewId);
+          if (!review) continue;
+          const hasQueued = review.items.some((k) => this.revs.get(k)?.status === "queued");
+          if (!hasQueued) {
+            if (review.digest) review.digest.recorded = true;
+            if (review.status === "open") {
+              for (const [ownerKey, id] of this.openReviews) if (id === review.id) this.openReviews.delete(ownerKey);
+            }
+          }
+        }
         break;
       }
       case "request.clarification-requested": {
@@ -1271,7 +1648,7 @@ export class Engine {
         r.reply_seq = e.seq;
         r.reply_presentation = d.presentation_id as string | undefined;
         this.acknowledge(r, d.presentation_id, e.at);
-        if (d.chat_reply === true) {
+        if (d.chat_reply === true || d.clear_answer === true) {
           if (d.retain_answer !== true) delete r.answer;
           if (r.status === "granted") this.revoke(r);
           if (["granted", "answered", "hidden"].includes(r.status)) this.move(r, "presented", e.at);
@@ -1286,8 +1663,24 @@ export class Engine {
       case "review.answered": {
         const review = this.reviews.get(d.review_id as string);
         if (review && typeof d.page_response_ms === "number") review.page_response_ms = d.page_response_ms;
-        for (const answer of d.answers as RecordedBrowserAnswer[]) {
+        for (const answer of (d.answers as RecordedBrowserAnswer[] | undefined) ?? []) {
           this.recordAnswer(this.mustRev(answer), answer.answer, e);
+        }
+        for (const h of (d.hidden as { id: string; revision: number; until: string }[] | undefined) ?? []) {
+          const r = this.mustRev(h);
+          this.move(r, "hidden", e.at);
+          r.hide_until = h.until;
+        }
+        for (const c of (d.clarifications as { id: string; revision: number; clarification: ClarificationRequest; presentation_id?: string }[] | undefined) ?? []) {
+          const r = this.mustRev(c);
+          r.reply_seq = e.seq;
+          r.reply_presentation = c.presentation_id;
+          this.acknowledge(r, c.presentation_id, e.at);
+          if (r.status === "default_claimed") {
+            this.revoke(r);
+            this.move(r, "presented", e.at);
+          }
+          r.clarification = c.clarification;
         }
         break;
       }
@@ -1311,6 +1704,7 @@ export class Engine {
       case "request.cancelled":
       case "request.expired": {
         const r = this.mustRev(d);
+        if (e.type === "request.stale" && Array.isArray(d.changed)) r.stale_changed = d.changed as string[];
         this.revoke(r);
         this.move(r, e.type === "request.stale" ? "stale" : e.type === "request.cancelled" ? "cancelled" : "expired", e.at);
         break;
@@ -1356,6 +1750,12 @@ export class Engine {
         g.status = "done";
         const mismatch = d.mismatch as string[];
         if (mismatch.length) r.flags.push(`effect differs from authorization: ${mismatch.join(", ")}`);
+        if (d.evidence && typeof d.evidence === "object") {
+          const ev = d.evidence as { action?: string; target?: string; scope?: string; effect?: string };
+          if (ev.action && ev.target && ev.scope && ev.effect) {
+            r.applied_evidence = { action: ev.action, target: ev.target, scope: ev.scope, effect: ev.effect };
+          }
+        }
         this.move(r, mismatch.length ? "outcome_unknown" : "applied", e.at);
         this.recordDefaultApplication(r, g, d, e.at);
         break;
@@ -1470,11 +1870,14 @@ export class Engine {
     };
     this.revs.set(r.key, r);
     let v = this.reviews.get(review_id);
+    const rawOwner = (e.data.owner as Actor | undefined) ?? e.actor;
+    const owner: Actor | undefined = rawOwner?.machine && rawOwner.session
+      ? { machine: rawOwner.machine, session: rawOwner.session } : undefined;
     if (!v) {
-      v = { id: review_id, status: "open", items: [], presentations: [] };
+      v = { id: review_id, status: "open", items: [], presentations: [], ...(owner ? { owner } : {}) };
       this.reviews.set(review_id, v);
-      this.openReviewId = review_id;
     }
+    if (v.status === "open" && owner) this.openReviews.set(actorKey(owner), review_id);
     v.items.push(r.key);
   }
 
@@ -1688,6 +2091,7 @@ export class Engine {
 
   private view(r: Rev): Args {
     const req = this.reqOf(r);
+    const prev = r.revision > 1 ? this.revs.get(key(r.id, r.revision - 1)) : undefined;
     return {
       id: r.id, revision: r.revision, current: r.revision === req.current, status: this.effective(r, this.now().toISOString()),
       body: r.body, basis_files: Object.keys(r.basis), answer: r.answer ?? null, answers: r.answer_count,
@@ -1696,6 +2100,8 @@ export class Engine {
       reconciliations: r.reconciliations, reversals: req.reversals, owner: req.owner, observers: req.observers.length,
       ...(r.policy ? { policy: r.policy } : {}),
       ...(r.clarification ? { clarification: r.clarification } : {}),
+      ...(r.applied_evidence ? { applied_evidence: r.applied_evidence } : {}),
+      ...(prev ? { revision_diff: computeRevisionDiff(prev, r) } : {}),
       epoch: req.epoch,
     };
   }

@@ -10,7 +10,7 @@ import { Engine } from "../core/engine.js";
 import { EXIT, type Actor, type OpResult } from "../core/types.js";
 import { Service } from "./service.js";
 import { ReviewPages } from "./review-page.js";
-import { checkReviewerSocket, handleReviewerInbox } from "./reviewer-inbox.js";
+import { checkReviewerSocket, handleReviewerInbox, inboxLabel } from "./reviewer-inbox.js";
 import { ReviewDeliveries, type NotificationOptions } from "./review-delivery.js";
 import { TokenBook, tokenFile } from "./tokens.js";
 import { hasNativeTranscript, readNativeTurns, type TranscriptRoots } from "./transcripts.js";
@@ -113,6 +113,23 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   const log = opts.log ?? (() => {});
   const deliveries = (opts.notifications || opts.inboxDir)
     ? new ReviewDeliveries(service, log, opts.notifications, opts.inboxDir, opts.formatInboxItem) : undefined;
+  const activeWaiters = new Map<string, { project: string; requestId: string; actor: Actor }>();
+  const waitersFor = (project: string, reviewId: string): Actor[] => {
+    const engine = service.engine(project);
+    if (!(engine instanceof Engine)) return [];
+    const shown = engine.run("show", { id: reviewId }, { machine: "service", session: "waiters" }).review as { items?: { id: string }[] } | undefined;
+    const ids = new Set((shown?.items ?? []).map((i) => i.id));
+    const out: Actor[] = [];
+    const seen = new Set<string>();
+    for (const w of activeWaiters.values()) {
+      const k = `${w.actor.machine}\0${w.actor.session}`;
+      if (w.project === project && ids.has(w.requestId) && !seen.has(k)) {
+        seen.add(k);
+        out.push(w.actor);
+      }
+    }
+    return out;
+  };
   let pages: ReviewPages | undefined;
 
   const listener = (handler: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>) =>
@@ -159,9 +176,9 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     const actor: Actor = { machine, session };
     const opId = typeof body.op_id === "string" ? body.op_id : undefined;
     if (opts.reportExport && body.op === "report.pending") {
-      const pending = service.projects().flatMap(({ id }) => {
-        const engine = service.engine(id);
-        return engine instanceof Engine ? engine.noticeDigests().map((digest) => ({ ...digest, project: id })) : [];
+      const pending = service.projects().flatMap((project) => {
+        const engine = service.engine(project.id);
+        return engine instanceof Engine ? engine.noticeDigests(inboxLabel(project)).map((digest) => ({ ...digest, project: project.id })) : [];
       });
       send(res, 200, { code: EXIT.OK, pending });
       return;
@@ -195,8 +212,15 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
       res.on("close", () => {
         if (!res.writableFinished) gone.abort();
       });
-      const r = await holdWait(engine, args, actor, opId, limitMs, recheckMs, gone.signal, opts.transcriptRoots);
-      if (!gone.signal.aborted) send(res, 200, r);
+      const reqId = typeof args.id === "string" ? args.id.split("@")[0]! : "";
+      const waiterKey = reqId ? `${body.project}:${reqId}:${actor.machine}:${actor.session}:${Math.random()}` : "";
+      if (waiterKey) activeWaiters.set(waiterKey, { project: body.project, requestId: reqId, actor });
+      try {
+        const r = await holdWait(engine, args, actor, opId, limitMs, recheckMs, gone.signal, opts.transcriptRoots);
+        if (!gone.signal.aborted) send(res, 200, r);
+      } finally {
+        if (waiterKey) activeWaiters.delete(waiterKey);
+      }
       return;
     }
     if (body.op === "begin") {
@@ -223,8 +247,9 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
   const host = addr.family === "IPv6" ? `[${addr.address}]` : addr.address;
   const pageHost = addr.address === "0.0.0.0" ? "127.0.0.1" : addr.address === "::" ? "[::1]" : host;
   pages = new ReviewPages(reviewOrigin ?? new URL(`http://${pageHost}:${addr.port}`), service,
-    opts.now ? () => opts.now!().getTime() : Date.now, !!opts.reviewInboxSocket);
-  const reviewer = opts.reviewInboxSocket ? listener((req, res) => handleReviewerInbox(req, res, service, pages!, readBody)) : undefined;
+    opts.now ? () => opts.now!().getTime() : Date.now, !!opts.reviewInboxSocket, waitersFor);
+  const reviewer = opts.reviewInboxSocket
+    ? listener((req, res) => handleReviewerInbox(req, res, service, pages!, readBody, waitersFor)) : undefined;
   if (reviewer) {
     try {
       await new Promise<void>((resolve, reject) => {

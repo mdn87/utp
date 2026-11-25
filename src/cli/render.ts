@@ -1,9 +1,10 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
-import type { AcceptanceGoal, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
+import type { AcceptanceGoal, Actor, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
+import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
 import { validTaskTitle } from "../core/check.js";
-import { waiverNotes } from "../core/quality.js";
+import { waiverNotes, type SharedContext } from "../core/quality.js";
 
 export interface RequestView {
   id: string;
@@ -15,6 +16,11 @@ export interface RequestView {
   clarification?: ClarificationRequest;
   flags: string[];
   review_id?: string;
+  asked_at?: string;
+  owner?: Actor;
+  revision_diff?: RevisionDiff;
+  applied_evidence?: { action: string; target: string; scope: string; effect: string };
+  policy?: unknown;
 }
 
 export interface ReviewView {
@@ -22,14 +28,23 @@ export interface ReviewView {
   items: RequestView[];
   intent?: ReviewIntent;
   default_notices?: DefaultNotice[];
+  resolved_dependencies?: Record<string, string>;
+  owner?: Actor;
 }
 
 const UNDO: Record<string, string> = { easy: "easy to undo", costly: "costly to undo", one_way: "can't be undone" };
 const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 
+export function sharedFromIntent(intent?: ReviewIntent): SharedContext | undefined {
+  if (!intent || (!intent.shared_glossary && !intent.shared_evidence)) return undefined;
+  return { glossary: intent.shared_glossary, evidence: intent.shared_evidence };
+}
+
 export function reviewContext(intent?: ReviewIntent): [string, string][] {
   if (!intent) return [["Review context", "This review was saved without a stated purpose or scope."]];
-  const fields: [string, string][] = [["What you asked for", intent.asked], ["What the agent is doing", intent.doing]];
+  const fields: [string, string][] = [["What you asked for", intent.asked]];
+  if (intent.already_done?.trim()) fields.push(["Already done", intent.already_done]);
+  fields.push(["What the agent is doing", intent.doing]);
   if (validTaskTitle(intent.task_title)) fields.unshift(["Task", intent.task_title]);
   const scope = intent.scope_delta;
   const changes: [string, string][] = [];
@@ -38,7 +53,14 @@ export function reviewContext(intent?: ReviewIntent): [string, string][] {
       for (const change of scope[kind]) changes.push([label, `${change.item} — ${change.reason}`]);
     }
   }
-  return fields.concat(changes.length ? changes : [["Scope changes", "None."]]);
+  const out = fields.concat(changes.length ? changes : [["Scope changes", "None."]]);
+  if (intent.shared_evidence?.length) {
+    out.push(["Shared evidence", intent.shared_evidence.map((e) => `${e.claim} (${e.kind}, ${e.source}, ${e.date})`).join("\n")]);
+  }
+  if (intent.shared_glossary && Object.keys(intent.shared_glossary).length) {
+    out.push(["Shared terms", Object.entries(intent.shared_glossary).map(([t, d]) => `${t}: ${d}`).join("\n")]);
+  }
+  return out;
 }
 
 export function contextMarkdown(intent?: ReviewIntent): string {
@@ -51,12 +73,12 @@ export function cardMetadata(v: RequestView): string {
   return `${label}${b.kind} · level ${b.level}: ${b.level_reason} · ${UNDO[b.stakes.reversibility] ?? b.stakes.reversibility}`;
 }
 
-export function dependencyLabels(body: RequestBody, items: readonly RequestView[] = []): string[] {
+export function dependencyLabels(body: RequestBody, items: readonly RequestView[] = [], resolved?: Record<string, string>): string[] {
   return (body.depends_on ?? []).map(ref => {
     const exact = items.find(item => `${item.id}@${item.revision}` === ref || (item.id === ref && item.current));
     const drafts = exact ? [] : items.filter(item => item.body.id === ref);
     const target = exact ?? (drafts.length === 1 ? drafts[0] : undefined);
-    if (!target) return ref;
+    if (!target) return resolved?.[ref] ?? ref;
     const revision = `${target.id}@${target.revision}`;
     return `${exact ? revision : `${ref} (${revision})`} · ${target.body.question}`;
   });
@@ -80,9 +102,30 @@ export function completionMarkdown(goals: AcceptanceGoal[], notices: RequestView
   return lines.join("\n").trimEnd();
 }
 
+export function revisionBannerLines(diff: RevisionDiff): string[] {
+  const lines = [`**Updated from rev ${diff.from_revision} -> rev ${diff.to_revision}**`];
+  if (diff.trigger.kind === "clarification") {
+    lines.push(diff.trigger.note
+      ? `- Triggered by your clarification on rev ${diff.from_revision}: "${diff.trigger.note}"`
+      : `- Triggered by a clarification request on rev ${diff.from_revision}.`);
+  } else if (diff.trigger.kind === "stale") {
+    const files = diff.trigger.files?.length ? diff.trigger.files.join(", ") : "tracked basis files";
+    lines.push(`- Rev ${diff.from_revision} went stale because ${files} changed.`);
+  } else if (diff.trigger.kind === "custom_answer") {
+    lines.push(`- Revised after your reply on rev ${diff.from_revision}: "${diff.trigger.custom ?? ""}"`);
+  }
+  if (diff.prior_answer) {
+    lines.push(`- On rev ${diff.from_revision} you chose: ${diff.prior_answer} (not pre-selected — confirm or change below).`);
+  }
+  for (const change of diff.changes) lines.push(`- ${change}`);
+  if (diff.unchanged.length) lines.push(`- Unchanged: ${diff.unchanged.join(", ")}.`);
+  return lines;
+}
+
 export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView): string {
   const b = v.body;
   const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
+  if (v.revision_diff) out.push(...revisionBannerLines(v.revision_diff), "");
   if (!v.current) out.push("A later revision replaced this card.", "");
   else if (v.status === "cancelled") out.push("This card was cancelled.", "");
   if (b.kind !== "notice") out.push("**What this question addresses**");
@@ -90,7 +133,7 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
   if (b.summary && b.summary !== b.why_now) out.push("**Why now**", b.why_now, "");
   if (v.clarification) out.push(v.clarification.outcome === "unsure" ? "Confirm the current choice before the agent continues."
     : "The reviewer asked for a clearer question or choices.", "");
-  for (const dependency of dependencyLabels(b, review?.items)) out.push(`Depends on ${dependency}`, "");
+  for (const dependency of dependencyLabels(b, review?.items, review?.resolved_dependencies)) out.push(`Depends on ${dependency}`, "");
   const terms = Object.entries(b.glossary ?? {});
   if (terms.length) out.push("Terms on this card:", "", ...terms.map(([t, d]) => `- **${t}**: ${d}`), "");
   for (const preview of Array.isArray(b.previews) ? b.previews : []) {
@@ -104,7 +147,8 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
     out.push("| Option | What happens |", "|---|---|");
     for (const o of b.options) {
       const tag = b.recommendation?.option === o.id ? " (recommended)" : "";
-      out.push(`| **${o.id}** ${cell(o.label)}${tag} | ${cell(o.consequence)} |`);
+      const next = o.agent_next ? ` Agent does next: ${o.agent_next}` : "";
+      out.push(`| **${o.id}** ${cell(o.label)}${tag} | ${cell(o.consequence + next)} |`);
     }
     out.push("");
   }
@@ -116,7 +160,7 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
   for (const step of Array.isArray(b.steps) ? b.steps : []) {
     out.push(`**${step.id}** · ${step.actor} on ${step.machine} using ${step.shell}`, "",
       step.command, "", `Expect ${step.expected_result}. ${step.tested ? "Tested in this shell." : "This step needs a shell check."}`,
-      step.why_person, "");
+      step.why_person, ...(step.agent_next ? [`Agent does next: ${step.agent_next}`] : []), "");
   }
   if (Array.isArray(b.goals)) out.push(...goalLines(b.goals));
   for (const item of Array.isArray(b.assumptions) ? b.assumptions : []) {
@@ -132,10 +176,14 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
     out.push(`Recommended: **${rec.option}**` + (rec.because ? `, because ${rec.because}` : "")
       + `${rec.preserves ? ` It keeps: ${rec.preserves}` : ""}${rec.bolder_alternative ? ` Bolder: ${rec.bolder_alternative}` : ""}`, "");
   }
-  if (b.default) out.push(`If you don't answer: **${b.default.option}**. ${b.default.consequence}`, "");
+  if (b.default) {
+    const defLabel = b.options?.find((o) => o.id === b.default?.option)?.label;
+    const defName = defLabel ? `${defLabel} (${b.default.option})` : b.default.option;
+    out.push(`If you don't answer: **${defName}**. ${b.default.consequence}`, "");
+  }
   if (b.notes) out.push(b.notes, "");
   if (b.narrowing_reason) out.push("Why the action cannot be split: " + b.narrowing_reason, "");
-  for (const note of waiverNotes(b)) out.push(note, "");
+  for (const note of waiverNotes(b, sharedFromIntent(review?.intent))) out.push(note, "");
   if (b.evidence?.length) {
     out.push("Evidence:", "", ...b.evidence.map((e) => `- ${e.claim} (${e.kind}, ${e.source}, ${e.date})`), "");
   }
@@ -163,7 +211,9 @@ export function answerText(a: AnswerRecord): string {
 
 export function defaultNoticeMarkdown(notice: DefaultNotice): string {
   const status = notice.conflict ? "Late answer conflicts with the applied default" : "Applied by default: change?";
-  return `- **${status}** ${notice.question} Option **${notice.option}**. Request \`${notice.request_id}@${notice.revision}\`.`;
+  const optionName = notice.option_label ? `${notice.option_label} (${notice.option})` : notice.option;
+  const undo = notice.undo ? ` Undo: ${notice.undo}` : "";
+  return `- **${status}** ${notice.question} Option **${optionName}**.${undo} Request \`${notice.request_id}@${notice.revision}\`.`;
 }
 
 export function reviewMarkdown(review: ReviewView, mode: "presentation" | "history" = "presentation"): string {

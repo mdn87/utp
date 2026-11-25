@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DeliveryAdapter, ReviewNotification } from "../core/delivery-adapter.js";
 import { Engine, type ReviewDelivery } from "../core/engine.js";
 import { writeNoticeDigest } from "../core/report-inbox.js";
+import { inboxLabel } from "./reviewer-inbox.js";
 import type { Service } from "./service.js";
 
 export interface NotificationOptions {
@@ -50,11 +51,12 @@ export class ReviewDeliveries {
   }
 
   private async deliver(): Promise<void> {
-    for (const { id } of this.service.projects()) {
+    for (const project of this.service.projects()) {
+      const { id } = project;
       const engine = this.service.engine(id);
       if (!(engine instanceof Engine)) continue;
       if (this.inboxDir) {
-        for (const digest of engine.noticeDigests()) {
+        for (const digest of engine.noticeDigests(inboxLabel(project))) {
           try {
             writeNoticeDigest(this.inboxDir, id, digest, this.formatInboxItem);
             engine.recordDigest(digest);

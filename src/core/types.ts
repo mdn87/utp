@@ -14,6 +14,7 @@ export interface OptionSpec {
   id: string;
   label: string;
   consequence: string;
+  agent_next?: string;
   authorization?: Authorization;
   narrower_than?: string;
 }
@@ -34,6 +35,7 @@ export interface HandoffStep {
   expected_result: string;
   tested: boolean;
   why_person: string;
+  agent_next?: string;
 }
 
 export interface AcceptanceGoal {
@@ -68,15 +70,27 @@ export interface DefaultNotice {
   revision: number;
   question: string;
   option: string;
+  option_label?: string;
+  undo?: string;
+  options?: { id: string; label: string }[];
   conflict: boolean;
+}
+
+export interface SkipRule {
+  card: string;
+  option: string;
+  reason?: string;
 }
 
 export interface ReviewIntent {
   /** Short name the author intends to show in a notification. */
   task_title?: string;
   asked: string;
+  already_done?: string;
   doing: string;
   scope_delta: "none" | Record<"narrowed" | "deferred" | "added", { item: string; reason: string }[]>;
+  shared_glossary?: Record<string, string>;
+  shared_evidence?: EvidenceItem[];
 }
 
 export interface RequestBody {
@@ -105,6 +119,7 @@ export interface RequestBody {
   related?: string[];
   dedupe_key?: string;
   depends_on?: string[];
+  skip_if?: SkipRule[];
   basis?: { files?: string[] };
   expires_at?: string;
   origin?: { agent?: string; platform?: string; session?: string };

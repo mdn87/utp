@@ -17,12 +17,18 @@ don't relitigate or silently undo it.
 
 ## Status
 
-The concept has been reviewed and its first decisions answered (review 0001,
-2026-11-22). Phase 1a, the lifecycle core, is built and tested: the `utp`
-command, the service it talks to, the crash-safe event log, the request state
-machine, and execution grants. [Review 0002](docs/decisions/0002-followup-review.answers.json)
-settled the scope of phase 1 and the policies for defaults and answers.
-UTP's terminal review recorded three of its four decisions. Start with:
+Phase 1 is built and tested: the `utp` command, the shared decision service,
+the crash-safe event log, the request state machine, execution grants, all
+seven everyday request kinds, the quality linter, thin platform adapters, the
+close-out completion report, and the zero-JavaScript browser review page and
+reviewer inbox. [Review 0002](docs/decisions/0002-followup-review.answers.json)
+settled the phase 1 scope and default policy, and
+[Review 0003](docs/decisions/0003-workflow-improvements.export.json) approved
+six workflow and review-page upgrades: per-session draft queues and
+`utp stage`, shared review briefs with one-tap clarity chips, partial batch
+saves with strict approval clarification, automatic revision diff banners,
+actionable default/notice controls with close-out deduplication, and live
+pickup status with a pre-execution edit window and `utp resume`. Start with:
 
 - [Concept](docs/concept/concept.md): what UTP is, the kinds of decisions it
   handles, the request and answer formats, and the build phases.
@@ -50,9 +56,10 @@ On the laptop, inside a checkout:
 utp connect http://homeserver:7340 < token.txt
 utp init
 utp new choose --file question.json   # fill it in, then:
-utp ask question.json
-utp flush --intent context.json   # shows chat cards or prepares a batch review link
-utp review         # the person answers in their own terminal
+utp ask question.json                 # or: utp stage batch.json --flush
+utp flush --intent context.json       # shows chat cards or prepares a batch review link
+utp review                            # the person answers in their own terminal (--recent to inspect/edit)
+utp resume                            # single-call dependency-ordered status + basis check
 utp wait <request-id>
 ```
 

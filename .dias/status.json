@@ -8,13 +8,13 @@
   "milestonePhase": "integration-proof",
   "portfolioGroup": "developer-tools",
   "displayPriority": 500,
-  "assessedAt": "2026-11-22T18:15:46Z",
+  "assessedAt": "2026-11-25T07:56:00Z",
   "confidence": "reported",
   "currentMilestone": "Measure reviewer clarity and count waivers on the first fifteen real requests.",
-  "remainingSummary": "The trial has 11 of 15 real requests. The reviewer has rated 0 cards for clarity.",
+  "remainingSummary": "All six approved workflow and review-page improvements are built and verified. The phase 1 trial has 15 of 15 real requests with 0 waivers and needs voluntary clarity ratings from the reviewer.",
   "nextChipId": "utp:phase1:use",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
-    "updatedAt": "2026-11-24"
+    "updatedAt": "2026-11-25"
   }
 }
