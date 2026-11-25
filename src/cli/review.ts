@@ -85,8 +85,12 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
   let presentation: string | undefined;
   const save = async (id: string, args: Record<string, unknown>, shownAt: number): Promise<void> => {
     if (args.clarify) {
-      const note = await ask("What should the agent explain? Enter to send without a note: ");
-      const result = await call("answer", { id, channel, presentation, clarify: true, note: note || undefined }, { project });
+      const note = typeof args.note === "string" ? args.note : await ask("What should the agent explain? Enter to send without a note: ");
+      const result = await call("answer", {
+        id, channel, presentation, clarify: true,
+        ...(args.outcome ? { outcome: args.outcome } : {}),
+        note: note || undefined,
+      }, { project });
       if (result.code === EXIT.OK) {
         clarified += 1;
         write("Clarification requested. The agent will see it when it checks this question.");
@@ -161,7 +165,13 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
               skipped += 1;
               break;
             }
-            args = { custom: words };
+            const hasAuth = item.body.kind === "approve" || (item.body.options ?? []).some((o) => !!o.authorization);
+            if (hasAuth) {
+              write("Free text on an approval card withholds the grant and asks the agent to revise the card.");
+              args = { clarify: true, outcome: "needs_clarification", note: words.trim() };
+            } else {
+              args = { custom: words };
+            }
           } else if (reply === "h") {
             args = { hide_until: tomorrowMorning() };
           } else if (ids.includes(reply)) {

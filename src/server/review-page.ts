@@ -2,8 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReviewView } from "../cli/render.js";
 import { Engine, type BrowserAnswer } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
-import { EXIT, type Actor, type ClarificationRequest, type OpResult } from "../core/types.js";
-import { page, reviewHtml, savedHtml } from "./review-html.js";
+import { EXIT, type Actor, type ClarificationRequest, type Disposition, type OpResult } from "../core/types.js";
+import { cardHasAuthorization, page, reviewHtml, savedHtml } from "./review-html.js";
 import { linkKey, ReviewLinks, token } from "./review-links.js";
 import type { Service } from "./service.js";
 
@@ -22,28 +22,139 @@ export function sendHtml(response: ServerResponse, code: number, html: string, c
   response.end(html);
 }
 
-function choices(view: ReviewView, form: URLSearchParams): BrowserAnswer[] {
-  return view.items.flatMap<BrowserAnswer>((card, index) => {
-    if (card.body.kind === "notice") return [];
+function tomorrowMorningIso(nowMs: number): string {
+  const d = new Date(nowMs);
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  return d.toISOString();
+}
+
+interface ParsedBatch {
+  answers: BrowserAnswer[];
+  leftOpen: string[];
+  previewLines: string[];
+  error?: string;
+}
+
+function parseBatchForm(view: ReviewView, form: URLSearchParams, nowMs: number): ParsedBatch {
+  const answers: BrowserAnswer[] = [];
+  const leftOpen: string[] = [];
+  const previewLines: string[] = [];
+  const chosenByRef = new Map<string, string>();
+  const pendingCards: { index: number; card: ReviewView["items"][number] }[] = [];
+
+  for (const [index, card] of view.items.entries()) {
+    if (card.body.kind === "notice") continue;
     const ref = {
       id: card.id,
       revision: card.revision,
       sureness: form.get(`sureness-${index}`) || undefined,
       feedback: form.get(`feedback-${index}`) || undefined,
     };
+    const action = form.get(`action-${index}`)?.trim() ?? "";
+    if (action === "hide") {
+      const until = tomorrowMorningIso(nowMs);
+      answers.push({ ...ref, hide_until: until });
+      previewLines.push(`Hide until tomorrow: ${card.body.question}`);
+      continue;
+    }
+    if (action === "answered_elsewhere" || action === "no_longer_matters") {
+      answers.push({ ...ref, disposition: action as Disposition });
+      previewLines.push(`${action.replaceAll("_", " ")}: ${card.body.question}`);
+      continue;
+    }
+
     const custom = form.get(`custom-${index}`);
-    if (custom?.trim()) return [{ ...ref, custom }];
+    const hasCustom = !!custom?.trim();
+    const hasAuth = cardHasAuthorization(card.body);
+    const choice = form.get(`choice-${index}`)?.trim() ?? "";
+    const note = form.get(`note-${index}`)?.trim() || undefined;
     const prompts = itemPrompts(card.body);
+
+    if (hasAuth && hasCustom) {
+      answers.push({ ...ref, clarify_note: custom!.trim() });
+      previewLines.push(`Approval withheld pending clarification: ${card.body.question} ("${custom!.trim()}")`);
+      continue;
+    }
+
     if (prompts.length) {
-      const items = Object.fromEntries(prompts.map(({ id }, n) => [id, form.get(`item-${index}-${n}`) ?? ""]));
+      const chosenItems = prompts.map(({ id }, n) => [id, form.get(`item-${index}-${n}`) ?? ""] as const);
+      const anySelected = chosenItems.some(([, v]) => v.trim() !== "");
+      if (!anySelected && !hasCustom) {
+        pendingCards.push({ index, card });
+        continue;
+      }
+      if (hasCustom && !anySelected) {
+        answers.push({ ...ref, custom: custom! });
+        previewLines.push(`Custom reply on "${card.body.question}": "${custom!.trim()}"`);
+        continue;
+      }
+      if (hasCustom && anySelected) {
+        return { answers: [], leftOpen: [], previewLines: [],
+          error: `Card ${index + 1} has both item selections and "Your own answer". Clear one before saving.` };
+      }
+      const items = Object.fromEntries(chosenItems);
       const details = Object.fromEntries(prompts.flatMap(({ id }, n) => {
         const text = form.get(`detail-${index}-${n}`);
         return text?.trim() ? [[id, text]] : [];
       }));
-      return [{ ...ref, items, details }];
+      answers.push({ ...ref, items, details, ...(note ? { note } : {}) });
+      previewLines.push(`Saved items for "${card.body.question}": ${Object.entries(items).map(([k, v]) => `${k}=${v}`).join(", ")}`);
+      continue;
     }
-    return [{ ...ref, value: form.get(`choice-${index}`) ?? undefined }];
-  });
+
+    if (choice === "__custom__") {
+      if (!hasCustom) {
+        return { answers: [], leftOpen: [], previewLines: [],
+          error: `Card ${index + 1} selected "Your own answer" with no text. Enter your answer or pick a listed option.` };
+      }
+      answers.push({ ...ref, custom: custom! });
+      previewLines.push(`Your own answer for "${card.body.question}": "${custom!.trim()}"`);
+      continue;
+    }
+
+    if (choice && hasCustom) {
+      return { answers: [], leftOpen: [], previewLines: [],
+        error: `Card ${index + 1} has both a selected option and "Your own answer". Clear one or move your comment to the optional note box.` };
+    }
+
+    if (hasCustom) {
+      answers.push({ ...ref, custom: custom! });
+      previewLines.push(`Your own answer for "${card.body.question}": "${custom!.trim()}"`);
+      continue;
+    }
+
+    if (choice) {
+      answers.push({ ...ref, value: choice, ...(note ? { note } : {}) });
+      chosenByRef.set(card.id, choice);
+      chosenByRef.set(`${card.id}@${card.revision}`, choice);
+      if (card.body.id) chosenByRef.set(card.body.id, choice);
+      const opt = card.body.options?.find((o) => o.id === choice);
+      if (opt?.authorization) {
+        const a = opt.authorization;
+        previewLines.push(`Authorizes ${a.action} on ${a.target} (scope: ${a.scope}) — ${card.body.question}`);
+      } else {
+        previewLines.push(`Sets "${opt?.label ?? choice}" (${choice}) — ${card.body.question}`);
+      }
+      continue;
+    }
+
+    pendingCards.push({ index, card });
+  }
+
+  for (const { card } of pendingCards) {
+    const matched = (card.body.skip_if ?? []).find((rule) => chosenByRef.get(rule.card) === rule.option);
+    if (matched) {
+      const reason = matched.reason ?? `Skipped because ${matched.card} chose ${matched.option}.`;
+      answers.push({ id: card.id, revision: card.revision, disposition: "no_longer_matters", note: reason });
+      previewLines.push(`Auto-skipped (${reason}): ${card.body.question}`);
+    } else {
+      leftOpen.push(card.body.question);
+      previewLines.push(`Left open for later: ${card.body.question}`);
+    }
+  }
+
+  return { answers, leftOpen, previewLines };
 }
 
 export class ReviewPages {
@@ -95,8 +206,12 @@ export class ReviewPages {
     const saveId = `review-save-${linkKey(id)}`;
     const shown = engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined;
     if (!shown) return denied();
-    const saved = engine.browserAnswerReceipt(entry.review, saveId);
-    if (saved) return sendHtml(response, 200, savedHtml(shown, saved, this.inboxLink()));
+    const receipt = engine.browserBatchReceipt(entry.review, saveId);
+    if (receipt) {
+      const remaining = shown.items.filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
+        .map((c) => c.body.question);
+      return sendHtml(response, 200, savedHtml(shown, receipt.answers, this.inboxLink(), { receipt, remainingQuestions: remaining }));
+    }
     const items = entry.items.map((ref) => shown.items.find((card) => card.id === ref.id && card.revision === ref.revision));
     if (items.some((card) => !card?.current || (!form && card.body.kind !== "notice" && !answerable(card.status)))) {
       return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>Open a fresh link before answering.</p>" + this.inboxLink()));
@@ -131,14 +246,24 @@ export class ReviewPages {
       card.clarification = result.clarification as ClarificationRequest;
       return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form));
     }
-    const answers = choices(view, form);
-    const result = engine.saveBrowserAnswers(view.id, answers, entry.actor, Math.max(0, this.now() - entry.browser.openedAt), saveId,
+    const parsed = parseBatchForm(view, form, this.now());
+    if (parsed.error) {
+      return sendHtml(response, 400, reviewHtml(view, entry.browser.form, parsed.error, form));
+    }
+    if (form.get("preview") === "1") {
+      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { previewLines: parsed.previewLines }));
+    }
+    const result = engine.saveBrowserAnswers(view.id, parsed.answers, entry.actor, Math.max(0, this.now() - entry.browser.openedAt), saveId,
       `review-page-${linkKey(id)}`);
     if (result.code !== EXIT.OK) {
       return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
         reviewHtml(view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
     }
-    sendHtml(response, 200, savedHtml(view, engine.browserAnswerReceipt(view.id, saveId)!, this.inboxLink()));
+    const batchReceipt = engine.browserBatchReceipt(view.id, saveId)!;
+    const after = engine.run("show", { id: view.id }, entry.actor).review as ReviewView | undefined;
+    const remaining = (after?.items ?? []).filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
+      .map((c) => c.body.question);
+    sendHtml(response, 200, savedHtml(view, batchReceipt.answers, this.inboxLink(), { receipt: batchReceipt, remainingQuestions: remaining }));
   }
 
   private inboxLink(): string {

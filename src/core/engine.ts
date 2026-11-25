@@ -13,6 +13,7 @@ import { EventEmitter } from "node:events";
 import { reviewMarkdown, type ReviewView } from "../cli/render.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
+import { computeRevisionDiff } from "./diff.js";
 import type { SharedContext } from "./quality.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
@@ -62,6 +63,8 @@ export interface Rev {
   default_notice_pending?: boolean;
   reconciliations: { at: string; outcome: string; grant: string }[];
   policy?: PolicyRecord;
+  stale_changed?: string[];
+  applied_evidence?: { action: string; target: string; scope: string; effect: string };
 }
 
 export interface Req {
@@ -107,6 +110,10 @@ export interface BrowserAnswer {
   custom?: string;
   items?: Record<string, string>;
   details?: Record<string, string>;
+  disposition?: Disposition;
+  note?: string;
+  hide_until?: string;
+  clarify_note?: string;
   sureness?: string;
   feedback?: string;
 }
@@ -116,6 +123,12 @@ export type RecordedBrowserAnswer = {
   revision: number;
   answer: AnswerRecord;
 };
+
+export interface BrowserBatchReceipt {
+  answers: RecordedBrowserAnswer[];
+  hidden: { id: string; revision: number; until: string }[];
+  clarifications: { id: string; revision: number; clarification: ClarificationRequest }[];
+}
 
 export interface DecisionLogEntry {
   id: string;
@@ -333,6 +346,18 @@ export class Engine {
     return undefined;
   }
 
+  browserBatchReceipt(reviewId: string, opId: string): BrowserBatchReceipt | undefined {
+    const event = this.store.findOp(opId);
+    if (event?.data.op === "review-page.save" && event.data.review_id === reviewId) {
+      return {
+        answers: (event.data.answers as RecordedBrowserAnswer[] | undefined) ?? [],
+        hidden: (event.data.hidden as { id: string; revision: number; until: string }[] | undefined) ?? [],
+        clarifications: (event.data.clarifications as { id: string; revision: number; clarification: ClarificationRequest }[] | undefined) ?? [],
+      };
+    }
+    return undefined;
+  }
+
   /** A browser presentation can save its whole batch in one event. */
   browserPresentation(reviewId: string, presentationOp: string): string | undefined {
     const event = this.store.findOp(presentationOp);
@@ -345,10 +370,13 @@ export class Engine {
     this.sweep();
     const review = this.reviews.get(reviewId);
     if (!review || review.status !== "prepared") return notFound(reviewId);
+    if (!inputs.length) return { code: EXIT.OTHER, message: "Answer, hide, or clarify at least one card before saving." };
     const at = this.now().toISOString();
     const receipt = presentationOp && this.browserPresentation(reviewId, presentationOp);
     if (presentationOp && !receipt) return { code: EXIT.NOT_ALLOWED, message: "Reopen the page before saving." };
     const answers: RecordedBrowserAnswer[] = [];
+    const hidden: { id: string; revision: number; until: string }[] = [];
+    const clarifications: { id: string; revision: number; clarification: ClarificationRequest; presentation_id?: string }[] = [];
     try {
       for (const input of inputs) {
         const rev = this.revs.get(key(input.id, input.revision));
@@ -358,6 +386,19 @@ export class Engine {
             || (rev.status !== "presented" && !usedDefault) || rev.body.kind === "notice") {
           return { code: EXIT.REVOKED, message: "a displayed request changed; reopen the review before saving" };
         }
+        if (input.hide_until) {
+          if (Number.isNaN(Date.parse(input.hide_until))) throw new UsageError("hide_until must be a date and time");
+          if (rev.status !== "presented") throw new UsageError(`only a presented request can be hidden; this one is ${rev.status}`);
+          hidden.push({ id: rev.id, revision: rev.revision, until: input.hide_until });
+          continue;
+        }
+        if (input.clarify_note) {
+          const clarification: ClarificationRequest = {
+            at, channel: "review-page", note: input.clarify_note, outcome: "needs_clarification",
+          };
+          clarifications.push({ id: rev.id, revision: rev.revision, clarification, ...(receipt ? { presentation_id: receipt } : {}) });
+          continue;
+        }
         const answer = this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true);
         if (receipt) answer.presentation_id = receipt;
         answers.push({ id: rev.id, revision: rev.revision, answer });
@@ -366,8 +407,11 @@ export class Engine {
       if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
       throw error;
     }
-    return this.commit("review-page.save", "review.answered", actor, { review_id: reviewId, answers, page_response_ms: pageResponseMs },
-      { code: EXIT.OK, review_id: reviewId, saved: answers.length }, opId);
+    return this.commit("review-page.save", "review.answered", actor, {
+      review_id: reviewId, answers, page_response_ms: pageResponseMs,
+      ...(hidden.length ? { hidden } : {}),
+      ...(clarifications.length ? { clarifications } : {}),
+    }, { code: EXIT.OK, review_id: reviewId, saved: answers.length, hidden: hidden.length, clarifications: clarifications.length }, opId);
   }
 
   /** Snapshots the source and its prior archives without exposing them to write operations. */
@@ -645,10 +689,12 @@ export class Engine {
       }
       const channel = str(a, "channel");
       const note = optStr(a, "note")?.trim() || undefined;
-      if (rev.clarification && rev.clarification.channel === channel && rev.clarification.note === note) {
+      const rawOutcome = optStr(a, "outcome");
+      const outcome = rawOutcome === "unsure" || rawOutcome === "needs_clarification" ? rawOutcome : undefined;
+      if (rev.clarification && rev.clarification.channel === channel && rev.clarification.note === note && rev.clarification.outcome === outcome) {
         return { code: EXIT.OK, ...ref, clarification: rev.clarification };
       }
-      const clarification = { at, channel, ...(note ? { note } : {}) };
+      const clarification: ClarificationRequest = { at, channel, ...(note ? { note } : {}), ...(outcome ? { outcome } : {}) };
       return this.commit("answer", "request.clarification-requested", actor, { ...ref, clarification, presentation_id: receiptId },
         { code: EXIT.OK, ...ref, clarification }, opId);
     }
@@ -1315,8 +1361,24 @@ export class Engine {
       case "review.answered": {
         const review = this.reviews.get(d.review_id as string);
         if (review && typeof d.page_response_ms === "number") review.page_response_ms = d.page_response_ms;
-        for (const answer of d.answers as RecordedBrowserAnswer[]) {
+        for (const answer of (d.answers as RecordedBrowserAnswer[] | undefined) ?? []) {
           this.recordAnswer(this.mustRev(answer), answer.answer, e);
+        }
+        for (const h of (d.hidden as { id: string; revision: number; until: string }[] | undefined) ?? []) {
+          const r = this.mustRev(h);
+          this.move(r, "hidden", e.at);
+          r.hide_until = h.until;
+        }
+        for (const c of (d.clarifications as { id: string; revision: number; clarification: ClarificationRequest; presentation_id?: string }[] | undefined) ?? []) {
+          const r = this.mustRev(c);
+          r.reply_seq = e.seq;
+          r.reply_presentation = c.presentation_id;
+          this.acknowledge(r, c.presentation_id, e.at);
+          if (r.status === "default_claimed") {
+            this.revoke(r);
+            this.move(r, "presented", e.at);
+          }
+          r.clarification = c.clarification;
         }
         break;
       }
@@ -1340,6 +1402,7 @@ export class Engine {
       case "request.cancelled":
       case "request.expired": {
         const r = this.mustRev(d);
+        if (e.type === "request.stale" && Array.isArray(d.changed)) r.stale_changed = d.changed as string[];
         this.revoke(r);
         this.move(r, e.type === "request.stale" ? "stale" : e.type === "request.cancelled" ? "cancelled" : "expired", e.at);
         break;
@@ -1385,6 +1448,12 @@ export class Engine {
         g.status = "done";
         const mismatch = d.mismatch as string[];
         if (mismatch.length) r.flags.push(`effect differs from authorization: ${mismatch.join(", ")}`);
+        if (d.evidence && typeof d.evidence === "object") {
+          const ev = d.evidence as { action?: string; target?: string; scope?: string; effect?: string };
+          if (ev.action && ev.target && ev.scope && ev.effect) {
+            r.applied_evidence = { action: ev.action, target: ev.target, scope: ev.scope, effect: ev.effect };
+          }
+        }
         this.move(r, mismatch.length ? "outcome_unknown" : "applied", e.at);
         this.recordDefaultApplication(r, g, d, e.at);
         break;
@@ -1720,6 +1789,7 @@ export class Engine {
 
   private view(r: Rev): Args {
     const req = this.reqOf(r);
+    const prev = r.revision > 1 ? this.revs.get(key(r.id, r.revision - 1)) : undefined;
     return {
       id: r.id, revision: r.revision, current: r.revision === req.current, status: this.effective(r, this.now().toISOString()),
       body: r.body, basis_files: Object.keys(r.basis), answer: r.answer ?? null, answers: r.answer_count,
@@ -1728,6 +1798,8 @@ export class Engine {
       reconciliations: r.reconciliations, reversals: req.reversals, owner: req.owner, observers: req.observers.length,
       ...(r.policy ? { policy: r.policy } : {}),
       ...(r.clarification ? { clarification: r.clarification } : {}),
+      ...(r.applied_evidence ? { applied_evidence: r.applied_evidence } : {}),
+      ...(prev ? { revision_diff: computeRevisionDiff(prev, r) } : {}),
       epoch: req.epoch,
     };
   }

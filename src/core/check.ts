@@ -159,6 +159,12 @@ export function checkRequest(body: unknown, shared?: SharedContext): CheckFailur
       break;
     }
   }
+  if (b.skip_if !== undefined) {
+    if (!Array.isArray(b.skip_if) || b.skip_if.some((rule) => !rule || typeof rule !== "object" || Array.isArray(rule)
+        || !nonEmpty(rule.card) || !nonEmpty(rule.option) || (rule.reason !== undefined && !nonEmpty(rule.reason)))) {
+      fail("S26-fields", "Each skip_if entry needs nonempty card and option identifiers.");
+    }
+  }
   const waived = new Set<string>();
   if (b.waivers !== undefined) {
     if (!Array.isArray(b.waivers)) fail("S25-waiver", "Supply waivers as a list of heuristic rule IDs and reasons.");

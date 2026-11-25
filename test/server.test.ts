@@ -333,6 +333,7 @@ test("a browser batch presents previews and saves only its displayed revisions",
     assert.equal((await current.save({ origin: current.origin, cookie: current.cookie })).status, 400);
     current.form.set("feedback-1", "needed_more");
     const custom = "  Put <maps> first.\nKeep the last two together.  ";
+    current.form.set("choice-2", "__custom__");
     current.form.set("custom-2", custom);
     const posted = await current.save({ origin: current.origin, cookie: current.cookie });
     assert.equal(posted.status, 200);

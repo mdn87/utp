@@ -1,5 +1,6 @@
 import { answerValue, cardMetadata, dependencyLabels, reviewContext, sharedFromIntent, type ReviewView } from "../cli/render.js";
-import type { RecordedBrowserAnswer } from "../core/engine.js";
+import type { BrowserBatchReceipt, RecordedBrowserAnswer } from "../core/engine.js";
+import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
 import { waiverNotes } from "../core/quality.js";
 import { CLARITY_FEEDBACK, SURENESS, type RequestBody } from "../core/types.js";
@@ -12,6 +13,9 @@ const KIND_LABELS: Record<string, string> = {
 const UNDO_LABELS: Record<string, string> = {
   easy: "Easy to undo", costly: "Costly to undo", one_way: "Can't be undone",
 };
+
+export const cardHasAuthorization = (body: RequestBody): boolean =>
+  body.kind === "approve" || (body.options ?? []).some((o) => !!o.authorization);
 
 export function escapeText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
@@ -26,6 +30,26 @@ function contextHtml(review: ReviewView): string {
   const fields = reviewContext(review.intent).map(([label, value]) =>
     `<dt>${escapeText(label)}</dt><dd class="preserve">${escapeText(value)}</dd>`).join("");
   return `<dl class="review-context" aria-label="Review context">${fields}</dl>`;
+}
+
+function revisionBannerHtml(diff: RevisionDiff): string {
+  const bullets: string[] = [];
+  if (diff.trigger.kind === "clarification") {
+    bullets.push(diff.trigger.note
+      ? `<li><strong>Triggered by your clarification on rev ${diff.from_revision}:</strong> "${escapeText(diff.trigger.note)}"</li>`
+      : `<li>Triggered by a clarification request on rev ${diff.from_revision}.</li>`);
+  } else if (diff.trigger.kind === "stale") {
+    const files = diff.trigger.files?.length ? diff.trigger.files.join(", ") : "tracked basis files";
+    bullets.push(`<li><strong>Rev ${diff.from_revision} went stale:</strong> ${escapeText(files)} changed.</li>`);
+  } else if (diff.trigger.kind === "custom_answer") {
+    bullets.push(`<li><strong>Revised after your reply on rev ${diff.from_revision}:</strong> "${escapeText(diff.trigger.custom ?? "")}"</li>`);
+  }
+  if (diff.prior_answer) {
+    bullets.push(`<li><strong>Previous pick on rev ${diff.from_revision}:</strong> ${escapeText(diff.prior_answer)} <em>(not pre-selected — confirm or change below)</em></li>`);
+  }
+  for (const change of diff.changes) bullets.push(`<li>${escapeText(change)}</li>`);
+  if (diff.unchanged.length) bullets.push(`<li class="muted">Unchanged: ${escapeText(diff.unchanged.join(", "))}.</li>`);
+  return `<aside class="revision-banner" aria-label="Revision changes"><p class="banner-title">Updated from rev ${diff.from_revision} &rarr; rev ${diff.to_revision}</p><ul>${bullets.join("")}</ul></aside>`;
 }
 
 function itemDetailHtml(body: RequestBody, itemId: string): string {
@@ -56,18 +80,49 @@ function itemDetailHtml(body: RequestBody, itemId: string): string {
   return "";
 }
 
-export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], returnLink: string): string {
-  const rows = answers.map(({ id, revision, answer }) => {
-    const card = review.items.find(item => item.id === id && item.revision === revision);
-    return `<dt>${escapeText(card?.body.question ?? id)}</dt><dd class="preserve">${escapeText(answerValue(answer, card?.body))}</dd>
-      <dd class="card-reference">${escapeText(id)}@${revision}</dd>`;
-  }).join("");
-  const summary = `UTP recorded ${answers.length} ${answers.length === 1 ? "answer" : "answers"}.`;
-  return page("Answers saved", `<h1>Answers saved</h1><p class="receipt">${summary}</p>
-    ${contextHtml(review)}${rows ? `<dl aria-label="Saved answers">${rows}</dl>` : ""}${returnLink}`);
+export interface SavedHtmlOptions {
+  receipt?: BrowserBatchReceipt;
+  remainingQuestions?: string[];
+  pickupHtml?: string;
+  editFormHtml?: string;
 }
 
-export function reviewHtml(review: ReviewView, token: string, message?: string, form?: URLSearchParams): string {
+export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], returnLink: string, opts: SavedHtmlOptions = {}): string {
+  const rows = answers.map(({ id, revision, answer }) => {
+    const card = review.items.find(item => item.id === id && item.revision === revision);
+    const noteLine = answer.note ? `<dd class="muted">Note: ${escapeText(answer.note)}</dd>` : "";
+    return `<dt>${escapeText(card?.body.question ?? id)}</dt><dd class="preserve">${escapeText(answerValue(answer, card?.body))}</dd>${noteLine}
+      <dd class="card-reference">${escapeText(id)}@${revision}</dd>`;
+  }).join("");
+  const hiddenRows = (opts.receipt?.hidden ?? []).map(({ id, revision, until }) => {
+    const card = review.items.find(item => item.id === id && item.revision === revision);
+    return `<dt>${escapeText(card?.body.question ?? id)}</dt><dd class="muted">Hidden until ${escapeText(until)}</dd><dd class="card-reference">${escapeText(id)}@${revision}</dd>`;
+  }).join("");
+  const clarRows = (opts.receipt?.clarifications ?? []).map(({ id, revision, clarification }) => {
+    const card = review.items.find(item => item.id === id && item.revision === revision);
+    return `<dt>${escapeText(card?.body.question ?? id)}</dt><dd class="preserve">Approval withheld pending clarification: "${escapeText(clarification.note ?? "")}"</dd><dd class="card-reference">${escapeText(id)}@${revision}</dd>`;
+  }).join("");
+  const parts: string[] = [];
+  if (answers.length) parts.push(`${answers.length} ${answers.length === 1 ? "answer" : "answers"}`);
+  if (opts.receipt?.hidden.length) parts.push(`${opts.receipt.hidden.length} hidden`);
+  if (opts.receipt?.clarifications.length) parts.push(`${opts.receipt.clarifications.length} held for clarification`);
+  const summary = `UTP recorded ${parts.join(", ") || "0 answers"}.`;
+  const remaining = opts.remainingQuestions?.length
+    ? `<section class="remaining-cards" role="status"><strong>Still open in this review (${opts.remainingQuestions.length}):</strong><ul>${opts.remainingQuestions.map((q) => `<li>${escapeText(q)}</li>`).join("")}</ul></section>`
+    : "";
+  return page("Answers saved", `<h1>Answers saved</h1><p class="receipt">${summary}</p>
+    ${opts.pickupHtml ?? ""}${remaining}${contextHtml(review)}
+    ${rows ? `<dl aria-label="Saved answers">${rows}</dl>` : ""}
+    ${clarRows ? `<dl aria-label="Held for clarification">${clarRows}</dl>` : ""}
+    ${hiddenRows ? `<dl aria-label="Hidden cards">${hiddenRows}</dl>` : ""}
+    ${opts.editFormHtml ?? ""}${returnLink}`);
+}
+
+export interface ReviewHtmlOptions {
+  previewLines?: string[];
+}
+
+export function reviewHtml(review: ReviewView, token: string, message?: string, form?: URLSearchParams, opts: ReviewHtmlOptions = {}): string {
   const field = (name: string): string => escapeText(form?.get(name) ?? "");
   const checked = (name: string, value: string): string => form?.get(name) === value ? " checked" : "";
   const chipGroup = (name: string, label: string, choices: readonly (readonly [string, string])[]): string => {
@@ -79,6 +134,7 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
   const shared = sharedFromIntent(review.intent);
   const cards = review.items.map((item, index) => {
     const b = item.body;
+    const hasAuth = cardHasAuthorization(b);
     const kindLabel = KIND_LABELS[b.kind] ?? b.kind;
     const undoLabel = UNDO_LABELS[b.stakes.reversibility] ?? b.stakes.reversibility;
     const stakesClass = b.stakes.reversibility === "one_way" ? "badge-danger" : b.stakes.reversibility === "costly" ? "badge-warn" : "badge-easy";
@@ -86,6 +142,7 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
       `<article><h2>${escapeText(b.question)}</h2>`,
       `<p class="card-badges"><span class="badge">${escapeText(kindLabel)}</span><span class="badge ${stakesClass}">${escapeText(undoLabel)}</span><span class="badge">Level ${b.level}</span></p>`,
     ];
+    if (item.revision_diff) parts.push(revisionBannerHtml(item.revision_diff));
     if (b.kind !== "notice") parts.push("<h3>What this question addresses</h3>");
     parts.push(notice(b.summary ?? b.why_now));
     if (b.summary && b.summary !== b.why_now) parts.push("<h3>Why now</h3>", notice(b.why_now));
@@ -113,16 +170,22 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
         if (prompt.detailLabel) parts.push(`<label>${escapeText(prompt.detailLabel)}<textarea name="detail-${index}-${n}" rows="2">${field(`detail-${index}-${n}`)}</textarea></label>`);
         parts.push("</fieldset>");
       }
-      if (b.options?.length) parts.push('<fieldset><legend>Choose an option</legend>', ...b.options.map((option) => {
-        const authority = option.authorization;
-        const scope = authority ? `<span class="muted">${escapeText(
-          `Authorizes: ${authority.action} on ${authority.target} · Scope: ${authority.scope}`
-            + (authority.expected_effect ? ` · Expected result: ${authority.expected_effect}` : ""))}</span>` : "";
-        const next = option.agent_next ? `<span class="agent-next"><strong>Agent does next:</strong> ${escapeText(option.agent_next)}</span>` : "";
-        const recTag = b.recommendation?.option === option.id ? ' <span class="badge badge-rec">Recommended</span>' : "";
-        const defTag = b.default?.option === option.id ? ' <span class="badge badge-default">Default if unanswered</span>' : "";
-        return `<label class="option"><input type="radio" name="choice-${index}" value="${escapeText(option.id)}"${checked(`choice-${index}`, option.id)}><span><strong>${escapeText(option.label)}</strong> <small class="muted">(${escapeText(option.id)})</small>${recTag}${defTag}<br>${escapeText(option.consequence)}${scope ? "<br>" + scope : ""}${next ? "<br>" + next : ""}</span></label>`;
-      }), "</fieldset>");
+      if (b.options?.length) {
+        const optionRows = b.options.map((option) => {
+          const authority = option.authorization;
+          const scope = authority ? `<span class="muted">${escapeText(
+            `Authorizes: ${authority.action} on ${authority.target} · Scope: ${authority.scope}`
+              + (authority.expected_effect ? ` · Expected result: ${authority.expected_effect}` : ""))}</span>` : "";
+          const next = option.agent_next ? `<span class="agent-next"><strong>Agent does next:</strong> ${escapeText(option.agent_next)}</span>` : "";
+          const recTag = b.recommendation?.option === option.id ? ' <span class="badge badge-rec">Recommended</span>' : "";
+          const defTag = b.default?.option === option.id ? ' <span class="badge badge-default">Default if unanswered</span>' : "";
+          return `<label class="option"><input type="radio" name="choice-${index}" value="${escapeText(option.id)}"${checked(`choice-${index}`, option.id)}><span><strong>${escapeText(option.label)}</strong> <small class="muted">(${escapeText(option.id)})</small>${recTag}${defTag}<br>${escapeText(option.consequence)}${scope ? "<br>" + scope : ""}${next ? "<br>" + next : ""}</span></label>`;
+        });
+        if (!hasAuth) {
+          optionRows.push(`<label class="option"><input type="radio" name="choice-${index}" value="__custom__"${checked(`choice-${index}`, "__custom__")}><span><strong>Your own answer</strong><br>Use the text box below instead of a listed option.</span></label>`);
+        }
+        parts.push('<fieldset><legend>Choose an option</legend>', ...optionRows, "</fieldset>");
+      }
     }
     if (b.recommendation) {
       const rec = b.recommendation;
@@ -139,7 +202,19 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     for (const flag of item.flags) parts.push(notice(flag));
     parts.push(`<p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code> · ${escapeText(cardMetadata(item))}</p>`);
     if (b.kind !== "notice") {
-      parts.push(`<label>Your own answer <textarea name="custom-${index}" rows="2">${field(`custom-${index}`)}</textarea></label>`);
+      if (hasAuth) {
+        parts.push(`<label>Propose a different scope or ask a question (withholds approval — agent revises before acting)<textarea name="custom-${index}" rows="2">${field(`custom-${index}`)}</textarea></label>`);
+      } else {
+        parts.push(`<label>Your own answer <textarea name="custom-${index}" rows="2">${field(`custom-${index}`)}</textarea></label>`);
+        parts.push(`<label>Optional note for the agent (keeps your chosen option) <textarea name="note-${index}" rows="2">${field(`note-${index}`)}</textarea></label>`);
+      }
+      const actionChoices: [string, string][] = [
+        ["", "Answer now or leave open"],
+        ["hide", "Hide until tomorrow"],
+        ["answered_elsewhere", "Answered elsewhere"],
+        ["no_longer_matters", "No longer matters"],
+      ];
+      parts.push(`<div class="card-defer">${chipGroup(`action-${index}`, "Batch action (optional)", actionChoices)}</div>`);
       const sureness = chipGroup(`sureness-${index}`, "How sure are you?", SURENESS.map((choice) =>
         [choice, choice.charAt(0).toUpperCase() + choice.slice(1)]));
       const clarity = chipGroup(`feedback-${index}`, "How clear was this card?", Object.entries(CLARITY_FEEDBACK));
@@ -160,11 +235,18 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
   const countText = noticeCount > 0 && questionCount > 0
     ? `${questionCount} ${questionCount === 1 ? "decision" : "decisions"} · ${noticeCount} ${noticeCount === 1 ? "notice" : "notices"}`
     : `${review.items.length} ${review.items.length === 1 ? "request" : "requests"}`;
+  const previewBlock = opts.previewLines?.length
+    ? `<section class="combined-summary" role="status"><h3>Combined plan check</h3><ul>${opts.previewLines.map((l) => `<li>${escapeText(l)}</li>`).join("")}</ul></section>`
+    : "";
   return page("Review", `<h1>Review</h1><p class="count">${countText}</p>
     ${contextHtml(review)}
     ${defaults.join("")}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}
     <form method="post"><input type="hidden" name="presentation" value="${escapeText(token)}">
-    ${cards.join("")}<button type="submit">Save answers</button></form>`);
+    ${previewBlock}${cards.join("")}
+    <div class="form-actions">
+      <button type="submit" name="preview" value="1" class="button-secondary">Check combined plan</button>
+      <button type="submit">${opts.previewLines?.length ? "Confirm and save" : "Save answers"}</button>
+    </div></form>`);
 }
 
 export function page(title: string, body: string): string {

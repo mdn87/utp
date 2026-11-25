@@ -1,6 +1,7 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
 import type { AcceptanceGoal, Actor, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
+import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
 import { validTaskTitle } from "../core/check.js";
 import { waiverNotes, type SharedContext } from "../core/quality.js";
@@ -17,6 +18,8 @@ export interface RequestView {
   review_id?: string;
   asked_at?: string;
   owner?: Actor;
+  revision_diff?: RevisionDiff;
+  applied_evidence?: { action: string; target: string; scope: string; effect: string };
 }
 
 export interface ReviewView {
@@ -98,9 +101,30 @@ export function completionMarkdown(goals: AcceptanceGoal[], notices: RequestView
   return lines.join("\n").trimEnd();
 }
 
+export function revisionBannerLines(diff: RevisionDiff): string[] {
+  const lines = [`**Updated from rev ${diff.from_revision} -> rev ${diff.to_revision}**`];
+  if (diff.trigger.kind === "clarification") {
+    lines.push(diff.trigger.note
+      ? `- Triggered by your clarification on rev ${diff.from_revision}: "${diff.trigger.note}"`
+      : `- Triggered by a clarification request on rev ${diff.from_revision}.`);
+  } else if (diff.trigger.kind === "stale") {
+    const files = diff.trigger.files?.length ? diff.trigger.files.join(", ") : "tracked basis files";
+    lines.push(`- Rev ${diff.from_revision} went stale because ${files} changed.`);
+  } else if (diff.trigger.kind === "custom_answer") {
+    lines.push(`- Revised after your reply on rev ${diff.from_revision}: "${diff.trigger.custom ?? ""}"`);
+  }
+  if (diff.prior_answer) {
+    lines.push(`- On rev ${diff.from_revision} you chose: ${diff.prior_answer} (not pre-selected — confirm or change below).`);
+  }
+  for (const change of diff.changes) lines.push(`- ${change}`);
+  if (diff.unchanged.length) lines.push(`- Unchanged: ${diff.unchanged.join(", ")}.`);
+  return lines;
+}
+
 export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView): string {
   const b = v.body;
   const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
+  if (v.revision_diff) out.push(...revisionBannerLines(v.revision_diff), "");
   if (!v.current) out.push("A later revision replaced this card.", "");
   else if (v.status === "cancelled") out.push("This card was cancelled.", "");
   if (b.kind !== "notice") out.push("**What this question addresses**");

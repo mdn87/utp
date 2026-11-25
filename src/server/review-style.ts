@@ -196,6 +196,22 @@ a { display: inline-flex; align-items: center; min-height: 44px; color: var(--cy
 .receipt { border-inline-start: 3px solid var(--green); }
 .error { border-inline-start: 3px solid var(--red); }
 [role="status"] { border-inline-start: 3px solid var(--amber); }
+.revision-banner {
+  margin: .75rem 0 1rem;
+  padding: .75rem 1rem;
+  border: 1px solid #ffbd5955;
+  border-inline-start: 3px solid var(--amber);
+  border-radius: .5rem;
+  background: #141923;
+}
+.revision-banner .banner-title { margin: 0 0 .4rem; font-weight: 600; color: var(--amber); }
+.revision-banner ul, .combined-summary ul, .remaining-cards ul { margin: .35rem 0 0; padding-inline-start: 1.25rem; color: var(--soft); }
+.combined-summary { margin: 0 0 1rem; }
+.combined-summary h3 { margin: 0 0 .4rem; }
+.remaining-cards { margin: .75rem 0 1rem; }
+.card-defer { margin: 1rem 0; padding-top: .75rem; border-top: 1px solid var(--line); }
+.form-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
+.button-secondary { color: var(--soft); border-color: var(--field-edge); background: var(--panel); }
 @media (max-width: 36rem) {
   button { width: 100%; }
 }
