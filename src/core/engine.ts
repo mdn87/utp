@@ -8,9 +8,10 @@
 // Request bodies are stored as content-addressed payloads; answers, grants
 // and evidence are small and travel inside their event.
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { reviewMarkdown, type ReviewView } from "../cli/render.js";
+import { BALLOT_OPTIONS, normalizeBlind, publicJudgment, revealJudgment } from "./blind.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
 import { computeRevisionDiff } from "./diff.js";
@@ -65,6 +66,7 @@ export interface Rev {
   policy?: PolicyRecord;
   stale_changed?: string[];
   applied_evidence?: { action: string; target: string; scope: string; effect: string };
+  blind_swapped?: boolean;
 }
 
 export interface Req {
@@ -118,6 +120,8 @@ export interface BrowserAnswer {
   clarify_note?: string;
   sureness?: string;
   feedback?: string;
+  ratings?: { a: number; b: number };
+  repeat_test?: boolean;
 }
 
 export type RecordedBrowserAnswer = {
@@ -278,9 +282,22 @@ function contentKey(body: RequestBody, basis: Basis): string {
     steps: Array.isArray(body.steps) ? body.steps.map(sorted) : [],
     goals: Array.isArray(body.goals) ? body.goals.map(sorted) : [],
     assumptions: Array.isArray(body.assumptions) ? body.assumptions.map(sorted) : [],
+    blind: sorted(body.blind),
     default: sorted(body.default),
     basis: sorted(basis),
   });
+}
+
+function blindBody(body: RequestBody): RequestBody {
+  if (body.kind !== "judge") return body;
+  const blind = normalizeBlind(body.blind);
+  if (typeof blind === "string") throw new UsageError(blind);
+  return { ...body, blind };
+}
+
+export function ballotContent(answer: Pick<AnswerRecord, "value" | "note" | "ratings" | "repeat_test" | "feedback" | "sureness">): string {
+  const { value, note, ratings, repeat_test, feedback, sureness } = answer;
+  return JSON.stringify({ value: value ?? null, note: note?.trim() || undefined, ratings, repeat_test, feedback, sureness });
 }
 
 function strongProvenance(a: AnswerRecord): boolean {
@@ -487,7 +504,7 @@ export class Engine {
   }
 
   private preBeginEditable(rev: Rev, st: State): boolean {
-    return (st === "answered" || st === "granted") && !rev.remaining_scope && !rev.default_application;
+    return rev.body.kind !== "judge" && (st === "answered" || st === "granted") && !rev.remaining_scope && !rev.default_application;
   }
 
   /** Pre-begin edit or withdraw for an answered or granted card (locks once execution begins). */
@@ -498,7 +515,12 @@ export class Engine {
     const at = this.now().toISOString();
     const st = this.effective(rev, at);
     if (!this.preBeginEditable(rev, st)) {
-      return { code: EXIT.NOT_ALLOWED, message: `Work is already ${st}; answers lock once execution begins.` };
+      return {
+        code: EXIT.NOT_ALLOWED,
+        message: rev.body.kind === "judge"
+          ? "Blind ballots are immutable once saved."
+          : `Work is already ${st}; answers lock once execution begins.`,
+      };
     }
     const op = browser ? "review-page.edit" : "edit";
     const channel = browser ? "review-page" : str(a, "channel");
@@ -557,16 +579,17 @@ export class Engine {
         if (!tracked.has(st)) continue;
         const ts = rev.answer?.at ?? rev.presented_at ?? rev.asked_at;
         if (ts > latest) latest = ts;
+        const vis = this.visibleBody(rev);
         const ansVal = rev.answer ? (
           rev.answer.authorization ? `${rev.answer.authorization.action} ${rev.answer.authorization.target}`
             : rev.answer.disposition ? rev.answer.disposition.replaceAll("_", " ")
             : typeof rev.answer.value === "string"
-              ? (rev.body.options?.find((o) => o.id === rev.answer!.value)?.label ?? rev.answer.value)
+              ? (vis.options?.find((o) => o.id === rev.answer!.value)?.label ?? rev.answer.value)
             : rev.answer.custom ? `"${rev.answer.custom}"`
             : Object.entries(rev.answer.items ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ")
         ) : undefined;
         cards.push({
-          id: rev.id, revision: rev.revision, question: rev.body.question, status: st,
+          id: rev.id, revision: rev.revision, question: vis.question, status: st,
           ...(ansVal ? { answer_summary: ansVal } : {}),
           editable: this.preBeginEditable(rev, st),
           ...(rev.applied_evidence ? { applied_evidence: rev.applied_evidence } : {}),
@@ -718,16 +741,16 @@ export class Engine {
   }
 
   private ask(a: Args, actor: Actor, opId?: string, decision?: { policy: PolicyRecord; result: OpResult }): OpResult {
-    const body = a.body as RequestBody;
     const rawShared = a.shared as SharedContext | undefined;
     const shared: SharedContext | undefined = rawShared && typeof rawShared === "object" && !Array.isArray(rawShared)
       ? {
         ...(rawShared.glossary && typeof rawShared.glossary === "object" && !Array.isArray(rawShared.glossary) ? { glossary: rawShared.glossary } : {}),
         ...(Array.isArray(rawShared.evidence) ? { evidence: rawShared.evidence } : {}),
       } : undefined;
-    const failures = checkRequest(body, shared);
+    const failures = checkRequest(a.body, shared);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
-    const basis = this.basisFor(body, basisArg(a.basis));
+    const body = blindBody(a.body as RequestBody);
+    const basis = body.kind === "judge" ? {} : this.basisFor(body, basisArg(a.basis));
     let near: string | undefined;
     if (body.dedupe_key) {
       const ck = contentKey(body, basis);
@@ -755,7 +778,8 @@ export class Engine {
       ...(near ? { near_duplicate: near } : {}),
     };
     return this.commit(decision ? "decide" : "ask", "request.asked", actor,
-      { id, revision: 1, basis, review_id, owner: actor, ...(decision ? { policy: decision.policy } : {}) }, result, opId, { body });
+      { id, revision: 1, basis, review_id, owner: actor, ...(decision ? { policy: decision.policy } : {}),
+        ...(body.kind === "judge" ? { blind_swapped: randomInt(2) === 1 } : {}) }, result, opId, { body });
   }
 
   private flush(actor: Actor, opId: string | undefined, delivery: Args): OpResult {
@@ -782,7 +806,11 @@ export class Engine {
       return body !== undefined && body.level === 3 && (body.kind === "approve" || body.options?.some((o) => !!o.authorization));
     });
     const digest = questions === 0 && delivery.digest === true;
-    const route = digest ? "morning-report" : questions >= 3 ? "review-page" : "conversation";
+    const hasMediaJudge = items.some((k) => {
+      const b = this.revs.get(k)?.body;
+      return b?.kind === "judge" && b.blind?.candidates.some((c) => "data" in c.artifact);
+    });
+    const route = digest ? "morning-report" : (questions >= 3 || hasMediaJudge) ? "review-page" : "conversation";
     const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
       if (!rev.default_notice_pending || !rev.default_application) return [];
       const grant = this.mustGrant(rev.default_application.grant);
@@ -855,6 +883,18 @@ export class Engine {
     }
     if (rev.body.kind === "notice") return { code: EXIT.NOT_ALLOWED, message: "notices need no answer" };
     const ref = { id: rev.id, revision: rev.revision };
+    if (rev.body.kind === "judge" && rev.answer) {
+      const fixed = { code: EXIT.REVOKED, message: "this blind ballot has already been saved" };
+      if (a.withdraw === true || a.hide_until !== undefined || a.clarify === true || a.channel === "conversation") return fixed;
+      try {
+        const submitted = this.answerRecord(rev, a, actor, at);
+        return ballotContent(submitted) === ballotContent(rev.answer)
+          ? { code: EXIT.OK, ...ref, answer: rev.answer } : fixed;
+      } catch (error) {
+        if (error instanceof UsageError) return fixed;
+        throw error;
+      }
+    }
     let chat: Partial<AnswerRecord> | undefined;
     if (a.channel === "conversation" && (a.quote !== undefined || rev.body.level === 3 || a.presentation !== undefined)) {
       const check = this.chatReply(rev, a, actor, turns, opId);
@@ -1257,13 +1297,14 @@ export class Engine {
     if (!canTransition(st, "superseded")) {
       return { code: EXIT.NOT_ALLOWED, message: `a ${st} request can't be revised${st === "outcome_unknown" ? "; reconcile it first" : ""}` };
     }
-    const body = a.body as RequestBody;
-    const failures = checkRequest(body);
+    const failures = checkRequest(a.body);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
-    const basis = this.basisFor(body, basisArg(a.basis));
+    const body = blindBody(a.body as RequestBody);
+    const basis = body.kind === "judge" ? {} : this.basisFor(body, basisArg(a.basis));
     const revision = rev.revision + 1;
     const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", this.now().toISOString());
-    return this.commit("revise", "request.revised", actor, { id: req.id, revision, basis, review_id },
+    return this.commit("revise", "request.revised", actor, { id: req.id, revision, basis, review_id,
+      ...(body.kind === "judge" ? { blind_swapped: randomInt(2) === 1 } : {}) },
       { code: EXIT.OK, id: req.id, revision, review_id, superseded: rev.revision }, opId, { body });
   }
 
@@ -1360,7 +1401,7 @@ export class Engine {
         return !TERMINAL.has(st) && st !== "applied" && st !== "closed";
       });
     }
-    const basisFiles = [...new Set(revs.flatMap((r) => Object.keys(r.expected_basis)))].sort();
+    const basisFiles = [...new Set(revs.flatMap((r) => r.body.kind === "judge" ? [] : Object.keys(r.expected_basis)))].sort();
     if (a.files_only === true) {
       return { code: EXIT.OK, ...(reviewId ? { review_id: reviewId } : {}), basis_files: basisFiles };
     }
@@ -1389,9 +1430,11 @@ export class Engine {
     const cards: ResumeCardPacket[] = ordered.map((r) => {
       const req = this.reqOf(r);
       const st = this.effective(r, at);
-      const stale_files = supplied
-        ? Object.keys(r.expected_basis).filter((p) => p in supplied && supplied[p] !== r.expected_basis[p])
-        : (r.stale_changed ?? []);
+      const stale_files = r.body.kind === "judge"
+        ? []
+        : supplied
+          ? Object.keys(r.expected_basis).filter((p) => p in supplied && supplied[p] !== r.expected_basis[p])
+          : (r.stale_changed ?? []);
       const auth = r.answer ? (this.authorizationFor(r, r.answer) ?? null) : null;
       const needs_takeover = !sameActor(req.owner, actor)
         && !TERMINAL.has(st) && !["executing", "outcome_unknown", "applied", "closed"].includes(st);
@@ -1508,7 +1551,7 @@ export class Engine {
     const at = this.now().toISOString();
     return [...this.reqs.values()].map((req) => {
       const rev = this.current(req);
-      const b = rev.body;
+      const b = this.visibleBody(rev);
       return {
         entry: {
           id: req.id, revision: rev.revision, kind: b.kind, level: b.level, level_reason: b.level_reason, question: b.question,
@@ -1648,7 +1691,7 @@ export class Engine {
         r.reply_seq = e.seq;
         r.reply_presentation = d.presentation_id as string | undefined;
         this.acknowledge(r, d.presentation_id, e.at);
-        if (d.chat_reply === true || d.clear_answer === true) {
+        if ((d.chat_reply === true || d.clear_answer === true) && !(r.body.kind === "judge" && r.answer)) {
           if (d.retain_answer !== true) delete r.answer;
           if (r.status === "granted") this.revoke(r);
           if (["granted", "answered", "hidden"].includes(r.status)) this.move(r, "presented", e.at);
@@ -1866,6 +1909,7 @@ export class Engine {
       key: key(id, revision), id, revision, body: this.store.getPayload<RequestBody>(sha), body_sha: sha,
       status: "queued", basis, expected_basis: { ...basis }, review_id, asked_at: e.at,
       answer_count: 0, grants: [], flags: [], reconciliations: [],
+      ...(e.data.blind_swapped === true ? { blind_swapped: true } : {}),
       ...(e.data.policy ? { policy: e.data.policy as PolicyRecord } : {}),
     };
     this.revs.set(r.key, r);
@@ -1986,7 +2030,7 @@ export class Engine {
   }
 
   private answerRecord(rev: Rev, a: Args, actor: Actor, at: string, browser = false): AnswerRecord {
-    const options = rev.body.options ?? [];
+    const options = rev.body.kind === "judge" ? BALLOT_OPTIONS : rev.body.options ?? [];
     const value = optStr(a, "value") ?? null;
     if (value !== null && !options.some((o) => o.id === value)) {
       throw new UsageError(`option ${value} isn't on this card; its options are ${options.map((o) => o.id).join(", ") || "none"}`);
@@ -1998,6 +2042,26 @@ export class Engine {
     const custom = optStr(a, "custom");
     const items = this.answerMap(a.items, "items");
     const details = this.answerMap(a.details, "details");
+    const suppliedNote = optStr(a, "note");
+    const note = rev.body.kind === "judge" ? suppliedNote?.trim() || undefined : suppliedNote;
+    let ratings: AnswerRecord["ratings"];
+    let repeat_test: boolean | undefined;
+    if (rev.body.kind === "judge") {
+      if (value === null || custom || disposition || items || details) {
+        throw new UsageError("choose a listed ballot option");
+      }
+      if (a.ratings !== undefined) {
+        const r = a.ratings as { a?: unknown; b?: unknown } | null;
+        if (!r || ![r.a, r.b].every((score) => typeof score === "number" && Number.isInteger(score) && score >= 1 && score <= 5)) {
+          throw new UsageError("give both candidates a rating from 1 to 5");
+        }
+        ratings = { a: r.a as number, b: r.b as number };
+      }
+      if (a.repeat_test !== undefined) {
+        if (typeof a.repeat_test !== "boolean") throw new UsageError("repeat_test must be true or false");
+        repeat_test = a.repeat_test;
+      }
+    }
     const prompts = itemPrompts(rev.body);
     if (prompts.length) {
       if (value !== null || ((custom || disposition) && (items || details))) {
@@ -2025,7 +2089,7 @@ export class Engine {
     };
     const extra: Partial<AnswerRecord> = {
       custom, items, details, disposition, sureness: sureness as AnswerRecord["sureness"],
-      feedback, note: optStr(a, "note"), quote: optStr(a, "quote"),
+      feedback, note, ratings, repeat_test, quote: optStr(a, "quote"),
       addressed: a.addressed === true ? true : undefined,
     };
     if (channel === "terminal-review" && typeof a.active_response_ms === "number"
@@ -2092,18 +2156,24 @@ export class Engine {
   private view(r: Rev): Args {
     const req = this.reqOf(r);
     const prev = r.revision > 1 ? this.revs.get(key(r.id, r.revision - 1)) : undefined;
+    const body = this.visibleBody(r);
     return {
       id: r.id, revision: r.revision, current: r.revision === req.current, status: this.effective(r, this.now().toISOString()),
-      body: r.body, basis_files: Object.keys(r.basis), answer: r.answer ?? null, answers: r.answer_count,
+      body, basis_files: r.body.kind === "judge" ? [] : Object.keys(r.basis), answer: r.answer ?? null, answers: r.answer_count,
+      ...(r.body.kind === "judge" && r.body.blind && r.answer ? { blind_reveal: revealJudgment(r.body.blind, r.blind_swapped === true) } : {}),
       grants: r.grants.map((g) => this.grants.get(g)), flags: r.flags, review_id: r.review_id, asked_at: r.asked_at,
       presented_at: r.presented_at ?? null, hide_until: r.hide_until ?? null, remaining_scope: r.remaining_scope ?? null,
       reconciliations: r.reconciliations, reversals: req.reversals, owner: req.owner, observers: req.observers.length,
       ...(r.policy ? { policy: r.policy } : {}),
       ...(r.clarification ? { clarification: r.clarification } : {}),
       ...(r.applied_evidence ? { applied_evidence: r.applied_evidence } : {}),
-      ...(prev ? { revision_diff: computeRevisionDiff(prev, r) } : {}),
+      ...(prev ? { revision_diff: computeRevisionDiff({ ...prev, body: this.visibleBody(prev) }, { ...r, body }) } : {}),
       epoch: req.epoch,
     };
+  }
+
+  private visibleBody(rev: Rev): RequestBody {
+    return rev.body.kind === "judge" ? publicJudgment(rev.body, rev.blind_swapped === true) : rev.body;
   }
 
   private resolve(ref: string): Rev | undefined {

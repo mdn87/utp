@@ -1,6 +1,8 @@
 // Shapes shared by the engine, the service, and the client.
 
-export const KINDS = ["choose", "approve", "handoff", "clarify", "accept", "assumptions", "notice"] as const;
+import type { BlindComparison } from "./blind.js";
+
+export const KINDS = ["choose", "approve", "handoff", "clarify", "accept", "assumptions", "notice", "judge"] as const;
 export type Kind = (typeof KINDS)[number];
 
 export interface Authorization {
@@ -53,7 +55,7 @@ export interface AssumptionItem {
 
 export type RequestPreview = { label: string } & (
   { text: string }
-  | { media_type: "image/png" | "image/jpeg" | "image/webp"; data: string }
+  | { media_type: "image/png" | "image/jpeg" | "image/webp" | "video/mp4"; data: string }
 );
 
 export interface DefaultEligibility {
@@ -112,6 +114,7 @@ export interface RequestBody {
   goals?: AcceptanceGoal[];
   assumptions?: AssumptionItem[];
   previews?: RequestPreview[];
+  blind?: BlindComparison;
   stakes: { reversibility: "easy" | "costly" | "one_way" };
   level: 0 | 1 | 2 | 3;
   level_reason: string;
@@ -155,6 +158,8 @@ export interface AnswerRecord {
   sureness?: (typeof SURENESS)[number];
   feedback?: string;
   active_response_ms?: number;
+  ratings?: { a: number; b: number };
+  repeat_test?: boolean;
   note?: string;
   /** The person's words, quoted verbatim, when the answer came from the conversation. */
   quote?: string;

@@ -1,20 +1,23 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReviewView } from "../cli/render.js";
-import { Engine, type BrowserAnswer } from "../core/engine.js";
+import { ballotContent, Engine, type BrowserAnswer } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
 import { EXIT, type Actor, type ClarificationRequest, type Disposition, type OpResult } from "../core/types.js";
-import { cardHasAuthorization, editReviewHtml, page, pickupStatusHtml, reviewHtml, savedHtml } from "./review-html.js";
+import { cardHasAuthorization, comparisonScriptHash, editReviewHtml, page, pickupStatusHtml, reviewHasVideoComparison, reviewHtml, savedHtml } from "./review-html.js";
 import { linkKey, ReviewLinks, token } from "./review-links.js";
 import type { Service } from "./service.js";
 
 const reviewPath = /^\/review\/([A-Za-z0-9_-]{32})$/;
 export const answerable = (status: string): boolean => ["queued", "presented", "default_claimed"].includes(status);
 
-export function sendHtml(response: ServerResponse, code: number, html: string, cookie?: string): void {
+export function sendHtml(response: ServerResponse, code: number, html: string, cookie?: string, allowVideoScript = false): void {
+  const csp = allowVideoScript
+    ? `default-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src data:; script-src 'sha256-${comparisonScriptHash}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`
+    : "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
   response.writeHead(code, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "content-security-policy": csp,
     "referrer-policy": "same-origin",
     "x-content-type-options": "nosniff",
     ...(cookie ? { "set-cookie": cookie } : {}),
@@ -52,6 +55,32 @@ function parseBatchForm(view: ReviewView, form: URLSearchParams, nowMs: number):
       feedback: form.get(`feedback-${index}`) || undefined,
     };
     const action = form.get(`action-${index}`)?.trim() ?? "";
+    if (card.body.kind === "judge") {
+      const choice = form.get(`choice-${index}`)?.trim() ?? "";
+      const a = form.get(`rating-a-${index}`)?.trim() ?? "";
+      const b = form.get(`rating-b-${index}`)?.trim() ?? "";
+      const repeat = form.get(`repeat-${index}`)?.trim() ?? "";
+      const reason = form.get(`reason-${index}`)?.trim() || undefined;
+      const anyFilled = !!(choice || a || b || repeat || reason || ref.sureness || ref.feedback);
+      if (!anyFilled) {
+        pendingCards.push({ index, card });
+        continue;
+      }
+      if (!choice) {
+        return { answers: [], leftOpen: [], previewLines: [],
+          error: `Card ${index + 1} needs a ballot option before saving.` };
+      }
+      answers.push({
+        ...ref,
+        value: choice,
+        ...(reason ? { note: reason } : {}),
+        ...(a || b ? { ratings: { a: Number(a), b: Number(b) } } : {}),
+        ...(repeat === "yes" ? { repeat_test: true } : repeat === "no" ? { repeat_test: false } : {}),
+      });
+      const opt = card.body.options?.find((o) => o.id === choice);
+      previewLines.push(`Blind ballot "${opt?.label ?? choice}" (${choice}) — ${card.body.question}`);
+      continue;
+    }
     if (action === "hide") {
       const until = tomorrowMorningIso(nowMs);
       answers.push({ ...ref, hide_until: until });
@@ -324,10 +353,38 @@ export class ReviewPages {
     }
     const receipt = engine.browserBatchReceipt(entry.review, saveId);
     if (receipt) {
+      const reveals = shown.items.flatMap((c) => c.body.kind === "judge" && c.blind_reveal
+        ? [{ question: c.body.question, reveal: c.blind_reveal }] : []);
+      if (form) {
+        const pinnedItems = entry.items
+          .map((ref) => shown.items.find((card) => card.id === ref.id && card.revision === ref.revision))
+          .filter((card): card is NonNullable<typeof card> => card !== undefined);
+        const judgeItems = pinnedItems.filter((c) => c.body.kind === "judge");
+        if (judgeItems.length) {
+          const parsed = parseBatchForm({ ...shown, items: pinnedItems }, form, this.now());
+          const savedMap = new Map(receipt.answers.map((a) => [`${a.id}@${a.revision}`, ballotContent(a.answer)]));
+          const mismatch = !!parsed.error || judgeItems.some((jc) => {
+            const k = `${jc.id}@${jc.revision}`;
+            const savedBallot = savedMap.get(k) ?? (jc.answer ? ballotContent(jc.answer) : undefined);
+            if (!savedBallot) return false;
+            const submitted = parsed.answers.find((a) => `${a.id}@${a.revision}` === k);
+            if (!submitted) return true;
+            return ballotContent({
+              value: submitted.value ?? null, note: submitted.note, ratings: submitted.ratings,
+              repeat_test: submitted.repeat_test, feedback: submitted.feedback,
+              sureness: submitted.sureness as "sure" | "leaning" | "unsure" | undefined,
+            }) !== savedBallot;
+          });
+          if (mismatch) {
+            return sendHtml(response, 409, page("Ballot already saved",
+              "<h1>Ballot already saved</h1><p>The original choices still apply.</p>" + this.inboxLink()));
+          }
+        }
+      }
       const remaining = shown.items.filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
         .map((c) => c.body.question);
       return sendHtml(response, 200, savedHtml(shown, receipt.answers, this.inboxLink(), {
-        receipt, remainingQuestions: remaining,
+        receipt, remainingQuestions: remaining, reveals,
         pickupHtml: pickupStatusHtml(shown, this.waitersFor?.(entry.project, entry.review) ?? []),
         editFormHtml: this.editFormLink(entry.project, entry.review, shown),
       }));
@@ -337,6 +394,7 @@ export class ReviewPages {
       return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>Open a fresh link before answering.</p>" + this.inboxLink()));
     }
     const view: ReviewView = { ...shown, items: items.filter((card) => card !== undefined) };
+    const allowVideo = reviewHasVideoComparison(view);
     if (request.method === "GET") {
       const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: this.now() };
       const html = reviewHtml(view, browser.form);
@@ -347,7 +405,7 @@ export class ReviewPages {
       const cookie = entry.browser ? undefined
         : `utp_review=${browser.cookie}; Path=${path}; Max-Age=${remainingSeconds}; HttpOnly; SameSite=Strict${this.origin.protocol === "https:" ? "; Secure" : ""}`;
       if (!entry.browser) this.links.save(id, { ...entry, browser });
-      sendHtml(response, 200, html, cookie);
+      sendHtml(response, 200, html, cookie, allowVideo);
       return;
     }
     if (!form || !entry.browser) return denied();
@@ -360,12 +418,12 @@ export class ReviewPages {
       if (!inReview) return denied();
       const r = engine.recordBrowserDefaultAction(ref!, optId!, entry.actor);
       if (r.code !== EXIT.OK) {
-        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not update that applied default.", form));
+        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not update that applied default.", form), undefined, allowVideo);
       }
       const msg = r.kept === true
         ? `Confirmed applied default (${optId}) on ${ref}.`
         : `Recorded switch to option ${optId} on ${ref}; flagged as a late conflict for the agent to reconcile.`;
-      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { statusMessage: msg }));
+      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { statusMessage: msg }), undefined, allowVideo);
     }
     const reverseNotice = form.get("reverse-notice");
     if (reverseNotice !== null) {
@@ -374,10 +432,10 @@ export class ReviewPages {
       const reason = form.get(`reverse-reason-${reverseNotice}`)?.trim() || "Flagged for reversal on the review page.";
       const r = engine.run("reverse", { id: card.id, reason, tags: card.body.tags ?? [] }, entry.actor);
       if (r.code !== EXIT.OK) {
-        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not record reversal.", form));
+        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not record reversal.", form), undefined, allowVideo);
       }
       return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form,
-        { statusMessage: `Flagged notice ${card.id} for reversal. Future lookups on its tags will show this reversal.` }));
+        { statusMessage: `Flagged notice ${card.id} for reversal. Future lookups on its tags will show this reversal.` }), undefined, allowVideo);
     }
     const requested = form.get("clarify");
     if (requested !== null) {
@@ -389,32 +447,35 @@ export class ReviewPages {
         note: form.get(`clarify-note-${requested}`)?.trim(),
       }, entry.actor);
       if (result.code !== EXIT.OK) {
-        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, result.message ?? "This question changed.", form));
+        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, result.message ?? "This question changed.", form), undefined, allowVideo);
       }
       card.clarification = result.clarification as ClarificationRequest;
-      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form));
+      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form), undefined, allowVideo);
     }
     const parsed = parseBatchForm(view, form, this.now());
     if (parsed.error) {
-      return sendHtml(response, 400, reviewHtml(view, entry.browser.form, parsed.error, form));
+      return sendHtml(response, 400, reviewHtml(view, entry.browser.form, parsed.error, form), undefined, allowVideo);
     }
     if (form.get("preview") === "1") {
-      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { previewLines: parsed.previewLines }));
+      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { previewLines: parsed.previewLines }), undefined, allowVideo);
     }
     const liveWaiters = this.waitersFor?.(entry.project, entry.review) ?? [];
     const result = engine.saveBrowserAnswers(view.id, parsed.answers, entry.actor, Math.max(0, this.now() - entry.browser.openedAt), saveId,
       `review-page-${linkKey(id)}`);
     if (result.code !== EXIT.OK) {
       return sendHtml(response, result.code === EXIT.REVOKED ? 409 : 400,
-        reviewHtml(view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
+        reviewHtml(view, entry.browser.form, result.message ?? "Review the answers and try again.", form), undefined, allowVideo);
     }
     const batchReceipt = engine.browserBatchReceipt(view.id, saveId)!;
     const after = (engine.run("show", { id: view.id }, entry.actor).review as ReviewView | undefined) ?? view;
     const remaining = after.items.filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
       .map((c) => c.body.question);
+    const reveals = after.items.flatMap((c) => c.body.kind === "judge" && c.blind_reveal
+      ? [{ question: c.body.question, reveal: c.blind_reveal }] : []);
     sendHtml(response, 200, savedHtml(view, batchReceipt.answers, this.inboxLink(), {
       receipt: batchReceipt,
       remainingQuestions: remaining,
+      reveals,
       pickupHtml: pickupStatusHtml(after, liveWaiters),
       editFormHtml: this.editFormLink(entry.project, entry.review, after),
     }));
@@ -422,7 +483,7 @@ export class ReviewPages {
 
   private editFormLink(project: string, reviewId: string, review: ReviewView): string {
     if (!this.hasInbox) return "";
-    const editable = review.items.some((c) => c.current && (c.status === "answered" || c.status === "granted"));
+    const editable = review.items.some((c) => c.current && c.body.kind !== "judge" && (c.status === "answered" || c.status === "granted"));
     if (!editable) return "";
     return `<form method="post" action="/edit/${encodeURIComponent(project)}/${encodeURIComponent(reviewId)}" class="form-actions"><button type="submit" class="button-secondary">Edit or withdraw answers (before work begins)</button></form>`;
   }

@@ -154,6 +154,28 @@ after an effect is recorded as a reconciliation entry and may lead to `utp
 reverse`; it never rewrites history. No path leads from `expired`,
 `cancelled`, `hidden`, `closed`, or a wait timeout to an approval.
 
+## Blind comparisons (phase 2)
+
+Create a `judge` request with `utp new judge`. Explain the goal in `summary`
+and put exactly two entries in `blind.candidates`. Each entry contains a
+private `identity` and an `artifact` with text, a base64 PNG, or a short base64
+MP4. Remove visible names and watermarks from the artifacts before submitting
+them. Put any notes for the reveal in `reveal_note` on the corresponding
+candidate. If you have a recommendation, `blind.recommended_candidate` is `0`
+for the first entry in the file or `1` for the second.
+
+UTP assigns Candidate A and Candidate B once per revision and keeps that order
+until the revision ends. It removes common file metadata and refuses identical
+previews. `utp flush` opens the page workflow for images and clips. The page
+places the previews side by side and can start a pair of clips together.
+Text comparisons also work in `utp review`, with the reveal available through
+`utp show` after the vote. A request for clarification keeps the vote open.
+
+A ballot can prefer one candidate, record a tie, say neither works, or skip
+the comparison. The page accepts ratings and a reason alongside the choice.
+Once saved, the ballot reveals the two identities and any private notes and
+recommendation. UTP keeps the original ballot if someone tries to change it.
+
 ## Execution grants
 
 An agent never acts on an answer or a default directly; it acts under a

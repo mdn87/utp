@@ -60,6 +60,23 @@ record `reversal_reason` explaining why the reversal does not apply.
   authorized card withholds the execution grant and routes the card to
   `needs_clarification` (exit `21`); revise the card with `utp revise` (UTP
   generates an automatic revision diff banner showing what changed and why).
+- **Blind comparisons (`judge`)**: Use `utp new judge` when the person should
+  compare two artifacts without seeing their identities or recommendation until
+  after voting. Put both candidates in `blind.candidates` (text, PNG, or MP4)
+  and keep identifying names out of visible fields. Binary-media comparisons
+  route directly to the side-by-side review page; once saved, a blind ballot is
+  immutable and reveals identities, notes, and recommendation.
+- **Native question dialogs (`utp dialog`)**: Before calling a platform's
+  native question dialog (`AskUserQuestion`, `request_user_input`, or
+  `ask_question`), run
+  `utp dialog <review-id> --platform <claude|codex|antigravity> --json`. Only
+  use the native dialog when `eligible` is `true`, and map its raw reply back
+  with `--map-response <reply.json>` so answers stay bound to stable option IDs
+  and exact revisions. Whenever `eligible` is `false` (for example, option or
+  question caps, dropped fields, truncation, level-3 provenance, or a
+  pre-selecting dialog on a card with a recommendation), fall back to
+  `fallback_markdown`, `utp review`, or `utp page` without reordering options
+  or altering the recommendation.
 - **Never double-prompt on level-3 approvals.** Check `chat_provenance` from
   `utp status --json` or `utp flush --json`:
   - **1–2 non-level-3 questions**, or **1–2 questions including level-3 when
@@ -160,13 +177,14 @@ Read-only questions can end with a direct answer.
 # 1. Check prior decisions and prepare a card or batch (all payloads in UTF-8 files)
 utp status --json
 utp consider decision.json
-utp new <choose|approve|handoff|clarify|accept|assumptions|notice> --file card.json
+utp new <choose|approve|handoff|clarify|accept|assumptions|notice|judge> --file card.json
 utp check card.json
 utp ask card.json --json                 # or: utp decide decision.json --json
 utp stage batch.json --flush --json      # validate, check D4/order/notices, queue, and flush
 
 # 2. Finish independent work, then flush once with authored context
 utp flush --intent intent.json           # prints Markdown (chat) or review page URL
+utp dialog <review-id> --platform <claude|codex|antigravity> --json  # check native dialog fit
 
 # 3a. If routed to chat: show exact Markdown to the person, then record presentation
 utp presented <review-id> --channel conversation --json

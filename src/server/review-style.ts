@@ -142,6 +142,10 @@ pre {
   overflow-wrap: anywhere;
 }
 img { display: block; max-width: 100%; max-height: 36rem; object-fit: contain; border-radius: .5rem; }
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(.5rem, 2vw, 1.25rem); margin: 1rem 0; }
+.compare figure { min-width: 0; margin: 0; padding: clamp(.5rem, 2vw, 1rem); border: 1px solid var(--line); border-radius: .5rem; background: #0c1017; }
+.compare img, .compare video { display: block; width: 100%; height: auto; border-radius: .5rem; }
+.blind-reveal { border-color: var(--cyan-edge); }
 fieldset { min-inline-size: 0; padding: 0; margin: 1.25rem 0; border: 0; }
 legend { max-width: 100%; padding: 0; font-weight: 600; }
 label { display: block; }

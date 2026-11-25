@@ -956,7 +956,7 @@
       "projectId": "utp",
       "title": "Support blind comparisons and the chosen migration",
       "summary": "Hide authors and recommendations until a ballot is saved. Refuse identical candidates and changed second ballots. Move existing workflows to UTP in phase 2.",
-      "stage": "blocked",
+      "stage": "active",
       "sequence": 270,
       "prereqs": [
         "utp:review:comparisons",
@@ -967,7 +967,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-23T01:53:05.291Z"
+        "updatedAt": "2026-11-25T11:35:00Z"
       },
       "evidence": [
         {
@@ -987,6 +987,12 @@
           "at": "2026-11-23T01:53:05.291Z",
           "kind": "stage-change",
           "message": "Browser comparison tests and a migration dry run passed. The live migration waits for phase 2, after the first release."
+        },
+        {
+          "entryId": "blind-comparisons-shipped",
+          "at": "2026-11-25T11:35:00Z",
+          "kind": "stage-change",
+          "message": "Side-by-side blind comparisons, media metadata stripping, immutable ballots and reveal tests shipped. Existing workflow migration waits for cutover."
         }
       ]
     },
@@ -1292,7 +1298,7 @@
       "projectId": "utp",
       "title": "Add native question dialogs with complete fallbacks",
       "summary": "Map supported native dialogs to stable answer IDs. Preserve consequences and custom replies. Use Markdown or terminal review when a dialog drops content or preselects advice.",
-      "stage": "planned",
+      "stage": "done",
       "sequence": 300,
       "prereqs": [
         "utp:cards:render",
@@ -1302,7 +1308,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-25T11:35:00Z"
       },
       "evidence": [
         {
@@ -1310,6 +1316,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "Phase 2 calls for capability checks on each platform and conformance for recommended approvals, narrower options and declined actions."
+        },
+        {
+          "entryId": "native-dialog-conformance-verified",
+          "at": "2026-11-25T11:35:00Z",
+          "kind": "stage-change",
+          "message": "Platform capability checks, revision-bound option and custom mapping and mandatory fallbacks for dropped fields or preselected advice passed tests."
         }
       ]
     },
