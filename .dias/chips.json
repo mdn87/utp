@@ -1056,7 +1056,7 @@
       "projectId": "utp",
       "title": "Isolate draft queues per session and stage batch files",
       "summary": "Keep parallel worktree sessions from mixing draft reviews and add single-file batch staging with default and dependency checks.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 281,
       "prereqs": [
         "utp:adapters:platforms",
@@ -1066,7 +1066,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-25T07:25:09.118Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-25T07:56:00Z"
       },
       "evidence": [
         {
@@ -1074,6 +1074,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "Approved on the review page: isolate draft queues per session and add single-file batch staging."
+        },
+        {
+          "entryId": "session-stage-verified",
+          "at": "2026-11-25T07:56:00Z",
+          "kind": "stage-change",
+          "message": "Parallel sessions keep separate draft reviews hidden until flushed; single-file batch staging checks defaults, order, reversals and notices."
         }
       ]
     },
@@ -1083,7 +1089,7 @@
       "projectId": "utp",
       "title": "Show shared review briefs, next steps and one-tap clarity",
       "summary": "Add inbox task metadata, lift shared facts and terms once to the review header, add option next steps and replace clarity dropdowns with one-tap buttons.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 282,
       "prereqs": [
         "utp:cards:render",
@@ -1094,7 +1100,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-25T07:25:09.118Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-25T07:56:00Z"
       },
       "evidence": [
         {
@@ -1102,6 +1108,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "Approved on the review page: expanded shared brief and one-tap per-card clarity buttons."
+        },
+        {
+          "entryId": "shared-brief-verified",
+          "at": "2026-11-25T07:56:00Z",
+          "kind": "stage-change",
+          "message": "Shared headers carry completed work, terms and evidence; options show next actions; the inbox shows task metadata; clarity uses one-tap chips."
         }
       ]
     },
@@ -1111,7 +1123,7 @@
       "projectId": "utp",
       "title": "Save settled cards partially and keep approval text strict",
       "summary": "Allow saving answered cards while leaving others open or hidden, stop typed text from clearing radio choices, add a pre-save summary and route typed approval text to clarification.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 283,
       "prereqs": [
         "utp:flow:shared-brief"
@@ -1120,7 +1132,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-25T07:25:09.118Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-25T07:56:00Z"
       },
       "evidence": [
         {
@@ -1128,6 +1140,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "Approved on the review page: partial batch saves with any typed approval caveat routed to clarification."
+        },
+        {
+          "entryId": "partial-save-verified",
+          "at": "2026-11-25T07:56:00Z",
+          "kind": "stage-change",
+          "message": "Pages save settled cards while leaving others open or hidden, support auto-skip and plan previews, block radio conflicts and hold approval caveats."
         }
       ]
     },
@@ -1137,7 +1155,7 @@
       "projectId": "utp",
       "title": "Show automatic change banners on revised cards",
       "summary": "Summarize what triggered a new revision, highlight changed options, scopes and evidence against the prior revision and show any earlier choice read-only.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 284,
       "prereqs": [
         "utp:flow:shared-brief"
@@ -1146,7 +1164,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-25T07:25:09.118Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-25T07:56:00Z"
       },
       "evidence": [
         {
@@ -1154,6 +1172,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "Approved on the review page: full automatic revision diff banners in browser and terminal."
+        },
+        {
+          "entryId": "revision-diff-verified",
+          "at": "2026-11-25T07:56:00Z",
+          "kind": "stage-change",
+          "message": "Revised cards render automatic banners showing the revision trigger, changed options, scopes and evidence and read-only unselected prior picks."
         }
       ]
     },
@@ -1163,7 +1187,7 @@
       "projectId": "utp",
       "title": "Make defaults and notices actionable and dedupe close-out",
       "summary": "Add keep or switch controls to applied defaults, quiet reversal flags on notices, richer morning-report digests and one-time delivery for close-out notices.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 285,
       "prereqs": [
         "utp:adapters:closeout",
@@ -1173,7 +1197,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-25T07:25:09.118Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-25T07:56:00Z"
       },
       "evidence": [
         {
@@ -1181,6 +1205,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "Approved on the review page: build controls and suppress notices already displayed during close-out."
+        },
+        {
+          "entryId": "actionable-notices-verified",
+          "at": "2026-11-25T07:56:00Z",
+          "kind": "stage-change",
+          "message": "Applied defaults offer keep and switch buttons, reversible notices offer quiet reversal flags, digests add context and close-out dedupes notices."
         }
       ]
     },
@@ -1190,7 +1220,7 @@
       "projectId": "utp",
       "title": "Add pickup status, pre-execution edits and single resume",
       "summary": "Show live pickup status after saving, expose pre-execution edit and withdraw controls plus applied outcomes on the inbox and add one agent resume command.",
-      "stage": "ready",
+      "stage": "done",
       "sequence": 286,
       "prereqs": [
         "utp:flow:partial-save",
@@ -1200,7 +1230,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-25T07:25:09.118Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-25T07:56:00Z"
       },
       "evidence": [
         {
@@ -1208,6 +1238,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "Approved on the review page: build live pickup status, pre-execution inbox edit window and single resume command."
+        },
+        {
+          "entryId": "carry-through-verified",
+          "at": "2026-11-25T07:56:00Z",
+          "kind": "stage-change",
+          "message": "Receipts show live waiting status, the inbox adds recent outcomes and pre-execution edits that lock at execution and one resume command returns state."
         }
       ]
     },

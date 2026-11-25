@@ -101,8 +101,9 @@ export function pickupStatusHtml(review: ReviewView, waiters: readonly Actor[]):
 }
 
 export function editReviewHtml(review: ReviewView, token: string, returnLink: string, message?: string, statusMessage?: string): string {
-  const cards = review.items.filter((i) => i.current && i.body.kind !== "notice").map((item, index) => {
+  const cards = review.items.map((item, index) => {
     const b = item.body;
+    const ref = `${item.id}@${item.revision}`;
     const hasAuth = cardHasAuthorization(b);
     const editable = item.status === "answered" || item.status === "granted";
     const currentAnswer = item.answer ? answerValue(item.answer, b) : undefined;
@@ -119,7 +120,7 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
         <p class="card-badges"><span class="badge">Locked · ${escapeText(item.status.replaceAll("_", " "))}</span></p>
         ${currentAnswer ? `<p class="preserve"><strong>Recorded answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
         ${clarHtml}${effectHtml}
-        <p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code></p></article>`;
+        <p class="card-reference"><code>${escapeText(ref)}</code></p></article>`;
     }
     const controls: string[] = [];
     const prompts = itemPrompts(b);
@@ -154,10 +155,10 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
       ${currentAnswer ? `<p class="preserve"><strong>Current answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
       ${controls.join("\n")}
       <div class="form-actions">
-        <button type="submit" name="edit-save" value="${index}">Save change</button>
-        <button type="submit" name="edit-withdraw" value="${index}" class="button-secondary" formnovalidate>Withdraw answer</button>
+        <button type="submit" name="edit-save" value="${escapeText(ref)}">Save change</button>
+        <button type="submit" name="edit-withdraw" value="${escapeText(ref)}" class="button-secondary" formnovalidate>Withdraw answer</button>
       </div>
-      <p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code></p></article>`;
+      <p class="card-reference"><code>${escapeText(ref)}</code></p></article>`;
   });
   const banner = statusMessage ? `<p role="status">${escapeText(statusMessage)}</p>` : "";
   const err = message ? `<p role="alert" class="error">${escapeText(message)}</p>` : "";

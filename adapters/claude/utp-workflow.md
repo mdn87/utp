@@ -40,14 +40,26 @@ record `reversal_reason` explaining why the reversal does not apply.
 ## 2. Independent work, batching, and upfront channel routing
 
 - Queue questions with `utp ask <card.json>` (or `utp decide <decision.json>`),
-  finish all independent work that does not depend on those answers, and flush
+  or stage a full multi-card batch file in one step with
+  `utp stage <batch.json> [--flush]`. Each `UTP_SESSION` keeps its own open
+  draft review queue so parallel worktrees do not mix cards.
+- Finish all independent work that does not depend on those answers, and flush
   once at a natural stopping point:
-  `utp flush [<review-id>] --intent <intent.json>`.
+  `utp flush [<review-id>] --intent <intent.json>` (or `utp stage <batch.json> --flush`).
 - Always attach authored review context (`asked`, `doing`, `scope_delta`) with
   `--intent <file>`. Include a short, recognizable `task_title` suitable for
-  the person's lock screen. Keep private details in the review. Open every
-  card in plain language stating what the decision addresses and what each
-  choice changes.
+  the person's lock screen. For multi-card batches, lift repeated facts once
+  into `already_done`, `shared_glossary`, and `shared_evidence`, add per-option
+  `agent_next` lines when helpful, and add `skip_if` rules when an earlier
+  answer makes a later card moot. Keep private details in the review. Open
+  every card in plain language stating what the decision addresses and what
+  each choice changes.
+- **Partial saves and strict approval text.** The review page lets the person
+  answer settled cards while leaving others open or hidden, and shows a
+  combined plan preview before saving. Any free text typed on an `approve` or
+  authorized card withholds the execution grant and routes the card to
+  `needs_clarification` (exit `21`); revise the card with `utp revise` (UTP
+  generates an automatic revision diff banner showing what changed and why).
 - **Never double-prompt on level-3 approvals.** Check `chat_provenance` from
   `utp status --json` or `utp flush --json`:
   - **1–2 non-level-3 questions**, or **1–2 questions including level-3 when
@@ -81,8 +93,9 @@ Set `UTP_SESSION` to a unique, stable per-session identifier before running
 warning, risks grant collisions between concurrent sessions, and disables chat
 transcript verification.
 
-Run `utp status` (or `utp status --json`) at the start of a session or turn to
-check for open, answered, or interrupted work:
+Run `utp resume [<review-id>] --json` (or `utp status --json`) at the start of
+a session or turn to inspect open, answered, or interrupted work in dependency
+order, including local basis-file staleness and takeover checks:
 
 1. **Same-session resume** (`UTP_SESSION` matches the session that queued the
    request): run `utp wait <request-id>` to fetch the answer and grant
@@ -132,10 +145,11 @@ Mark each evidence item as `observed` or `inferred` and give its date and
 source. Exit code `20` identifies fields to fix. Use `--json` for structured
 output.
 
-Rendering leaves queued notices available for their usual delivery. If the
-service is unavailable, the report still shows the goals and says the notice
-queue could not be checked. Routine completion needs no reply. Use `accept`
-when the person asked to sign off or only they can judge the result.
+Rendering delivers the queued notices shown in the report once so they do not
+duplicate in the morning report; pass `--keep-notices` to keep them queued. If
+the service is unavailable, the report still shows the goals and says the
+notice queue could not be checked. Routine completion needs no reply. Use
+`accept` when the person asked to sign off or only they can judge the result.
 Read-only questions can end with a direct answer.
 
 ## 6. Command reference
@@ -143,12 +157,13 @@ Read-only questions can end with a direct answer.
 ### Lifecycle commands
 
 ```sh
-# 1. Check prior decisions and prepare a card (all payloads in UTF-8 files)
+# 1. Check prior decisions and prepare a card or batch (all payloads in UTF-8 files)
 utp status --json
 utp consider decision.json
 utp new <choose|approve|handoff|clarify|accept|assumptions|notice> --file card.json
 utp check card.json
 utp ask card.json --json                 # or: utp decide decision.json --json
+utp stage batch.json --flush --json      # validate, check D4/order/notices, queue, and flush
 
 # 2. Finish independent work, then flush once with authored context
 utp flush --intent intent.json           # prints Markdown (chat) or review page URL
@@ -161,9 +176,10 @@ utp answer <request-id@revision> --from-chat --presentation <presentation-id> --
 
 # 3c. Share the supplied protected inbox, or get a direct link for this review.
 utp page <review-id>
-# Person runs in their own terminal: utp review <review-id>
+# Person runs in their own terminal: utp review <review-id> (or utp review --recent)
 
-# 4. Wait for answer/grant, execute the exact authorized scope, record evidence
+# 4. Resume or wait for answer/grant, execute the exact authorized scope, record evidence
+utp resume [<review-id>] --json          # single-call dependency-ordered status + basis check
 utp wait <request-id> --json             # returns grant.id (G-...) when authorized
 utp begin <grant-id>
 # ... perform the exact authorized action ...

@@ -439,6 +439,9 @@ export class Engine {
           continue;
         }
         if (input.clarify_note) {
+          if (!["presented", "default_claimed"].includes(rev.status)) {
+            throw new UsageError(`cannot request clarification once the default is ${rev.status}`);
+          }
           const clarification: ClarificationRequest = {
             at, channel: "review-page", note: input.clarify_note, outcome: "needs_clarification",
           };
@@ -464,7 +467,9 @@ export class Engine {
   recordBrowserDefaultAction(requestRef: string, optionId: string, actor: Actor): OpResult {
     this.sweep();
     const rev = this.resolve(requestRef);
-    if (!rev || !this.isCurrentRev(rev) || !rev.default_application) {
+    const st = rev ? this.effective(rev, this.now().toISOString()) : undefined;
+    if (!rev || !this.isCurrentRev(rev) || !rev.default_application || rev.default_resolution
+        || (st !== "applied" && st !== "late_conflict")) {
       return { code: EXIT.NOT_ALLOWED, message: "That applied default is no longer active." };
     }
     const at = this.now().toISOString();
@@ -475,6 +480,46 @@ export class Engine {
       const result: OpResult = { code: EXIT.OK, id: rev.id, revision: rev.revision, answer, kept };
       return this.commit("review-page.default", "answer.recorded", actor,
         { id: rev.id, revision: rev.revision, answer, after_effect: true, clear_default_notice: kept }, result);
+    } catch (error) {
+      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
+      throw error;
+    }
+  }
+
+  private preBeginEditable(rev: Rev, st: State): boolean {
+    return (st === "answered" || st === "granted") && !rev.remaining_scope && !rev.default_application;
+  }
+
+  /** Pre-begin edit or withdraw for an answered or granted card (locks once execution begins). */
+  private editAnswer(a: Args, actor: Actor, opId?: string, browser = false): OpResult {
+    const requestRef = str(a, "id");
+    const rev = this.resolve(requestRef);
+    if (!rev || !this.isCurrentRev(rev)) return notFound(requestRef);
+    const at = this.now().toISOString();
+    const st = this.effective(rev, at);
+    if (!this.preBeginEditable(rev, st)) {
+      return { code: EXIT.NOT_ALLOWED, message: `Work is already ${st}; answers lock once execution begins.` };
+    }
+    const op = browser ? "review-page.edit" : "edit";
+    const channel = browser ? "review-page" : str(a, "channel");
+    if (a.withdraw === true) {
+      return this.commit(op, "answer.withdrawn", actor, { id: rev.id, revision: rev.revision },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, withdrawn: true }, opId);
+    }
+    const clarifyNote = optStr(a, "clarify_note")?.trim();
+    if (clarifyNote) {
+      const clarification: ClarificationRequest = {
+        at, channel, note: clarifyNote, outcome: "needs_clarification",
+      };
+      return this.commit(op, "request.clarification-requested", actor,
+        { id: rev.id, revision: rev.revision, clarification, clear_answer: true },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, clarification }, opId);
+    }
+    try {
+      const answer = this.answerRecord(rev, { ...a, channel }, actor, at, browser);
+      return this.commit(op, "answer.recorded", actor,
+        { id: rev.id, revision: rev.revision, answer, after_effect: false },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, answer }, opId);
     } catch (error) {
       if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
       throw error;
@@ -492,34 +537,7 @@ export class Engine {
     clarify_note?: string;
   }, actor: Actor): OpResult {
     this.sweep();
-    const rev = this.resolve(requestRef);
-    if (!rev || !this.isCurrentRev(rev)) return notFound(requestRef);
-    const st = this.effective(rev, this.now().toISOString());
-    if (!["answered", "granted"].includes(st)) {
-      return { code: EXIT.NOT_ALLOWED, message: `Work is already ${st}; answers lock once execution begins.` };
-    }
-    if (input.withdraw) {
-      return this.commit("review-page.edit", "answer.withdrawn", actor, { id: rev.id, revision: rev.revision },
-        { code: EXIT.OK, id: rev.id, revision: rev.revision, withdrawn: true });
-    }
-    const at = this.now().toISOString();
-    if (input.clarify_note) {
-      const clarification: ClarificationRequest = {
-        at, channel: "review-page", note: input.clarify_note, outcome: "needs_clarification",
-      };
-      return this.commit("review-page.edit", "request.clarification-requested", actor,
-        { id: rev.id, revision: rev.revision, clarification, clear_answer: true },
-        { code: EXIT.OK, id: rev.id, revision: rev.revision, clarification });
-    }
-    try {
-      const answer = this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true);
-      return this.commit("review-page.edit", "answer.recorded", actor,
-        { id: rev.id, revision: rev.revision, answer, after_effect: false },
-        { code: EXIT.OK, id: rev.id, revision: rev.revision, answer });
-    } catch (error) {
-      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
-      throw error;
-    }
+    return this.editAnswer({ id: requestRef, ...input }, actor, undefined, true);
   }
 
   /** Recent and in-flight prepared reviews for inbox carry-through visibility. */
@@ -550,7 +568,7 @@ export class Engine {
         cards.push({
           id: rev.id, revision: rev.revision, question: rev.body.question, status: st,
           ...(ansVal ? { answer_summary: ansVal } : {}),
-          editable: st === "answered" || st === "granted",
+          editable: this.preBeginEditable(rev, st),
           ...(rev.applied_evidence ? { applied_evidence: rev.applied_evidence } : {}),
           flags: rev.flags,
         });
@@ -611,6 +629,7 @@ export class Engine {
         case "flush": return this.flush(actor, opId, args);
         case "presented": return this.presented(args, actor, opId, false, turns);
         case "answer": return this.answer(args, actor, opId, turns);
+        case "edit": return this.editAnswer(args, actor, opId, false);
         case "wait": return this.wait(args, actor, opId);
         case "claim-default": return this.claimDefault(args, actor, opId);
         case "resolve-late": return this.resolveLate(args, actor, opId);
@@ -1377,16 +1396,17 @@ export class Engine {
       const needs_takeover = !sameActor(req.owner, actor)
         && !TERMINAL.has(st) && !["executing", "outcome_unknown", "applied", "closed"].includes(st);
       let next_action: string;
-      if (st === "outcome_unknown") next_action = "reconcile";
+      if (st === "applied" || st === "closed") next_action = "done";
+      else if (st === "outcome_unknown") next_action = "reconcile";
       else if (st === "late_conflict") next_action = "resolve_late";
       else if (r.clarification) next_action = "revise_for_clarification";
       else if (stale_files.length > 0 || st === "stale") next_action = "revise_stale";
+      else if (TERMINAL.has(st)) next_action = "stopped";
       else if (st === "answered" || st === "granted") {
         next_action = auth ? (needs_takeover ? "takeover_then_wait" : "wait_and_begin") : "continue";
       } else if (st === "executing") next_action = "finish_or_reconcile";
       else if (st === "hidden") next_action = "deferred_until";
       else if (st === "queued" || st === "presented" || st === "default_claimed") next_action = "waiting_on_person";
-      else if (st === "applied" || st === "closed") next_action = "done";
       else next_action = "stopped";
       return {
         id: r.id, revision: r.revision, review_id: r.review_id, kind: r.body.kind, level: r.body.level,
@@ -1418,7 +1438,12 @@ export class Engine {
           if (inReview.has(dep) || dep in resolved_dependencies) continue;
           const target = this.resolve(dep);
           if (target) {
-            resolved_dependencies[dep] = `${target.key} · ${target.body.question} (${target.body.kind}, level ${target.body.level})`;
+            const ans = target.answer ? (
+              typeof target.answer.value === "string"
+                ? (target.body.options?.find((o) => o.id === target.answer!.value)?.label ?? target.answer.value)
+                : target.answer.custom ? `"${target.answer.custom}"` : undefined
+            ) : undefined;
+            resolved_dependencies[dep] = `${target.key} · ${target.body.question}${ans ? ` — chose ${ans}` : ""} (${target.body.kind}, level ${target.body.level})`;
           }
         }
       }

@@ -68,7 +68,7 @@ function parseBatchForm(view: ReviewView, form: URLSearchParams, nowMs: number):
     const hasCustom = !!custom?.trim();
     const hasAuth = cardHasAuthorization(card.body);
     const choice = form.get(`choice-${index}`)?.trim() ?? "";
-    const note = form.get(`note-${index}`)?.trim() || undefined;
+    const note = hasAuth ? undefined : (form.get(`note-${index}`)?.trim() || undefined);
     const prompts = itemPrompts(card.body);
 
     if (hasAuth && hasCustom) {
@@ -228,38 +228,50 @@ export class ReviewPages {
     const shown = engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined;
     if (!shown) return denied();
     if (entry.mode === "edit") {
+      const pinned = entry.items.map((ref) => shown.items.find((card) => card.id === ref.id && card.revision === ref.revision));
+      if (pinned.some((card) => !card?.current)) {
+        return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>A card in this review was revised. Open a fresh link before editing.</p>" + this.inboxLink()));
+      }
+      const pinnedItems = pinned.filter((card): card is NonNullable<typeof card> => card !== undefined);
+      const editView: ReviewView = { ...shown, items: pinnedItems };
+      const refreshPinned = (): ReviewView => {
+        const latest = (engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined) ?? shown;
+        const latestItems = entry.items
+          .map((ref) => latest.items.find((card) => card.id === ref.id && card.revision === ref.revision))
+          .filter((card): card is NonNullable<typeof card> => card !== undefined);
+        return { ...latest, items: latestItems };
+      };
       if (request.method === "GET") {
         const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: this.now() };
         const remainingSeconds = Math.ceil((entry.expiresAt - this.now()) / 1000);
         const cookie = entry.browser ? undefined
           : `utp_review=${browser.cookie}; Path=${path}; Max-Age=${remainingSeconds}; HttpOnly; SameSite=Strict${this.origin.protocol === "https:" ? "; Secure" : ""}`;
         if (!entry.browser) this.links.save(id, { ...entry, browser });
-        return sendHtml(response, 200, editReviewHtml(shown, browser.form, this.inboxLink()), cookie);
+        return sendHtml(response, 200, editReviewHtml(editView, browser.form, this.inboxLink()), cookie);
       }
       if (!form || !entry.browser) return denied();
-      const nonNotice = shown.items.filter((c) => c.current && c.body.kind !== "notice");
-      const withdrawIdx = form.get("edit-withdraw");
-      if (withdrawIdx !== null) {
-        const card = /^\d+$/.test(withdrawIdx) ? nonNotice[Number(withdrawIdx)] : undefined;
+      const withdrawRef = form.get("edit-withdraw");
+      if (withdrawRef !== null) {
+        const card = pinnedItems.find((c) => `${c.id}@${c.revision}` === withdrawRef);
         if (!card) return denied();
         const r = engine.editBrowserAnswer(`${card.id}@${card.revision}`, { withdraw: true }, entry.actor);
-        const refreshed = (engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined) ?? shown;
+        const refreshed = refreshPinned();
         if (r.code !== EXIT.OK) {
           return sendHtml(response, 409, editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), r.message ?? "Could not withdraw answer."));
         }
         return sendHtml(response, 200, editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), undefined,
           `Withdrew answer for "${card.body.question}". It is open in the waiting inbox again.`));
       }
-      const saveIdx = form.get("edit-save");
-      if (saveIdx !== null) {
-        const idx = /^\d+$/.test(saveIdx) ? Number(saveIdx) : -1;
-        const card = nonNotice[idx];
+      const saveRef = form.get("edit-save");
+      if (saveRef !== null) {
+        const idx = pinnedItems.findIndex((c) => `${c.id}@${c.revision}` === saveRef);
+        const card = idx >= 0 ? pinnedItems[idx] : undefined;
         if (!card) return denied();
         const hasAuth = cardHasAuthorization(card.body);
         const custom = form.get(`custom-${idx}`);
         const hasCustom = !!custom?.trim();
         const choice = form.get(`choice-${idx}`)?.trim() ?? "";
-        const note = form.get(`note-${idx}`)?.trim() || undefined;
+        const note = hasAuth ? undefined : (form.get(`note-${idx}`)?.trim() || undefined);
         const prompts = itemPrompts(card.body);
         let editInput: Parameters<Engine["editBrowserAnswer"]>[1];
         if (hasAuth && hasCustom) {
@@ -268,7 +280,7 @@ export class ReviewPages {
           const chosenItems = prompts.map(({ id: itemId }, n) => [itemId, form.get(`item-${idx}-${n}`) ?? ""] as const);
           const anySelected = chosenItems.some(([, v]) => v.trim() !== "");
           if (hasCustom && anySelected) {
-            return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+            return sendHtml(response, 400, editReviewHtml(editView, entry.browser.form, this.inboxLink(),
               'Choose either item answers or "Your own answer", not both.'));
           }
           if (hasCustom) editInput = { custom: custom! };
@@ -282,23 +294,23 @@ export class ReviewPages {
           }
         } else if (choice === "__custom__") {
           if (!hasCustom) {
-            return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+            return sendHtml(response, 400, editReviewHtml(editView, entry.browser.form, this.inboxLink(),
               'Enter your own answer or pick a listed option before saving.'));
           }
           editInput = { custom: custom! };
         } else if (choice && hasCustom) {
-          return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+          return sendHtml(response, 400, editReviewHtml(editView, entry.browser.form, this.inboxLink(),
             'Choose either a listed option or "Your own answer", or move your comment to the optional note box.'));
         } else if (hasCustom) {
           editInput = { custom: custom! };
         } else if (choice) {
           editInput = { value: choice, ...(note ? { note } : {}) };
         } else {
-          return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+          return sendHtml(response, 400, editReviewHtml(editView, entry.browser.form, this.inboxLink(),
             "Choose an option, enter an answer, or withdraw before saving."));
         }
         const r = engine.editBrowserAnswer(`${card.id}@${card.revision}`, editInput, entry.actor);
-        const refreshed = (engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined) ?? shown;
+        const refreshed = refreshPinned();
         if (r.code !== EXIT.OK) {
           return sendHtml(response, r.code === EXIT.NOT_ALLOWED ? 409 : 400,
             editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), r.message ?? "Could not update answer."));
@@ -343,12 +355,14 @@ export class ReviewPages {
     if (defaultAction !== null) {
       const m = /^(keep|switch):(R-[A-Za-z0-9-]+@\d+):([A-Za-z0-9_-]+)$/.exec(defaultAction);
       if (!m) return denied();
-      const [, mode, ref, optId] = m;
+      const [, , ref, optId] = m;
+      const inReview = (view.default_notices ?? []).some((n) => `${n.request_id}@${n.revision}` === ref);
+      if (!inReview) return denied();
       const r = engine.recordBrowserDefaultAction(ref!, optId!, entry.actor);
       if (r.code !== EXIT.OK) {
         return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not update that applied default.", form));
       }
-      const msg = mode === "keep"
+      const msg = r.kept === true
         ? `Confirmed applied default (${optId}) on ${ref}.`
         : `Recorded switch to option ${optId} on ${ref}; flagged as a late conflict for the agent to reconcile.`;
       return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { statusMessage: msg }));
@@ -387,6 +401,7 @@ export class ReviewPages {
     if (form.get("preview") === "1") {
       return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { previewLines: parsed.previewLines }));
     }
+    const liveWaiters = this.waitersFor?.(entry.project, entry.review) ?? [];
     const result = engine.saveBrowserAnswers(view.id, parsed.answers, entry.actor, Math.max(0, this.now() - entry.browser.openedAt), saveId,
       `review-page-${linkKey(id)}`);
     if (result.code !== EXIT.OK) {
@@ -400,7 +415,7 @@ export class ReviewPages {
     sendHtml(response, 200, savedHtml(view, batchReceipt.answers, this.inboxLink(), {
       receipt: batchReceipt,
       remainingQuestions: remaining,
-      pickupHtml: pickupStatusHtml(after, this.waitersFor?.(entry.project, entry.review) ?? []),
+      pickupHtml: pickupStatusHtml(after, liveWaiters),
       editFormHtml: this.editFormLink(entry.project, entry.review, after),
     }));
   }

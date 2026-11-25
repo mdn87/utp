@@ -275,7 +275,7 @@ export async function runRecentReview(project: string, io: ReviewIO): Promise<nu
       const reply = await ask(`Change ${card.id}@${card.revision}: ${ids.length ? `option (${ids.join(", ")}), ` : ""}/ for custom, w to withdraw, or Enter to cancel: `);
       if (!reply) continue;
       if (reply === "w") {
-        const r = await call("answer", { id: `${card.id}@${card.revision}`, channel, withdraw: true }, { project });
+        const r = await call("edit", { id: `${card.id}@${card.revision}`, channel, withdraw: true }, { project });
         write(r.code === EXIT.OK ? `Withdrew answer for ${card.id}@${card.revision}.` : `Not withdrawn: ${String(r.message ?? `exit ${r.code}`)}`);
         continue;
       }
@@ -284,21 +284,16 @@ export async function runRecentReview(project: string, io: ReviewIO): Promise<nu
         if (!words?.trim()) continue;
         const hasAuth = card.body.kind === "approve" || (card.body.options ?? []).some((o) => !!o.authorization);
         if (hasAuth) {
-          const w = await call("answer", { id: `${card.id}@${card.revision}`, channel, withdraw: true }, { project });
-          if (w.code === EXIT.OK) {
-            const c = await call("answer", { id: `${card.id}@${card.revision}`, channel, clarify: true, outcome: "needs_clarification", note: words.trim() }, { project });
-            write(c.code === EXIT.OK ? "Withheld grant and requested clarification." : `Not saved: ${String(c.message ?? `exit ${c.code}`)}`);
-          } else {
-            write(`Could not change: ${String(w.message ?? `exit ${w.code}`)}`);
-          }
+          const c = await call("edit", { id: `${card.id}@${card.revision}`, channel, clarify_note: words.trim() }, { project });
+          write(c.code === EXIT.OK ? "Withheld grant and requested clarification." : `Not saved: ${String(c.message ?? `exit ${c.code}`)}`);
           continue;
         }
-        const r = await call("answer", { id: `${card.id}@${card.revision}`, channel, custom: words }, { project });
+        const r = await call("edit", { id: `${card.id}@${card.revision}`, channel, custom: words }, { project });
         write(r.code === EXIT.OK ? `Updated ${card.id}@${card.revision}.` : `Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
         continue;
       }
       if (ids.includes(reply)) {
-        const r = await call("answer", { id: `${card.id}@${card.revision}`, channel, value: reply }, { project });
+        const r = await call("edit", { id: `${card.id}@${card.revision}`, channel, value: reply }, { project });
         write(r.code === EXIT.OK ? `Updated ${card.id}@${card.revision} to ${reply}.` : `Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
         continue;
       }

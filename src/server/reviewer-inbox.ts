@@ -141,7 +141,7 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
           const ans = c.answer_summary ? `: ${c.answer_summary}` : "";
           return `<li><strong>${escapeText(c.question)}</strong> <span class="badge">${escapeText(c.status.replaceAll("_", " "))}</span><span class="muted">${escapeText(`${ans}${effect}`)}</span></li>`;
         }).join("");
-        const btnLabel = rec.editable_count > 0 ? "Edit or withdraw (before work begins)" : "View status & effects";
+        const btnLabel = rec.editable_count > 0 ? "Edit or withdraw (before work begins)" : "View status &amp; effects";
         recentEntries.push({
           updatedAt: rec.updated_at,
           html: `<article class="recent-review"><h4>${escapeText(label)}${rec.task_title ? ` — ${escapeText(rec.task_title)}` : ""}</h4>
