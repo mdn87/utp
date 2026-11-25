@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "chipId": "utp:phase1:use",
-  "observedAt": "2026-11-24T08:37:36.388066+00:00",
+  "observedAt": "2026-11-25T01:46:05.893814+00:00",
   "phase": "in progress",
   "fieldTasks": [
     {
@@ -60,8 +60,8 @@
       "targetPercent": 80
     },
     "questionCards": 4,
+    "repeatedQuestionTexts": 0,
     "duplicateQuestions": 0,
-    "duplicateEvidence": "The initial questions covered alert count, destination and wording. A later question tested whether the newly added task name was recognizable on the device.",
     "questionReviewsFlushed": 2,
     "questionReviewsPresented": 2,
     "noticeOnlyReviewsPresented": 2,
@@ -72,6 +72,7 @@
       58819,
       6028
     ],
+    "duplicateEvidence": "The count compares normalized wording across distinct requests. Repeated wording requires checking whether the decision changed.",
     "retrospective": {
       "window": "2026-11-08 through 2026-11-21 UTC",
       "sessions": 51,
