@@ -1,6 +1,8 @@
 import { lstatSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import type { RequestView, ReviewView } from "../cli/render.js";
+import { validTaskTitle } from "../core/check.js";
 import { Engine } from "../core/engine.js";
 import { EXIT } from "../core/types.js";
 import { escapeText, page } from "./review-html.js";
@@ -8,6 +10,46 @@ import { answerable, ReviewPages, sendHtml } from "./review-page.js";
 import { normalizeRemote, type ProjectInfo, type Service } from "./service.js";
 
 const actor = { machine: "review-inbox", session: "browser" };
+
+const KIND_SHORT: Record<string, string> = {
+  choose: "choice", approve: "approval", handoff: "manual step", clarify: "clarify",
+  accept: "result check", assumptions: "assumptions", notice: "notice",
+};
+const UNDO_SHORT: Record<string, string> = {
+  easy: "easy to undo", costly: "costly to undo", one_way: "can't be undone",
+};
+
+function relativeAge(iso: string | undefined, nowMs: number): string | undefined {
+  if (!iso) return undefined;
+  const ms = nowMs - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return undefined;
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hours < 24) return remMins ? `${hours}h ${remMins}m ago` : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function originSummary(cards: RequestView[]): string | undefined {
+  const first = cards[0];
+  if (!first) return undefined;
+  const agent = first.body.origin?.agent || first.body.origin?.platform;
+  const machine = first.owner?.machine;
+  if (agent && machine) return `${agent} on ${machine}`;
+  return agent || machine;
+}
+
+function stakesSummary(cards: RequestView[]): string {
+  const approvals = cards.filter((c) => c.body.kind === "approve" || c.body.stakes.reversibility === "one_way").length;
+  const reversible = cards.length - approvals;
+  const parts: string[] = [];
+  if (approvals) parts.push(`${approvals} ${approvals === 1 ? "approval" : "approvals"}`);
+  if (reversible) parts.push(`${reversible} reversible`);
+  return parts.join(" · ") || `${cards.length} ${cards.length === 1 ? "decision" : "decisions"}`;
+}
 
 // Release directories use full Git object IDs. Short hexadecimal names may be intentional project names.
 const HASH_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
@@ -54,21 +96,35 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
   if (path.startsWith("/review/")) return pages.handle(req, res, readBody);
   if (path === "/" && req.method === "GET") {
     const sections: string[] = [];
+    const nowMs = Date.now();
     for (const project of service.projects()) {
       const engine = service.engine(project.id);
       if (!(engine instanceof Engine)) return unavailable(503);
       const status = engine.run("status", {}, actor);
-      const groups = new Map<string, string[]>();
+      const openReviews = new Set((status.open_reviews as string[] | undefined) ?? (status.open_review ? [status.open_review as string] : []));
+      const groups = new Map<string, Outstanding[]>();
       for (const item of status.requests as Outstanding[]) {
-        if (item.review_id === status.open_review || item.kind === "notice" || !answerable(item.status)) continue;
-        const questions = groups.get(item.review_id) ?? [];
-        questions.push(item.question);
-        groups.set(item.review_id, questions);
+        if (openReviews.has(item.review_id) || item.kind === "notice" || !answerable(item.status)) continue;
+        const list = groups.get(item.review_id) ?? [];
+        list.push(item);
+        groups.set(item.review_id, list);
       }
-      for (const [review, questions] of groups) {
-        const items = questions.map((q) => `<li>${escapeText(q)}</li>`).join("");
-        sections.push(`<article class="inbox-review"><h2>${escapeText(inboxLabel(project))}</h2><ul>${items}</ul>
-          <form method="post" action="/open/${encodeURIComponent(project.id)}/${encodeURIComponent(review)}">
+      for (const [reviewId] of groups) {
+        const shown = engine.run("show", { id: reviewId }, actor).review as ReviewView | undefined;
+        const waiting = (shown?.items ?? []).filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status));
+        if (!waiting.length) continue;
+        const title = validTaskTitle(shown?.intent?.task_title)
+          ? `<p class="inbox-title">${escapeText(shown!.intent!.task_title!)}</p>` : "";
+        const oldest = waiting.map((c) => c.asked_at).filter((t): t is string => !!t).sort()[0];
+        const metaParts = [relativeAge(oldest, nowMs), originSummary(waiting), stakesSummary(waiting)].filter(Boolean);
+        const meta = metaParts.length ? `<p class="inbox-meta">${escapeText(metaParts.join(" · "))}</p>` : "";
+        const items = waiting.map((c) => {
+          const kind = KIND_SHORT[c.body.kind] ?? c.body.kind;
+          const undo = UNDO_SHORT[c.body.stakes.reversibility] ?? c.body.stakes.reversibility;
+          return `<li>${escapeText(c.body.question)} <span class="muted">(${escapeText(`${kind} · ${undo}`)})</span></li>`;
+        }).join("");
+        sections.push(`<article class="inbox-review"><h2>${escapeText(inboxLabel(project))}</h2>${title}${meta}<ul>${items}</ul>
+          <form method="post" action="/open/${encodeURIComponent(project.id)}/${encodeURIComponent(reviewId)}">
           <button type="submit">Open review</button></form></article>`);
       }
     }

@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { KINDS, type RequestBody, type ReviewIntent } from "./types.js";
-import { hasDatedEvidence, QUALITY_RULES, qualityWarnings } from "./quality.js";
+import { hasDatedEvidence, QUALITY_RULES, qualityWarnings, type SharedContext } from "./quality.js";
 
 export interface CheckFailure {
   rule: string;
@@ -52,7 +52,7 @@ export function checkGoals(raw: unknown, rule = "completion-goals"): CheckFailur
   return failures;
 }
 
-export function checkRequest(body: unknown): CheckFailure[] {
+export function checkRequest(body: unknown, shared?: SharedContext): CheckFailure[] {
   const out: CheckFailure[] = [];
   const fail = (rule: string, message: string) => out.push({ rule, message, waivable: false });
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -138,7 +138,9 @@ export function checkRequest(body: unknown): CheckFailure[] {
       fail("S23-narrower", "Offer a narrower authorized scope, or explain in narrowing_reason why the action cannot be split.");
     }
     if (!Array.isArray(b.evidence) || !b.evidence.some(hasDatedEvidence)) {
-      fail("S24-approval-evidence", "Include dated evidence with a claim and source for the action being approved.");
+      if (!shared?.evidence?.some(hasDatedEvidence)) {
+        fail("S24-approval-evidence", "Include dated evidence with a claim and source for the action being approved.");
+      }
     }
   }
   if (b.narrowing_reason !== undefined && !nonEmpty(b.narrowing_reason)) {
@@ -167,7 +169,7 @@ export function checkRequest(body: unknown): CheckFailure[] {
     }
   }
   if (out.length) return out;
-  const warnings = qualityWarnings(b as RequestBody);
+  const warnings = qualityWarnings(b as RequestBody, shared);
   for (const rule of waived) {
     if (!warnings.some(w => w.rule === rule)) fail("S25-waiver", "Remove the unused waiver for " + rule + ".");
   }
@@ -198,6 +200,19 @@ export function validReviewIntent(value: unknown): value is ReviewIntent {
   const intent = value as Record<string, unknown>;
   if (!nonEmpty(intent.asked) || !nonEmpty(intent.doing)) return false;
   if (intent.task_title !== undefined && !validTaskTitle(intent.task_title)) return false;
+  if (intent.already_done !== undefined && !nonEmpty(intent.already_done)) return false;
+  if (intent.shared_glossary !== undefined) {
+    if (!intent.shared_glossary || typeof intent.shared_glossary !== "object" || Array.isArray(intent.shared_glossary)
+        || Object.entries(intent.shared_glossary).some(([term, meaning]) => !nonEmpty(term) || !nonEmpty(meaning))) {
+      return false;
+    }
+  }
+  if (intent.shared_evidence !== undefined) {
+    if (!Array.isArray(intent.shared_evidence)
+        || intent.shared_evidence.some((e) => !hasDatedEvidence(e) || !["observed", "inferred"].includes((e as { kind?: string }).kind ?? ""))) {
+      return false;
+    }
+  }
   const scope = intent.scope_delta;
   const changes = ["narrowed", "deferred", "added"] as const;
   return scope === "none" || (!!scope && typeof scope === "object" && !Array.isArray(scope)
@@ -207,16 +222,87 @@ export function validReviewIntent(value: unknown): value is ReviewIntent {
     }));
 }
 
+const persistedRef = /^R-\d{8}-[0-9a-f]{8}(?:@\d+)?$/;
+
+/** Verify D4 eligibility rules for any card that declares a default. */
+export function defaultEligibilityProblem(body: RequestBody): string | undefined {
+  const declared = body.default;
+  if (!declared) return undefined;
+  if (body.level !== 2 || body.stakes.reversibility !== "easy") {
+    return "defaults apply only to level-2 easy-to-undo requests";
+  }
+  if (body.kind !== "choose" && body.kind !== "clarify") {
+    return `defaults are not allowed on ${body.kind} requests`;
+  }
+  if (body.kind === "choose" && !["approach", "priority", "process"].includes(body.category ?? "")) {
+    return `design, naming and other choices must wait for the person (category ${String(body.category ?? "unset")})`;
+  }
+  const eligibility = declared.eligibility;
+  if (!eligibility) return undefined;
+  if (eligibility.local !== true || eligibility.scope_delta !== "none"
+      || !nonEmpty(eligibility.undo) || !nonEmpty(eligibility.authority)) {
+    return "default.eligibility needs local: true, scope_delta: \"none\", undo and authority";
+  }
+  if (eligibility.size !== "small" && (eligibility.size !== "larger-technical"
+      || eligibility.panel?.requested_by_person !== true || !nonEmpty(eligibility.panel.finding))) {
+    return "larger-technical defaults require panel.requested_by_person: true and panel.finding";
+  }
+  const option = body.options?.find((o) => o.id === declared.option);
+  if (!option?.authorization) {
+    return `default option ${declared.option} needs an authorization to be claimed`;
+  }
+  return undefined;
+}
+
 /** The file form of a batch carries its author's intent alongside the request bodies. */
-export function checkDocument(input: Record<string, unknown>): CheckFailure[] {
+export function checkDocument(input: Record<string, unknown>, opts: { strictDefaults?: boolean } = {}): CheckFailure[] {
   if (!Object.hasOwn(input, "review") || Object.hasOwn(input, "kind")) return checkRequest(input);
   const review = input.review as { intent?: unknown; requests?: unknown[] } | null;
   const problems: CheckFailure[] = validReviewIntent(review?.intent) ? [] : [intentFailure];
   if (!Array.isArray(review?.requests) || !review.requests.length) {
     return [...problems, { rule: "S00-shape", waivable: false, message: "Include at least one request in the review." }];
   }
+  const intentObj = validReviewIntent(review?.intent) ? review.intent : undefined;
+  const shared: SharedContext | undefined = intentObj && (intentObj.shared_glossary || intentObj.shared_evidence)
+    ? { glossary: intentObj.shared_glossary, evidence: intentObj.shared_evidence } : undefined;
+  const draftPositions = new Map<string, number>();
   review.requests.forEach((card, index) => {
-    for (const issue of checkRequest(card)) problems.push({ ...issue, message: `Request ${index + 1}. ${issue.message}` });
+    for (const issue of checkRequest(card, shared)) problems.push({ ...issue, message: `Request ${index + 1}. ${issue.message}` });
+    if (card && typeof card === "object" && !Array.isArray(card)) {
+      const body = card as Partial<RequestBody>;
+      if (nonEmpty(body.id)) {
+        if (draftPositions.has(body.id)) {
+          problems.push({ rule: "S30-depends-order", waivable: false,
+            message: `Request ${index + 1}. Draft id "${body.id}" is already used by request ${draftPositions.get(body.id)! + 1}.` });
+        } else draftPositions.set(body.id, index);
+      }
+      if (body.default && body.stakes?.reversibility && body.kind && body.level !== undefined) {
+        const problem = defaultEligibilityProblem(body as RequestBody);
+        if (problem) problems.push({ rule: "S29-default-eligibility", waivable: false, message: `Request ${index + 1}. ${problem}` });
+        else if (opts.strictDefaults && !body.default.eligibility) {
+          problems.push({ rule: "S29-default-eligibility", waivable: false,
+            message: `Request ${index + 1}. Include default.eligibility (local, scope_delta, undo, authority, size) before staging a claimable default.` });
+        }
+      }
+    }
+  });
+  review.requests.forEach((card, index) => {
+    if (!card || typeof card !== "object" || Array.isArray(card)) return;
+    const deps = (card as Partial<RequestBody>).depends_on;
+    if (!Array.isArray(deps)) return;
+    for (const dep of deps) {
+      if (!nonEmpty(dep)) continue;
+      if (draftPositions.has(dep)) {
+        const target = draftPositions.get(dep)!;
+        if (target >= index) {
+          problems.push({ rule: "S30-depends-order", waivable: false,
+            message: `Request ${index + 1}. depends_on "${dep}" must appear earlier in the review (found at request ${target + 1}).` });
+        }
+      } else if (!persistedRef.test(dep)) {
+        problems.push({ rule: "S30-depends-order", waivable: false,
+          message: `Request ${index + 1}. depends_on "${dep}" does not match an earlier card in this batch or an existing request ID.` });
+      }
+    }
   });
   return problems;
 }

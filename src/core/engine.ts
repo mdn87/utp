@@ -13,6 +13,7 @@ import { EventEmitter } from "node:events";
 import { reviewMarkdown, type ReviewView } from "../cli/render.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
+import type { SharedContext } from "./quality.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
 import { CorruptStoreError, type EventStore, type StoredEvent } from "./store.js";
@@ -75,6 +76,7 @@ export interface Req {
 export interface Review {
   id: string;
   status: "open" | "prepared";
+  owner?: Actor;
   items: string[];
   intent?: ReviewIntent;
   presentations: { id: string; channel: string; at: string; actor?: Actor; items?: string[];
@@ -152,6 +154,7 @@ interface PolicyRecord {
 
 const SYSTEM: Actor = { machine: "service", session: "sweep" };
 const key = (id: string, revision: number) => `${id}@${revision}`;
+const actorKey = (a: Actor) => `${a.machine}\0${a.session}`;
 const sameActor = (a: Actor, b: Actor) => a.machine === b.machine && a.session === b.session;
 const newId = (prefix: string, at: string) =>
   `${prefix}-${at.slice(0, 10).replaceAll("-", "")}-${randomBytes(4).toString("hex")}`;
@@ -268,7 +271,7 @@ export class Engine {
   private readonly grants = new Map<string, Grant>();
   private readonly archives = new Map<string, DecisionArchive>();
   private readonly routineCounts = new Map<string, number>();
-  private openReviewId: string | undefined;
+  private readonly openReviews = new Map<string, string>();
 
   constructor(
     private readonly store: EventStore,
@@ -423,7 +426,7 @@ export class Engine {
         case "takeover": return this.takeover(args, actor, opId);
         case "reverse": return this.reverse(args, actor, opId);
         case "show": return this.show(args);
-        case "status": return this.status();
+        case "status": return this.status(actor);
         case "log": return this.log(args);
         default: return { code: EXIT.OTHER, message: `unknown operation: ${op}` };
       }
@@ -497,7 +500,13 @@ export class Engine {
 
   private ask(a: Args, actor: Actor, opId?: string, decision?: { policy: PolicyRecord; result: OpResult }): OpResult {
     const body = a.body as RequestBody;
-    const failures = checkRequest(body);
+    const rawShared = a.shared as SharedContext | undefined;
+    const shared: SharedContext | undefined = rawShared && typeof rawShared === "object" && !Array.isArray(rawShared)
+      ? {
+        ...(rawShared.glossary && typeof rawShared.glossary === "object" && !Array.isArray(rawShared.glossary) ? { glossary: rawShared.glossary } : {}),
+        ...(Array.isArray(rawShared.evidence) ? { evidence: rawShared.evidence } : {}),
+      } : undefined;
+    const failures = checkRequest(body, shared);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
     const basis = this.basisFor(body, basisArg(a.basis));
     let near: string | undefined;
@@ -521,7 +530,7 @@ export class Engine {
     }
     const at = this.now().toISOString();
     const id = newId("R", at);
-    const review_id = this.openReviewId ?? newId("V", at);
+    const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", at);
     const result = {
       ...(decision?.result ?? { code: EXIT.OK }), id, revision: 1, review_id, role: "owner", attached: false,
       ...(near ? { near_duplicate: near } : {}),
@@ -531,7 +540,11 @@ export class Engine {
   }
 
   private flush(actor: Actor, opId: string | undefined, delivery: Args): OpResult {
-    const review = this.openReviewId ? this.reviews.get(this.openReviewId) : undefined;
+    const requestedReview = typeof delivery.review === "string" ? this.reviews.get(delivery.review) : undefined;
+    const ownReviewId = this.openReviews.get(actorKey(actor));
+    const review = delivery.review !== undefined
+      ? (requestedReview?.status === "open" && (!requestedReview.owner || sameActor(requestedReview.owner, actor)) ? requestedReview : undefined)
+      : (ownReviewId ? this.reviews.get(ownReviewId) : undefined);
     const items = review ? review.items.filter((k) => this.revs.get(k)?.status === "queued") : [];
     if (delivery.intent !== undefined && !validReviewIntent(delivery.intent)) {
       return { code: EXIT.CHECK_FAILED, failures: [intentFailure] };
@@ -1019,7 +1032,7 @@ export class Engine {
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
     const basis = this.basisFor(body, basisArg(a.basis));
     const revision = rev.revision + 1;
-    const review_id = this.openReviewId ?? newId("V", this.now().toISOString());
+    const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", this.now().toISOString());
     return this.commit("revise", "request.revised", actor, { id: req.id, revision, basis, review_id },
       { code: EXIT.OK, id: req.id, revision, review_id, superseded: rev.revision }, opId, { body });
   }
@@ -1099,19 +1112,33 @@ export class Engine {
     if (ref.startsWith("V-")) {
       const v = this.reviews.get(ref);
       if (!v) return notFound(ref);
-      const items = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined).map((r) => this.view(r));
+      const revList = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined);
+      const items = revList.map((r) => this.view(r));
+      const inReview = new Set(revList.flatMap((r) => [r.key, r.id]));
+      const resolved_dependencies: Record<string, string> = {};
+      for (const r of revList) {
+        for (const dep of r.body.depends_on ?? []) {
+          if (inReview.has(dep) || dep in resolved_dependencies) continue;
+          const target = this.resolve(dep);
+          if (target) {
+            resolved_dependencies[dep] = `${target.key} · ${target.body.question} (${target.body.kind}, level ${target.body.level})`;
+          }
+        }
+      }
       return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.owner ? { owner: v.owner } : {}),
         ...(v.intent ? { intent: v.intent } : {}),
         ...(v.delivery ? { delivery: v.delivery.state } : {}),
         ...(v.page_response_ms !== undefined ? { page_response_ms: v.page_response_ms } : {}),
-        ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}) } };
+        ...(v.default_notices?.length ? { default_notices: v.default_notices } : {}),
+        ...(Object.keys(resolved_dependencies).length ? { resolved_dependencies } : {}) } };
     }
     const rev = this.resolve(ref);
     if (!rev) return notFound(ref);
     return { code: EXIT.OK, request: this.view(rev) };
   }
 
-  private status(): OpResult {
+  private status(actor?: Actor): OpResult {
     const at = this.now().toISOString();
     const requests = [...this.revs.values()]
       .filter((r) => this.isCurrentRev(r) && this.isOpen(r))
@@ -1124,7 +1151,9 @@ export class Engine {
         return r !== undefined && this.isCurrentRev(r) && waiting.has(this.effective(r, at));
       }))
       .map((v) => ({ id: v.id, status: v.status, presentations: v.presentations.length, items: v.items }));
-    return { code: EXIT.OK, requests, reviews, open_review: this.openReviewId ?? null };
+    const open_review = actor ? (this.openReviews.get(actorKey(actor)) ?? null) : (this.openReviews.values().next().value ?? null);
+    const open_reviews = [...new Set(this.openReviews.values())];
+    return { code: EXIT.OK, requests, reviews, open_review, open_reviews };
   }
 
   private log(a: Args): OpResult {
@@ -1225,7 +1254,7 @@ export class Engine {
         v.default_notices = (d.default_notices as DefaultNotice[] | undefined) ?? [];
         if (typeof d.notify_questions === "number") v.delivery = { questions: d.notify_questions, state: "pending" };
         if (d.digest === true) v.digest = { at: e.at, recorded: false };
-        if (this.openReviewId === v.id) this.openReviewId = undefined;
+        for (const [ownerKey, id] of this.openReviews) if (id === v.id) this.openReviews.delete(ownerKey);
         break;
       }
       case "review.delivery-recorded": {
@@ -1470,11 +1499,14 @@ export class Engine {
     };
     this.revs.set(r.key, r);
     let v = this.reviews.get(review_id);
+    const rawOwner = (e.data.owner as Actor | undefined) ?? e.actor;
+    const owner: Actor | undefined = rawOwner?.machine && rawOwner.session
+      ? { machine: rawOwner.machine, session: rawOwner.session } : undefined;
     if (!v) {
-      v = { id: review_id, status: "open", items: [], presentations: [] };
+      v = { id: review_id, status: "open", items: [], presentations: [], ...(owner ? { owner } : {}) };
       this.reviews.set(review_id, v);
-      this.openReviewId = review_id;
     }
+    if (v.status === "open" && owner) this.openReviews.set(actorKey(owner), review_id);
     v.items.push(r.key);
   }
 

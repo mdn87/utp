@@ -42,6 +42,7 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             consider <decision.json>
             decide <decision.json>
             ask <file>
+            stage <batch.json> [--flush]
             flush [<review-id>] [--intent <intent-or-review.json>]
             page <review-id>
             presented <review> [--channel <name>]
@@ -110,6 +111,7 @@ const OPTIONS = {
   inbox: { type: "string" },
   apply: { type: "boolean" },
   launcher: { type: "string" },
+  flush: { type: "boolean" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -230,7 +232,7 @@ const TEMPLATES: Record<string, RequestBody> = {
 };
 
 const SESSION_VERBS = new Set([
-  "status", "consider", "decide", "ask", "flush", "presented", "answer", "wait",
+  "status", "consider", "decide", "ask", "stage", "flush", "presented", "answer", "wait",
   "claim-default", "resolve-late", "begin", "applied", "reconcile", "release",
   "takeover", "revise", "cancel", "reverse",
 ]);
@@ -408,6 +410,95 @@ async function main(argv: string[]): Promise<number> {
         + (r.role === "observer" ? " An equivalent request was already open, so this session observes it and receives its answer." : "")
         + (r.near_duplicate ? ` A similar request is open: ${String(r.near_duplicate)}.` : "")
         + " Run utp flush at a natural stopping point.");
+    }
+    case "stage": {
+      const document = readJson(rest[0], "review batch");
+      if (!Object.hasOwn(document, "review") || Object.hasOwn(document, "kind")) {
+        throw new CliError(EXIT.CHECK_FAILED, "stage needs a batch file with review.intent and review.requests");
+      }
+      const failures = checkDocument(document, { strictDefaults: true });
+      if (failures.length) return out({ code: EXIT.CHECK_FAILED, failures });
+      const batch = document.review as { intent: unknown; requests: RequestBody[] };
+      const { project, root } = projectFor();
+      const allTags = [...new Set(batch.requests.flatMap(r => r.tags ?? []))];
+      const allRelated = [...new Set(batch.requests.flatMap(r => r.related ?? []))];
+      const maxLevel = Math.max(...batch.requests.map(r => r.level)) as 0 | 1 | 2 | 3;
+      const considered = maxLevel > 0 && (allTags.length || allRelated.length)
+        ? await call("consider", { level: maxLevel, tags: allTags, related: allRelated }, { project })
+        : { code: EXIT.OK, reversals: [] };
+      if (considered.code !== EXIT.OK) return out(considered);
+      const reversals = (considered.reversals as DecisionLogEntry[] | undefined) ?? [];
+      const warnings: string[] = [];
+      const statusRes = await call("status", {}, { project });
+      if (statusRes.code === EXIT.OK) {
+        const queuedNotices = (statusRes.requests as { id: string; revision: number; kind: string; status: string }[])
+          .filter(r => r.kind === "notice" && r.status === "queued");
+        if (queuedNotices.length) {
+          const level3Cards = batch.requests.filter(r => r.level === 3 && (r.kind === "approve" || r.options?.some(o => o.authorization)));
+          if (level3Cards.length) {
+            const shownNotices = await Promise.all(queuedNotices.map(n => call("show", { id: `${n.id}@${n.revision}` }, { project })));
+            for (const shown of shownNotices) {
+              if (shown.code !== EXIT.OK) continue;
+              const notice = shown.request as { id: string; body: RequestBody; basis_files?: string[] };
+              const noticeTags = new Set(notice.body.tags ?? []);
+              const noticeFiles = new Set(notice.basis_files ?? []);
+              for (const card of level3Cards) {
+                const linked = (card.depends_on ?? []).some(dep => dep === notice.id || dep.startsWith(`${notice.id}@`))
+                  || (card.related ?? []).includes(notice.id);
+                if (linked) continue;
+                const sharedTag = (card.tags ?? []).find(t => noticeTags.has(t));
+                const sharedFile = (card.basis?.files ?? []).find(f => noticeFiles.has(f));
+                if (sharedTag || sharedFile) {
+                  warnings.push(`Level-3 card "${card.question}" shares ${sharedFile ? `basis file ${sharedFile}` : `tag ${sharedTag}`} with unlinked queued notice ${notice.id}.`);
+                }
+              }
+            }
+          }
+        }
+      }
+      const batchIntent = batch.intent as { shared_glossary?: Record<string, string>; shared_evidence?: unknown[] } | undefined;
+      const shared = batchIntent && (batchIntent.shared_glossary || batchIntent.shared_evidence)
+        ? { ...(batchIntent.shared_glossary ? { glossary: batchIntent.shared_glossary } : {}),
+            ...(batchIntent.shared_evidence ? { evidence: batchIntent.shared_evidence } : {}) }
+        : undefined;
+      const queued: { id: string; revision: number; review_id: string }[] = [];
+      for (const [index, body] of batch.requests.entries()) {
+        const basis = fingerprints(root, body.basis?.files ?? []);
+        const cardOp = opId ? `${opId}:card-${index + 1}` : undefined;
+        const r = await call("ask", { body, basis, ...(shared ? { shared } : {}) }, { project, opId: cardOp });
+        if (r.code !== EXIT.OK) return out(r);
+        queued.push({ id: String(r.id), revision: Number(r.revision), review_id: String(r.review_id) });
+      }
+      const reviewId = queued[0]?.review_id ?? null;
+      if (!flags.flush) {
+        const lines = [
+          `Staged ${queued.length} card${queued.length === 1 ? "" : "s"} in review ${String(reviewId)}.`,
+          ...reversals.flatMap(p => p.reversals.map(rv => `Prior reversal of ${p.id}: ${rv.reason}`)),
+          ...warnings.map(w => `Warning: ${w}`),
+          `Run utp flush ${String(reviewId)} --intent ${rest[0]} when ready.`,
+        ];
+        return out({ code: EXIT.OK, review_id: reviewId, items: queued.map(q => `${q.id}@${q.revision}`),
+          flushed: false, reversals, warnings }, lines.join("\n"));
+      }
+      const flushArgs = { review: reviewId, intent: batch.intent, requests_hash: reviewRequestsHash(batch.requests) };
+      const flushed = await call("flush", flushArgs, { project, opId: opId ? `${opId}:flush` : undefined });
+      if (flushed.code !== EXIT.OK || !flushed.review_id) return out(flushed);
+      const needsVerifiedPage = flushed.route === "conversation" && flushed.needs_verified_channel === true && flushed.chat_provenance === false;
+      if (flushed.route === "review-page" || needsVerifiedPage) {
+        const page = await call("review-page.prepare", { review: flushed.review_id }, { project });
+        if (page.code !== EXIT.OK) return out({ ...page, review_id: flushed.review_id, reversals, warnings,
+          message: `The review was prepared. Run utp page ${flushed.review_id} or utp review ${flushed.review_id} to answer it. ${page.message ?? ""}` });
+        const prompt = needsVerifiedPage
+          ? `This review includes a level-3 approval and verified chat is unavailable for this session. Open this review page or run utp review ${flushed.review_id} in your terminal.\n${String(page.url)}`
+          : `Open this review page to answer the batch in one save.\n${String(page.url)}`;
+        return out({ ...flushed, route: "review-page", url: page.url, flushed: true, reversals, warnings }, prompt);
+      }
+      if (flags.json) return out({ ...flushed, flushed: true, reversals, warnings });
+      if (flushed.digest === true) return out({ ...flushed, flushed: true, reversals, warnings }, "These notices are queued for the morning report.");
+      const shown = await call("show", { id: flushed.review_id }, { project });
+      const review = shown.review as ReviewView;
+      return out({ ...flushed, flushed: true, reversals, warnings },
+        `${reviewMarkdown(review)}\n\nAfter this review appears in your message to the person, run: utp presented ${review.id} --channel conversation`);
     }
     case "flush": {
       const { project } = projectFor();
