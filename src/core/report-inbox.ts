@@ -20,8 +20,15 @@ export function writeNoticeDigest(dir: string, project: string, digest: NoticeDi
   const staging = path.join(dir, ".tmp");
   mkdirSync(staging, { recursive: true });
   const temp = path.join(staging, `${name}-${randomBytes(6).toString("hex")}`);
-  const body_md = digest.notices.map(({ title, consequence }) => `- ${redactText(title)}\n\n  ${redactText(consequence)}`).join("\n\n");
-  const item: ReportInboxItem = { schema: "utp-report-notice/v1", created: digest.at, title: "UTP review notices",
+  const body_md = digest.notices.map(({ id, title, consequence }) =>
+    `- **${redactText(title)}**${id ? ` (\`${id}\`)` : ""}\n\n  ${redactText(consequence)}${id ? `\n\n  To reverse: \`utp reverse ${id} --file reason.json\`` : ""}`,
+  ).join("\n\n");
+  const title = digest.project_name && digest.task_title
+    ? `UTP notices · ${redactText(digest.project_name)}: ${redactText(digest.task_title)}`
+    : digest.project_name
+      ? `UTP notices · ${redactText(digest.project_name)}`
+      : "UTP review notices";
+  const item: ReportInboxItem = { schema: "utp-report-notice/v1", created: digest.at, title,
     body_md, review_id: digest.review };
   const output = format ? format(item) : item;
   if (!output || typeof output !== "object" || Array.isArray(output)) throw new Error("the report adapter must return an inbox object");

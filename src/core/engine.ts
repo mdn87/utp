@@ -100,7 +100,9 @@ export interface ReviewDelivery {
 export interface NoticeDigest {
   review: string;
   at: string;
-  notices: { title: string; consequence: string }[];
+  project_name?: string;
+  task_title?: string;
+  notices: { id: string; title: string; consequence: string }[];
 }
 
 export interface BrowserAnswer {
@@ -319,15 +321,21 @@ export class Engine {
       state: delivery.action === "request" ? "sent" : "resolved" }, { code: EXIT.OK });
   }
 
-  noticeDigests(): NoticeDigest[] {
+  noticeDigests(projectName?: string): NoticeDigest[] {
     return [...this.reviews.values()].flatMap<NoticeDigest>((review) => {
       if (!review.digest || review.digest.recorded) return [];
       const notices = review.items.flatMap((ref) => {
         const card = this.revs.get(ref);
         if (!card || card.body.kind !== "notice" || !this.isCurrentRev(card) || card.status !== "queued") return [];
-        return [{ title: card.body.question, consequence: card.body.why_now }];
+        return [{ id: card.id, title: card.body.question, consequence: card.body.why_now }];
       });
-      return [{ review: review.id, at: review.digest.at, notices }];
+      if (!notices.length) return [];
+      const title = validTaskTitle(review.intent?.task_title) ? review.intent!.task_title : undefined;
+      return [{
+        review: review.id, at: review.digest.at, notices,
+        ...(projectName ? { project_name: projectName } : {}),
+        ...(title ? { task_title: title } : {}),
+      }];
     });
   }
 
@@ -414,7 +422,26 @@ export class Engine {
     }, { code: EXIT.OK, review_id: reviewId, saved: answers.length, hidden: hidden.length, clarifications: clarifications.length }, opId);
   }
 
-  /** Snapshots the source and its prior archives without exposing them to write operations. */
+  /** Record a browser-verified Keep or Switch decision on an applied default notice. */
+  recordBrowserDefaultAction(requestRef: string, optionId: string, actor: Actor): OpResult {
+    this.sweep();
+    const rev = this.resolve(requestRef);
+    if (!rev || !this.isCurrentRev(rev) || !rev.default_application) {
+      return { code: EXIT.NOT_ALLOWED, message: "That applied default is no longer active." };
+    }
+    const at = this.now().toISOString();
+    try {
+      const answer = this.answerRecord(rev, { value: optionId, channel: "review-page" }, actor, at, true);
+      const grant = this.mustGrant(rev.default_application.grant);
+      const kept = optionId === grant.option;
+      const result: OpResult = { code: EXIT.OK, id: rev.id, revision: rev.revision, answer, kept };
+      return this.commit("review-page.default", "answer.recorded", actor,
+        { id: rev.id, revision: rev.revision, answer, after_effect: true, clear_default_notice: kept }, result);
+    } catch (error) {
+      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
+      throw error;
+    }
+  }
   relinkFrom(source: Engine, from: string, to: string, actor: Actor, opId?: string): OpResult {
     const previous = opId ? this.store.findOp(opId) : undefined;
     if (previous) {
@@ -472,6 +499,7 @@ export class Engine {
         case "show": return this.show(args);
         case "status": return this.status(actor);
         case "log": return this.log(args);
+        case "closeout.deliver": return this.deliverCloseoutNotices(args, actor, opId);
         default: return { code: EXIT.OTHER, message: `unknown operation: ${op}` };
       }
     } catch (e) {
@@ -611,8 +639,17 @@ export class Engine {
     const defaults = digest ? [] : [...this.revs.values()].flatMap((rev): DefaultNotice[] => {
       if (!rev.default_notice_pending || !rev.default_application) return [];
       const grant = this.mustGrant(rev.default_application.grant);
-      return [{ request_id: rev.id, revision: rev.revision, question: rev.body.question,
-        option: grant.option, conflict: rev.status === "late_conflict" }];
+      const optLabel = rev.body.options?.find((o) => o.id === grant.option)?.label;
+      const undo = rev.body.default?.eligibility?.undo;
+      const options = (rev.body.options ?? []).map((o) => ({ id: o.id, label: o.label }));
+      return [{
+        request_id: rev.id, revision: rev.revision, question: rev.body.question,
+        option: grant.option,
+        ...(optLabel ? { option_label: optLabel } : {}),
+        ...(undo ? { undo } : {}),
+        ...(options.length ? { options } : {}),
+        conflict: rev.status === "late_conflict",
+      }];
     });
     return this.commit("flush", "review.flushed", actor, { review_id: review.id, default_notices: defaults,
       ...(delivery.notify === true && questions ? { notify_questions: questions } : {}), ...(digest ? { digest: true } : {}) },
@@ -1148,6 +1185,19 @@ export class Engine {
       { code: EXIT.OK, id: rev.id, revision: rev.revision, reversed: true }, opId);
   }
 
+  private deliverCloseoutNotices(a: Args, actor: Actor, opId?: string): OpResult {
+    const ids = textList(a.ids, "ids");
+    const delivered: string[] = [];
+    for (const ref of ids) {
+      const rev = this.resolve(ref);
+      if (!rev || !this.isCurrentRev(rev) || rev.body.kind !== "notice" || rev.status !== "queued") continue;
+      if (!delivered.includes(rev.key)) delivered.push(rev.key);
+    }
+    if (!delivered.length) return { code: EXIT.OK, delivered: [] };
+    return this.commit("closeout.deliver", "closeout.notices-delivered", actor, { items: delivered, channel: "closeout-report" },
+      { code: EXIT.OK, delivered }, opId);
+  }
+
   private show(a: Args): OpResult {
     const ref = str(a, "id");
     if (ref.startsWith("G-")) {
@@ -1338,7 +1388,33 @@ export class Engine {
         break;
       }
       case "answer.recorded": {
-        this.recordAnswer(this.mustRev(d), d.answer as AnswerRecord, e);
+        const rev = this.mustRev(d);
+        this.recordAnswer(rev, d.answer as AnswerRecord, e);
+        if (d.clear_default_notice === true) rev.default_notice_pending = false;
+        break;
+      }
+      case "closeout.notices-delivered": {
+        const items = (d.items as string[] | undefined) ?? [];
+        const touched = new Set<string>();
+        for (const k of items) {
+          const r = this.revs.get(k);
+          if (!r || !this.isCurrentRev(r) || r.body.kind !== "notice" || r.status !== "queued") continue;
+          this.move(r, "presented", e.at);
+          this.move(r, "closed", e.at);
+          r.presented_at = e.at;
+          touched.add(r.review_id);
+        }
+        for (const reviewId of touched) {
+          const review = this.reviews.get(reviewId);
+          if (!review) continue;
+          const hasQueued = review.items.some((k) => this.revs.get(k)?.status === "queued");
+          if (!hasQueued) {
+            if (review.digest) review.digest.recorded = true;
+            if (review.status === "open") {
+              for (const [ownerKey, id] of this.openReviews) if (id === review.id) this.openReviews.delete(ownerKey);
+            }
+          }
+        }
         break;
       }
       case "request.clarification-requested": {

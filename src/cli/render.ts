@@ -20,6 +20,7 @@ export interface RequestView {
   owner?: Actor;
   revision_diff?: RevisionDiff;
   applied_evidence?: { action: string; target: string; scope: string; effect: string };
+  policy?: unknown;
 }
 
 export interface ReviewView {
@@ -210,7 +211,9 @@ export function answerText(a: AnswerRecord): string {
 
 export function defaultNoticeMarkdown(notice: DefaultNotice): string {
   const status = notice.conflict ? "Late answer conflicts with the applied default" : "Applied by default: change?";
-  return `- **${status}** ${notice.question} Option **${notice.option}**. Request \`${notice.request_id}@${notice.revision}\`.`;
+  const optionName = notice.option_label ? `${notice.option_label} (${notice.option})` : notice.option;
+  const undo = notice.undo ? ` Undo: ${notice.undo}` : "";
+  return `- **${status}** ${notice.question} Option **${optionName}**.${undo} Request \`${notice.request_id}@${notice.revision}\`.`;
 }
 
 export function reviewMarkdown(review: ReviewView, mode: "presentation" | "history" = "presentation"): string {

@@ -47,9 +47,9 @@ function repo(remote?: string): string {
   return dir;
 }
 
-test("closeout maps every goal and shows queued notices without presenting a review or asking for acceptance", async () => {
+test("closeout maps every goal, delivers queued notices once by default, and supports --keep-notices", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-closeout-data-"));
-  const svc = await startServer({ dataDir: data, port: 0 });
+  const svc = await startServer({ dataDir: data, port: 0, reportExport: true });
   try {
     const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-closeout-home-")) };
     const run = async (args: string[], input?: string) => {
@@ -62,7 +62,7 @@ test("closeout maps every goal and shows queued notices without presenting a rev
     const notice = { kind: "notice", question: "Updated export format", why_now: "The export includes a date column.",
       level: 1, level_reason: "An informational update.", stakes: { reversibility: "easy" } };
     writeFileSync(path.join(o.cwd, "notice.json"), JSON.stringify(notice));
-    await run(["ask", "notice.json"]);
+    const { id: noticeId } = JSON.parse(await run(["ask", "notice.json", "--json"]));
     const before = JSON.parse(await run(["status", "--json"]));
     const goals = ["covered", "partly_covered", "not_covered"].map((coverage, i) => ({
       id: `G${i + 1}`, goal: `Export requirement ${i + 1}`, coverage,
@@ -70,6 +70,9 @@ test("closeout maps every goal and shows queued notices without presenting a rev
     }));
     const file = path.join(o.cwd, "report.json");
     writeFileSync(file, JSON.stringify({ goals }));
+    const kept = await run(["closeout", file, "--keep-notices"]);
+    assert.match(kept, /Queued notices[\s\S]*Updated export format[\s\S]*The export includes a date column/);
+    assert.deepEqual(JSON.parse(await run(["status", "--json"])), before);
     const report = await run(["closeout", file]);
     for (const goal of goals) {
       assert.ok(report.includes(goal.goal) && report.includes(goal.coverage.replaceAll("_", " ")));
@@ -78,7 +81,12 @@ test("closeout maps every goal and shows queued notices without presenting a rev
     assert.match(report, /export\.csv/);
     assert.match(report, /2026-01-02/);
     assert.match(report, /Queued notices[\s\S]*Updated export format[\s\S]*The export includes a date column/);
-    assert.deepEqual(JSON.parse(await run(["status", "--json"])), before);
+    const afterNotice = JSON.parse(await run(["show", noticeId, "--json"])).request;
+    assert.equal(afterNotice.status, "closed");
+    const inbox = path.join(o.cwd, "morning-inbox");
+    assert.match(await run(["report-import", "--inbox", inbox]), /items imported: 0/);
+    const secondReport = await run(["closeout", file]);
+    assert.match(secondReport, /No notices are queued/);
     for (const bad of [[], [goals[0], goals[0]], [{ ...goals[0], evidence: [] }], [{ ...goals[0], coverage: "done" }],
       [{ ...goals[0], evidence: [{ ...goals[0]!.evidence[0], kind: "guess" }] }]]) {
       writeFileSync(file, JSON.stringify({ goals: bad }));

@@ -130,6 +130,21 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
       }
       shownAny = true;
       presentation = String(receipt.presentation_id);
+      for (const notice of review.default_notices ?? []) {
+        const alts = (notice.options ?? []).filter((o) => o.id !== notice.option).map((o) => o.id);
+        if (!alts.length) continue;
+        const reply = await ask(`Applied default ${notice.request_id}@${notice.revision} (${notice.option_label ?? notice.option}): k to keep, switch (${alts.join(", ")}), or Enter to skip: `);
+        if (reply === null) break outer;
+        if (!reply) continue;
+        const chosen = reply === "k" ? notice.option : alts.includes(reply) ? reply : undefined;
+        if (!chosen) {
+          write(`Unrecognized choice ${reply}; skipped.`);
+          continue;
+        }
+        const r = await call("answer", { id: `${notice.request_id}@${notice.revision}`, value: chosen, channel }, { project });
+        if (r.code === EXIT.OK) write(chosen === notice.option ? "Confirmed applied default." : `Recorded switch to ${chosen}.`);
+        else write(`Not saved: ${String(r.message ?? `exit ${r.code}`)}`);
+      }
       for (const [n, item] of items.entries()) {
         if (item.body.kind === "notice") continue;
         if (item.clarification && item.clarification.outcome !== "unsure") continue;

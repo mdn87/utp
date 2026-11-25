@@ -212,6 +212,15 @@ a { display: inline-flex; align-items: center; min-height: 44px; color: var(--cy
 .card-defer { margin: 1rem 0; padding-top: .75rem; border-top: 1px solid var(--line); }
 .form-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
 .button-secondary { color: var(--soft); border-color: var(--field-edge); background: var(--panel); }
+.default-notice {
+  margin: 0 0 1rem;
+  padding: .875rem 1rem;
+  border: 1px solid #ffbd5955;
+  border-inline-start: 3px solid var(--amber);
+  border-radius: .5rem;
+  background: var(--panel);
+}
+.notice-object { margin-top: .75rem; }
 @media (max-width: 36rem) {
   button { width: 100%; }
 }

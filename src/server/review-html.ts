@@ -120,6 +120,7 @@ export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], 
 
 export interface ReviewHtmlOptions {
   previewLines?: string[];
+  statusMessage?: string;
 }
 
 export function reviewHtml(review: ReviewView, token: string, message?: string, form?: URLSearchParams, opts: ReviewHtmlOptions = {}): string {
@@ -224,12 +225,23 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
           `<label>What should the agent explain? <textarea name="clarify-note-${index}" rows="2">${field(`clarify-note-${index}`)}</textarea></label>`,
           `<button type="submit" name="clarify" value="${index}" formnovalidate>Ask for clarification</button></details>`);
       }
+    } else if (b.level === 1 && item.policy) {
+      parts.push('<details class="notice-object"><summary>Disagree? Flag for reversal</summary>',
+        `<label>Why should this decision be reversed? <textarea name="reverse-reason-${index}" rows="2">${field(`reverse-reason-${index}`)}</textarea></label>`,
+        `<button type="submit" name="reverse-notice" value="${index}" formnovalidate>Flag for reversal</button></details>`);
     }
     parts.push("</article>");
     return parts.join("\n");
   });
-  const defaults = (review.default_notices ?? []).map((item) => notice(
-    `${item.conflict ? "Late answer conflicts with the applied default" : "Applied by default: change?"} ${item.question} Option ${item.option}.`));
+  const defaults = (review.default_notices ?? []).map((item) => {
+    const label = item.option_label ? `${item.option_label} (${item.option})` : `Option ${item.option}`;
+    const heading = item.conflict ? "Late answer conflicts with the applied default" : "Applied by default: change?";
+    const undo = item.undo ? `<p class="muted">One-step undo: ${escapeText(item.undo)}</p>` : "";
+    const ref = `${item.request_id}@${item.revision}`;
+    const alts = (item.options ?? []).filter((o) => o.id !== item.option).map((o) =>
+      `<button type="submit" name="default-action" value="switch:${escapeText(ref)}:${escapeText(o.id)}" class="button-secondary" formnovalidate>Switch to ${escapeText(o.label)}</button>`).join("");
+    return `<section class="default-notice"><p class="preserve"><strong>${escapeText(heading)}</strong> ${escapeText(item.question)} — ${escapeText(label)}.</p>${undo}<div class="form-actions"><button type="submit" name="default-action" value="keep:${escapeText(ref)}:${escapeText(item.option)}" class="button-secondary" formnovalidate>Keep default</button>${alts}</div></section>`;
+  });
   const questionCount = review.items.filter((i) => i.body.kind !== "notice").length;
   const noticeCount = review.items.length - questionCount;
   const countText = noticeCount > 0 && questionCount > 0
@@ -238,11 +250,12 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
   const previewBlock = opts.previewLines?.length
     ? `<section class="combined-summary" role="status"><h3>Combined plan check</h3><ul>${opts.previewLines.map((l) => `<li>${escapeText(l)}</li>`).join("")}</ul></section>`
     : "";
+  const statusBanner = opts.statusMessage ? `<p role="status">${escapeText(opts.statusMessage)}</p>` : "";
   return page("Review", `<h1>Review</h1><p class="count">${countText}</p>
     ${contextHtml(review)}
-    ${defaults.join("")}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}
+    ${statusBanner}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}
     <form method="post"><input type="hidden" name="presentation" value="${escapeText(token)}">
-    ${previewBlock}${cards.join("")}
+    ${defaults.join("")}${previewBlock}${cards.join("")}
     <div class="form-actions">
       <button type="submit" name="preview" value="1" class="button-secondary">Check combined plan</button>
       <button type="submit">${opts.previewLines?.length ? "Confirm and save" : "Save answers"}</button>

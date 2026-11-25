@@ -37,7 +37,7 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             link <project-id>
 Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
             check <file>
-            closeout <report.json>
+            closeout <report.json> [--keep-notices]
             closeout-hook               (Claude Code hook JSON on standard input)
             consider <decision.json>
             decide <decision.json>
@@ -112,6 +112,7 @@ const OPTIONS = {
   apply: { type: "boolean" },
   launcher: { type: "string" },
   flush: { type: "boolean" },
+  "keep-notices": { type: "boolean" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -273,7 +274,7 @@ async function main(argv: string[]): Promise<number> {
       return EXIT.OK;
     }
     case "closeout": {
-      const report = await closeout(readJson(rest[0], "completion report"));
+      const report = await closeout(readJson(rest[0], "completion report"), { keepNotices: flags["keep-notices"] === true });
       return out(report, report.markdown as string | undefined);
     }
     case "setup": {

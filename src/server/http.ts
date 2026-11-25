@@ -10,7 +10,7 @@ import { Engine } from "../core/engine.js";
 import { EXIT, type Actor, type OpResult } from "../core/types.js";
 import { Service } from "./service.js";
 import { ReviewPages } from "./review-page.js";
-import { checkReviewerSocket, handleReviewerInbox } from "./reviewer-inbox.js";
+import { checkReviewerSocket, handleReviewerInbox, inboxLabel } from "./reviewer-inbox.js";
 import { ReviewDeliveries, type NotificationOptions } from "./review-delivery.js";
 import { TokenBook, tokenFile } from "./tokens.js";
 import { hasNativeTranscript, readNativeTurns, type TranscriptRoots } from "./transcripts.js";
@@ -159,9 +159,9 @@ export async function startServer(opts: ServeOptions): Promise<RunningService> {
     const actor: Actor = { machine, session };
     const opId = typeof body.op_id === "string" ? body.op_id : undefined;
     if (opts.reportExport && body.op === "report.pending") {
-      const pending = service.projects().flatMap(({ id }) => {
-        const engine = service.engine(id);
-        return engine instanceof Engine ? engine.noticeDigests().map((digest) => ({ ...digest, project: id })) : [];
+      const pending = service.projects().flatMap((project) => {
+        const engine = service.engine(project.id);
+        return engine instanceof Engine ? engine.noticeDigests(inboxLabel(project)).map((digest) => ({ ...digest, project: project.id })) : [];
       });
       send(res, 200, { code: EXIT.OK, pending });
       return;

@@ -231,6 +231,32 @@ export class ReviewPages {
       return;
     }
     if (!form || !entry.browser) return denied();
+    const defaultAction = form.get("default-action");
+    if (defaultAction !== null) {
+      const m = /^(keep|switch):(R-[A-Za-z0-9-]+@\d+):([A-Za-z0-9_-]+)$/.exec(defaultAction);
+      if (!m) return denied();
+      const [, mode, ref, optId] = m;
+      const r = engine.recordBrowserDefaultAction(ref!, optId!, entry.actor);
+      if (r.code !== EXIT.OK) {
+        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not update that applied default.", form));
+      }
+      const msg = mode === "keep"
+        ? `Confirmed applied default (${optId}) on ${ref}.`
+        : `Recorded switch to option ${optId} on ${ref}; flagged as a late conflict for the agent to reconcile.`;
+      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form, { statusMessage: msg }));
+    }
+    const reverseNotice = form.get("reverse-notice");
+    if (reverseNotice !== null) {
+      const card = /^\d+$/.test(reverseNotice) ? view.items[Number(reverseNotice)] : undefined;
+      if (!card || card.body.kind !== "notice") return denied();
+      const reason = form.get(`reverse-reason-${reverseNotice}`)?.trim() || "Flagged for reversal on the review page.";
+      const r = engine.run("reverse", { id: card.id, reason, tags: card.body.tags ?? [] }, entry.actor);
+      if (r.code !== EXIT.OK) {
+        return sendHtml(response, 409, reviewHtml(view, entry.browser.form, r.message ?? "Could not record reversal.", form));
+      }
+      return sendHtml(response, 200, reviewHtml(view, entry.browser.form, undefined, form,
+        { statusMessage: `Flagged notice ${card.id} for reversal. Future lookups on its tags will show this reversal.` }));
+    }
     const requested = form.get("clarify");
     if (requested !== null) {
       const card = /^\d+$/.test(requested) ? view.items[Number(requested)] : undefined;
