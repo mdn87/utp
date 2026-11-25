@@ -4,7 +4,7 @@ import path from "node:path";
 import type { RequestView, ReviewView } from "../cli/render.js";
 import { validTaskTitle } from "../core/check.js";
 import { Engine } from "../core/engine.js";
-import { EXIT } from "../core/types.js";
+import { EXIT, type Actor } from "../core/types.js";
 import { escapeText, page } from "./review-html.js";
 import { answerable, ReviewPages, sendHtml } from "./review-page.js";
 import { normalizeRemote, type ProjectInfo, type Service } from "./service.js";
@@ -89,17 +89,20 @@ interface Outstanding {
 }
 
 export async function handleReviewerInbox(req: IncomingMessage, res: ServerResponse, service: Service, pages: ReviewPages,
-  readBody: (req: IncomingMessage) => Promise<string | undefined>): Promise<void> {
+  readBody: (req: IncomingMessage) => Promise<string | undefined>,
+  waitersFor?: (project: string, reviewId: string) => Actor[]): Promise<void> {
   const unavailable = (code: number) => sendHtml(res, code, page("Review unavailable", "<h1>Review unavailable</h1>"));
   if (req.headers.host?.toLowerCase() !== pages.origin.host) return unavailable(403);
   const path = req.url ?? "";
   if (path.startsWith("/review/")) return pages.handle(req, res, readBody);
   if (path === "/" && req.method === "GET") {
     const sections: string[] = [];
+    const recentEntries: { updatedAt: string; html: string }[] = [];
     const nowMs = Date.now();
     for (const project of service.projects()) {
       const engine = service.engine(project.id);
       if (!(engine instanceof Engine)) return unavailable(503);
+      const label = inboxLabel(project);
       const status = engine.run("status", {}, actor);
       const openReviews = new Set((status.open_reviews as string[] | undefined) ?? (status.open_review ? [status.open_review as string] : []));
       const groups = new Map<string, Outstanding[]>();
@@ -123,18 +126,52 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
           const undo = UNDO_SHORT[c.body.stakes.reversibility] ?? c.body.stakes.reversibility;
           return `<li>${escapeText(c.body.question)} <span class="muted">(${escapeText(`${kind} · ${undo}`)})</span></li>`;
         }).join("");
-        sections.push(`<article class="inbox-review"><h2>${escapeText(inboxLabel(project))}</h2>${title}${meta}<ul>${items}</ul>
+        sections.push(`<article class="inbox-review"><h2>${escapeText(label)}</h2>${title}${meta}<ul>${items}</ul>
           <form method="post" action="/open/${encodeURIComponent(project.id)}/${encodeURIComponent(reviewId)}">
           <button type="submit">Open review</button></form></article>`);
       }
+      for (const rec of engine.recentReviews(8)) {
+        const waiters = waitersFor?.(project.id, rec.review_id) ?? [];
+        const waiterLabel = waiters.length
+          ? `agent waiting (${waiters.map((w) => w.session).join(", ")})`
+          : rec.editable_count > 0 ? "editable before work begins" : undefined;
+        const metaParts = [relativeAge(rec.updated_at, nowMs), waiterLabel].filter(Boolean);
+        const rows = rec.cards.map((c) => {
+          const effect = c.applied_evidence ? ` — Applied: ${c.applied_evidence.effect}` : "";
+          const ans = c.answer_summary ? `: ${c.answer_summary}` : "";
+          return `<li><strong>${escapeText(c.question)}</strong> <span class="badge">${escapeText(c.status.replaceAll("_", " "))}</span><span class="muted">${escapeText(`${ans}${effect}`)}</span></li>`;
+        }).join("");
+        const btnLabel = rec.editable_count > 0 ? "Edit or withdraw (before work begins)" : "View status & effects";
+        recentEntries.push({
+          updatedAt: rec.updated_at,
+          html: `<article class="recent-review"><h4>${escapeText(label)}${rec.task_title ? ` — ${escapeText(rec.task_title)}` : ""}</h4>
+            ${metaParts.length ? `<p class="inbox-meta">${escapeText(metaParts.join(" · "))}</p>` : ""}
+            <ul>${rows}</ul>
+            <form method="post" action="/edit/${encodeURIComponent(project.id)}/${encodeURIComponent(rec.review_id)}">
+            <button type="submit" class="button-secondary">${btnLabel}</button></form></article>`,
+        });
+      }
     }
     const empty = '<p class="empty"><span class="check" aria-hidden="true">✓</span>No questions are waiting.</p>';
-    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${sections.join("") || empty}`));
+    const recentHtml = recentEntries.length
+      ? `<section class="recent-section" aria-label="Recent and in flight"><h3>Recent &amp; In Flight</h3>${recentEntries
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10).map((e) => e.html).join("")}</section>`
+      : "";
+    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${sections.join("") || empty}${recentHtml}`));
   }
   const open = /^\/open\/(prj-[a-f0-9]{12})\/(V-[A-Za-z0-9-]+)$/.exec(path);
   if (open && req.method === "POST") {
     if (req.headers.origin !== pages.origin.origin) return unavailable(403);
     const result = pages.prepare(open[1]!, actor, open[2], true);
+    if (result.code !== EXIT.OK) return unavailable(result.code === EXIT.BUSY ? 503 : 409);
+    res.writeHead(303, { location: new URL(String(result.url)).pathname, "cache-control": "no-store" });
+    res.end();
+    return;
+  }
+  const edit = /^\/edit\/(prj-[a-f0-9]{12})\/(V-[A-Za-z0-9-]+)$/.exec(path);
+  if (edit && req.method === "POST") {
+    if (req.headers.origin !== pages.origin.origin) return unavailable(403);
+    const result = pages.prepareEdit(edit[1]!, actor, edit[2]);
     if (result.code !== EXIT.OK) return unavailable(result.code === EXIT.BUSY ? 503 : 409);
     res.writeHead(303, { location: new URL(String(result.url)).pathname, "cache-control": "no-store" });
     res.end();

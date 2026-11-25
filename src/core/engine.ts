@@ -132,6 +132,44 @@ export interface BrowserBatchReceipt {
   clarifications: { id: string; revision: number; clarification: ClarificationRequest }[];
 }
 
+export interface RecentCardSummary {
+  id: string;
+  revision: number;
+  question: string;
+  status: State;
+  answer_summary?: string;
+  editable: boolean;
+  applied_evidence?: { action: string; target: string; scope: string; effect: string };
+  flags: string[];
+}
+
+export interface RecentReviewSummary {
+  review_id: string;
+  task_title?: string;
+  updated_at: string;
+  owner?: Actor;
+  editable_count: number;
+  cards: RecentCardSummary[];
+}
+
+export interface ResumeCardPacket {
+  id: string;
+  revision: number;
+  review_id: string;
+  kind: RequestBody["kind"];
+  level: RequestBody["level"];
+  question: string;
+  status: State;
+  owner: Actor;
+  answer: AnswerRecord | null;
+  authorization: Authorization | null;
+  clarification?: ClarificationRequest;
+  hidden_until?: string;
+  stale_files: string[];
+  needs_takeover: boolean;
+  next_action: string;
+}
+
 export interface DecisionLogEntry {
   id: string;
   revision: number;
@@ -442,6 +480,94 @@ export class Engine {
       throw error;
     }
   }
+
+  /** Pre-begin browser edit or withdraw for an answered or granted card. */
+  editBrowserAnswer(requestRef: string, input: {
+    withdraw?: boolean;
+    value?: string;
+    custom?: string;
+    note?: string;
+    items?: Record<string, string>;
+    details?: Record<string, string>;
+    clarify_note?: string;
+  }, actor: Actor): OpResult {
+    this.sweep();
+    const rev = this.resolve(requestRef);
+    if (!rev || !this.isCurrentRev(rev)) return notFound(requestRef);
+    const st = this.effective(rev, this.now().toISOString());
+    if (!["answered", "granted"].includes(st)) {
+      return { code: EXIT.NOT_ALLOWED, message: `Work is already ${st}; answers lock once execution begins.` };
+    }
+    if (input.withdraw) {
+      return this.commit("review-page.edit", "answer.withdrawn", actor, { id: rev.id, revision: rev.revision },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, withdrawn: true });
+    }
+    const at = this.now().toISOString();
+    if (input.clarify_note) {
+      const clarification: ClarificationRequest = {
+        at, channel: "review-page", note: input.clarify_note, outcome: "needs_clarification",
+      };
+      return this.commit("review-page.edit", "request.clarification-requested", actor,
+        { id: rev.id, revision: rev.revision, clarification, clear_answer: true },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, clarification });
+    }
+    try {
+      const answer = this.answerRecord(rev, { ...input, channel: "review-page" }, actor, at, true);
+      return this.commit("review-page.edit", "answer.recorded", actor,
+        { id: rev.id, revision: rev.revision, answer, after_effect: false },
+        { code: EXIT.OK, id: rev.id, revision: rev.revision, answer });
+    } catch (error) {
+      if (error instanceof UsageError) return { code: EXIT.OTHER, message: error.message };
+      throw error;
+    }
+  }
+
+  /** Recent and in-flight prepared reviews for inbox carry-through visibility. */
+  recentReviews(limit = 10): RecentReviewSummary[] {
+    this.sweep();
+    const at = this.now().toISOString();
+    const tracked = new Set<State>(["answered", "granted", "executing", "applied", "stale", "outcome_unknown", "late_conflict", "hidden"]);
+    const out: RecentReviewSummary[] = [];
+    for (const review of this.reviews.values()) {
+      if (review.status !== "prepared") continue;
+      const cards: RecentCardSummary[] = [];
+      let latest = "";
+      for (const ref of review.items) {
+        const rev = this.revs.get(ref);
+        if (!rev || !this.isCurrentRev(rev) || rev.body.kind === "notice") continue;
+        const st = this.effective(rev, at);
+        if (!tracked.has(st)) continue;
+        const ts = rev.answer?.at ?? rev.presented_at ?? rev.asked_at;
+        if (ts > latest) latest = ts;
+        const ansVal = rev.answer ? (
+          rev.answer.authorization ? `${rev.answer.authorization.action} ${rev.answer.authorization.target}`
+            : rev.answer.disposition ? rev.answer.disposition.replaceAll("_", " ")
+            : typeof rev.answer.value === "string"
+              ? (rev.body.options?.find((o) => o.id === rev.answer!.value)?.label ?? rev.answer.value)
+            : rev.answer.custom ? `"${rev.answer.custom}"`
+            : Object.entries(rev.answer.items ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ")
+        ) : undefined;
+        cards.push({
+          id: rev.id, revision: rev.revision, question: rev.body.question, status: st,
+          ...(ansVal ? { answer_summary: ansVal } : {}),
+          editable: st === "answered" || st === "granted",
+          ...(rev.applied_evidence ? { applied_evidence: rev.applied_evidence } : {}),
+          flags: rev.flags,
+        });
+      }
+      if (!cards.length) continue;
+      const title = validTaskTitle(review.intent?.task_title) ? review.intent!.task_title : undefined;
+      out.push({
+        review_id: review.id,
+        ...(title ? { task_title: title } : {}),
+        updated_at: latest || at,
+        ...(review.owner ? { owner: review.owner } : {}),
+        editable_count: cards.filter((c) => c.editable).length,
+        cards,
+      });
+    }
+    return out.sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, limit);
+  }
   relinkFrom(source: Engine, from: string, to: string, actor: Actor, opId?: string): OpResult {
     const previous = opId ? this.store.findOp(opId) : undefined;
     if (previous) {
@@ -499,6 +625,8 @@ export class Engine {
         case "show": return this.show(args);
         case "status": return this.status(actor);
         case "log": return this.log(args);
+        case "recent": return { code: EXIT.OK, reviews: this.recentReviews() };
+        case "resume": return this.resume(args, actor);
         case "closeout.deliver": return this.deliverCloseoutNotices(args, actor, opId);
         default: return { code: EXIT.OTHER, message: `unknown operation: ${op}` };
       }
@@ -1198,6 +1326,79 @@ export class Engine {
       { code: EXIT.OK, delivered }, opId);
   }
 
+  private resume(a: Args, actor: Actor): OpResult {
+    const at = this.now().toISOString();
+    const reviewId = optStr(a, "review");
+    let revs: Rev[];
+    if (reviewId) {
+      const v = this.reviews.get(reviewId);
+      if (!v) return notFound(reviewId);
+      revs = v.items.map((k) => this.revs.get(k)).filter((r): r is Rev => r !== undefined && this.isCurrentRev(r));
+    } else {
+      revs = [...this.revs.values()].filter((r) => {
+        if (!this.isCurrentRev(r) || r.body.kind === "notice") return false;
+        const st = this.effective(r, at);
+        return !TERMINAL.has(st) && st !== "applied" && st !== "closed";
+      });
+    }
+    const basisFiles = [...new Set(revs.flatMap((r) => Object.keys(r.expected_basis)))].sort();
+    if (a.files_only === true) {
+      return { code: EXIT.OK, ...(reviewId ? { review_id: reviewId } : {}), basis_files: basisFiles };
+    }
+    const supplied = basisArg(a.basis);
+    // Order cards so dependencies appear before dependents when inside the same set.
+    const byRef = new Map<string, Rev>();
+    for (const r of revs) {
+      byRef.set(r.id, r);
+      byRef.set(r.key, r);
+      if (r.body.id) byRef.set(r.body.id, r);
+    }
+    const ordered: Rev[] = [];
+    const seen = new Set<string>();
+    const visit = (r: Rev, stack = new Set<string>()) => {
+      if (seen.has(r.key) || stack.has(r.key)) return;
+      stack.add(r.key);
+      for (const dep of r.body.depends_on ?? []) {
+        const target = byRef.get(dep);
+        if (target && revs.includes(target)) visit(target, stack);
+      }
+      seen.add(r.key);
+      ordered.push(r);
+    };
+    for (const r of revs) visit(r);
+
+    const cards: ResumeCardPacket[] = ordered.map((r) => {
+      const req = this.reqOf(r);
+      const st = this.effective(r, at);
+      const stale_files = supplied
+        ? Object.keys(r.expected_basis).filter((p) => p in supplied && supplied[p] !== r.expected_basis[p])
+        : (r.stale_changed ?? []);
+      const auth = r.answer ? (this.authorizationFor(r, r.answer) ?? null) : null;
+      const needs_takeover = !sameActor(req.owner, actor)
+        && !TERMINAL.has(st) && !["executing", "outcome_unknown", "applied", "closed"].includes(st);
+      let next_action: string;
+      if (st === "outcome_unknown") next_action = "reconcile";
+      else if (st === "late_conflict") next_action = "resolve_late";
+      else if (r.clarification) next_action = "revise_for_clarification";
+      else if (stale_files.length > 0 || st === "stale") next_action = "revise_stale";
+      else if (st === "answered" || st === "granted") {
+        next_action = auth ? (needs_takeover ? "takeover_then_wait" : "wait_and_begin") : "continue";
+      } else if (st === "executing") next_action = "finish_or_reconcile";
+      else if (st === "hidden") next_action = "deferred_until";
+      else if (st === "queued" || st === "presented" || st === "default_claimed") next_action = "waiting_on_person";
+      else if (st === "applied" || st === "closed") next_action = "done";
+      else next_action = "stopped";
+      return {
+        id: r.id, revision: r.revision, review_id: r.review_id, kind: r.body.kind, level: r.body.level,
+        question: r.body.question, status: st, owner: req.owner, answer: r.answer ?? null, authorization: auth,
+        ...(r.clarification ? { clarification: r.clarification } : {}),
+        ...(r.hide_until ? { hidden_until: r.hide_until } : {}),
+        stale_files, needs_takeover, next_action,
+      };
+    });
+    return { code: EXIT.OK, ...(reviewId ? { review_id: reviewId } : {}), basis_files: basisFiles, cards };
+  }
+
   private show(a: Args): OpResult {
     const ref = str(a, "id");
     if (ref.startsWith("G-")) {
@@ -1422,7 +1623,7 @@ export class Engine {
         r.reply_seq = e.seq;
         r.reply_presentation = d.presentation_id as string | undefined;
         this.acknowledge(r, d.presentation_id, e.at);
-        if (d.chat_reply === true) {
+        if (d.chat_reply === true || d.clear_answer === true) {
           if (d.retain_answer !== true) delete r.answer;
           if (r.status === "granted") this.revoke(r);
           if (["granted", "answered", "hidden"].includes(r.status)) this.move(r, "presented", e.at);

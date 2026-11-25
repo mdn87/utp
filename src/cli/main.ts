@@ -11,7 +11,7 @@ import { checkDocument, checkRequest, intentFailure, reviewRequestsHash, validRe
 import { transcriptRoots } from "../server/transcripts.js";
 import { waiverNotes } from "../core/quality.js";
 import type { DeliveryAdapter } from "../core/delivery-adapter.js";
-import type { DecisionLogEntry, NoticeDigest } from "../core/engine.js";
+import type { DecisionLogEntry, NoticeDigest, ResumeCardPacket } from "../core/engine.js";
 import { leakKinds, redactedDecisions } from "../core/redact.js";
 import { writeNoticeDigest } from "../core/report-inbox.js";
 import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types.js";
@@ -22,7 +22,7 @@ import { closeout } from "./closeout.js";
 import { closeoutHook } from "./closeout-hook.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
 import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
-import { runReview } from "./review.js";
+import { runRecentReview, runReview } from "./review.js";
 import { launchSetup, setupPlan } from "./setup.js";
 
 const HELP = `utp: hand a person structured decisions, and get structured answers back.
@@ -52,10 +52,11 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--fi
             export <id>... --redact --file <output>
             leak-check <file>... [--generic]
             report-import --inbox <directory>
-Answers     review [<review-id>] [--feedback]
+Answers     review [<review-id>] [--feedback] [--recent]
             answer <id@revision> [--option <id>] [--file <answer.json>] [--from-chat --quote-file <file> [--presentation <id>]]
                         [--clarify] [--withdraw] [--hide-until <time>] [--disposition answered_elsewhere|no_longer_matters]
             wait <id> [--timeout <seconds>] [--authority-file <decision.json>]
+            resume [<review-id>]
 Execution   claim-default <id>
             resolve-late <id> --resolution keep|redo
             begin <grant>
@@ -113,6 +114,7 @@ const OPTIONS = {
   launcher: { type: "string" },
   flush: { type: "boolean" },
   "keep-notices": { type: "boolean" },
+  recent: { type: "boolean" },
 } as const;
 
 type Flags = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
@@ -233,7 +235,7 @@ const TEMPLATES: Record<string, RequestBody> = {
 };
 
 const SESSION_VERBS = new Set([
-  "status", "consider", "decide", "ask", "stage", "flush", "presented", "answer", "wait",
+  "status", "consider", "decide", "ask", "stage", "flush", "presented", "answer", "wait", "resume",
   "claim-default", "resolve-late", "begin", "applied", "reconcile", "release",
   "takeover", "revise", "cancel", "reverse",
 ]);
@@ -619,8 +621,32 @@ async function main(argv: string[]): Promise<number> {
     case "review": {
       const { project } = projectFor();
       readConfig();
-      return runReview(project, { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) },
-        flags.feedback, rest[0]);
+      const io = { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) };
+      if (flags.recent) return runRecentReview(project, io);
+      return runReview(project, io, flags.feedback, rest[0]);
+    }
+    case "resume": {
+      const { project, root } = projectFor();
+      const review = rest[0];
+      const probe = await call("resume", { ...(review ? { review } : {}), files_only: true }, { project });
+      if (probe.code !== EXIT.OK) return out(probe);
+      const files = (probe.basis_files as string[] | undefined) ?? [];
+      const basis = fingerprints(root, files);
+      const r = await call("resume", { ...(review ? { review } : {}), basis }, { project });
+      if (r.code !== EXIT.OK || flags.json) return out(r);
+      const cards = (r.cards as ResumeCardPacket[] | undefined) ?? [];
+      if (!cards.length) return out(r, review ? `No active cards in review ${review}.` : "Nothing open to resume.");
+      const lines = cards.map((c) => {
+        const extras: string[] = [];
+        if (c.answer?.value) extras.push(`answer=${c.answer.value}`);
+        else if (c.answer?.custom) extras.push(`custom="${c.answer.custom}"`);
+        else if (c.answer?.disposition) extras.push(`disposition=${c.answer.disposition}`);
+        if (c.clarification) extras.push(`clarify="${c.clarification.note ?? ""}"`);
+        if (c.stale_files.length) extras.push(`stale=[${c.stale_files.join(", ")}]`);
+        if (c.needs_takeover) extras.push(`takeover from ${c.owner.session}@${c.owner.machine}`);
+        return `${c.id}@${c.revision}  ${c.status.padEnd(14)}  next=${c.next_action}${extras.length ? `  (${extras.join("; ")})` : ""}  — ${c.question}`;
+      });
+      return out(r, lines.join("\n"));
     }
     case "report-import": {
       const inbox = need(flags.inbox, "--inbox with the morning report inbox directory");

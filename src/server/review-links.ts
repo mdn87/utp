@@ -12,6 +12,7 @@ export interface ReviewLink {
   project: string;
   actor: Actor;
   review: string;
+  mode?: "answer" | "edit";
   items: { id: string; revision: number }[];
   expiresAt: number;
   browser?: { cookie: string; form: string; openedAt: number };
@@ -26,7 +27,7 @@ export class ReviewLinks {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
   }
 
-  create(input: Pick<ReviewLink, "project" | "actor" | "review" | "items">): string | undefined {
+  create(input: Pick<ReviewLink, "project" | "actor" | "review" | "items" | "mode">): string | undefined {
     const now = this.now();
     let live = 0;
     for (const name of readdirSync(this.dir)) {

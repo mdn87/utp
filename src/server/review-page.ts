@@ -3,7 +3,7 @@ import type { ReviewView } from "../cli/render.js";
 import { Engine, type BrowserAnswer } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
 import { EXIT, type Actor, type ClarificationRequest, type Disposition, type OpResult } from "../core/types.js";
-import { cardHasAuthorization, page, reviewHtml, savedHtml } from "./review-html.js";
+import { cardHasAuthorization, editReviewHtml, page, pickupStatusHtml, reviewHtml, savedHtml } from "./review-html.js";
 import { linkKey, ReviewLinks, token } from "./review-links.js";
 import type { Service } from "./service.js";
 
@@ -159,7 +159,13 @@ function parseBatchForm(view: ReviewView, form: URLSearchParams, nowMs: number):
 
 export class ReviewPages {
   private readonly links: ReviewLinks;
-  constructor(readonly origin: URL, private readonly service: Service, private readonly now: () => number, private readonly hasInbox: boolean) {
+  constructor(
+    readonly origin: URL,
+    private readonly service: Service,
+    private readonly now: () => number,
+    private readonly hasInbox: boolean,
+    private readonly waitersFor?: (project: string, reviewId: string) => Actor[],
+  ) {
     this.links = new ReviewLinks(service.dataDir, now);
   }
 
@@ -175,7 +181,22 @@ export class ReviewPages {
     if (!items.length || (requireQuestion && items.every((item) => item.body.kind === "notice"))) {
       return { code: EXIT.NOT_ALLOWED, message: "this review has no unanswered cards" };
     }
-    const id = this.links.create({ project, actor, review: review.id, items: items.map(({ id, revision }) => ({ id, revision })) });
+    const id = this.links.create({ project, actor, review: review.id, mode: "answer", items: items.map(({ id, revision }) => ({ id, revision })) });
+    if (!id) return { code: EXIT.BUSY, message: "too many open review pages; try again after one expires" };
+    return { code: EXIT.OK, review_id: review.id, url: new URL(`/review/${id}`, this.origin).href };
+  }
+
+  prepareEdit(project: string, actor: Actor, reviewId: unknown): OpResult {
+    if (typeof reviewId !== "string") return { code: EXIT.OTHER, message: "a review id is required" };
+    const engine = this.service.engine(project);
+    if (!(engine instanceof Engine)) return engine;
+    const shown = engine.run("show", { id: reviewId }, actor);
+    if (shown.code !== EXIT.OK) return shown;
+    const review = shown.review as (ReviewView & { status: string }) | undefined;
+    if (review?.status !== "prepared") return { code: EXIT.NOT_ALLOWED, message: "prepare the review with utp flush first" };
+    const items = review.items.filter((card) => card.current && card.body.kind !== "notice");
+    if (!items.length) return { code: EXIT.NOT_ALLOWED, message: "this review has no cards to inspect or edit" };
+    const id = this.links.create({ project, actor, review: review.id, mode: "edit", items: items.map(({ id, revision }) => ({ id, revision })) });
     if (!id) return { code: EXIT.BUSY, message: "too many open review pages; try again after one expires" };
     return { code: EXIT.OK, review_id: review.id, url: new URL(`/review/${id}`, this.origin).href };
   }
@@ -206,11 +227,98 @@ export class ReviewPages {
     const saveId = `review-save-${linkKey(id)}`;
     const shown = engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined;
     if (!shown) return denied();
+    if (entry.mode === "edit") {
+      if (request.method === "GET") {
+        const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: this.now() };
+        const remainingSeconds = Math.ceil((entry.expiresAt - this.now()) / 1000);
+        const cookie = entry.browser ? undefined
+          : `utp_review=${browser.cookie}; Path=${path}; Max-Age=${remainingSeconds}; HttpOnly; SameSite=Strict${this.origin.protocol === "https:" ? "; Secure" : ""}`;
+        if (!entry.browser) this.links.save(id, { ...entry, browser });
+        return sendHtml(response, 200, editReviewHtml(shown, browser.form, this.inboxLink()), cookie);
+      }
+      if (!form || !entry.browser) return denied();
+      const nonNotice = shown.items.filter((c) => c.current && c.body.kind !== "notice");
+      const withdrawIdx = form.get("edit-withdraw");
+      if (withdrawIdx !== null) {
+        const card = /^\d+$/.test(withdrawIdx) ? nonNotice[Number(withdrawIdx)] : undefined;
+        if (!card) return denied();
+        const r = engine.editBrowserAnswer(`${card.id}@${card.revision}`, { withdraw: true }, entry.actor);
+        const refreshed = (engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined) ?? shown;
+        if (r.code !== EXIT.OK) {
+          return sendHtml(response, 409, editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), r.message ?? "Could not withdraw answer."));
+        }
+        return sendHtml(response, 200, editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), undefined,
+          `Withdrew answer for "${card.body.question}". It is open in the waiting inbox again.`));
+      }
+      const saveIdx = form.get("edit-save");
+      if (saveIdx !== null) {
+        const idx = /^\d+$/.test(saveIdx) ? Number(saveIdx) : -1;
+        const card = nonNotice[idx];
+        if (!card) return denied();
+        const hasAuth = cardHasAuthorization(card.body);
+        const custom = form.get(`custom-${idx}`);
+        const hasCustom = !!custom?.trim();
+        const choice = form.get(`choice-${idx}`)?.trim() ?? "";
+        const note = form.get(`note-${idx}`)?.trim() || undefined;
+        const prompts = itemPrompts(card.body);
+        let editInput: Parameters<Engine["editBrowserAnswer"]>[1];
+        if (hasAuth && hasCustom) {
+          editInput = { clarify_note: custom!.trim() };
+        } else if (prompts.length) {
+          const chosenItems = prompts.map(({ id: itemId }, n) => [itemId, form.get(`item-${idx}-${n}`) ?? ""] as const);
+          const anySelected = chosenItems.some(([, v]) => v.trim() !== "");
+          if (hasCustom && anySelected) {
+            return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+              'Choose either item answers or "Your own answer", not both.'));
+          }
+          if (hasCustom) editInput = { custom: custom! };
+          else {
+            const itemsMap = Object.fromEntries(chosenItems);
+            const details = Object.fromEntries(prompts.flatMap(({ id: itemId }, n) => {
+              const text = form.get(`detail-${idx}-${n}`);
+              return text?.trim() ? [[itemId, text]] : [];
+            }));
+            editInput = { items: itemsMap, details, ...(note ? { note } : {}) };
+          }
+        } else if (choice === "__custom__") {
+          if (!hasCustom) {
+            return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+              'Enter your own answer or pick a listed option before saving.'));
+          }
+          editInput = { custom: custom! };
+        } else if (choice && hasCustom) {
+          return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+            'Choose either a listed option or "Your own answer", or move your comment to the optional note box.'));
+        } else if (hasCustom) {
+          editInput = { custom: custom! };
+        } else if (choice) {
+          editInput = { value: choice, ...(note ? { note } : {}) };
+        } else {
+          return sendHtml(response, 400, editReviewHtml(shown, entry.browser.form, this.inboxLink(),
+            "Choose an option, enter an answer, or withdraw before saving."));
+        }
+        const r = engine.editBrowserAnswer(`${card.id}@${card.revision}`, editInput, entry.actor);
+        const refreshed = (engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined) ?? shown;
+        if (r.code !== EXIT.OK) {
+          return sendHtml(response, r.code === EXIT.NOT_ALLOWED ? 409 : 400,
+            editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), r.message ?? "Could not update answer."));
+        }
+        const msg = editInput.clarify_note
+          ? `Held "${card.body.question}" for clarification and revoked any unused grant.`
+          : `Updated answer for "${card.body.question}".`;
+        return sendHtml(response, 200, editReviewHtml(refreshed, entry.browser.form, this.inboxLink(), undefined, msg));
+      }
+      return denied();
+    }
     const receipt = engine.browserBatchReceipt(entry.review, saveId);
     if (receipt) {
       const remaining = shown.items.filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
         .map((c) => c.body.question);
-      return sendHtml(response, 200, savedHtml(shown, receipt.answers, this.inboxLink(), { receipt, remainingQuestions: remaining }));
+      return sendHtml(response, 200, savedHtml(shown, receipt.answers, this.inboxLink(), {
+        receipt, remainingQuestions: remaining,
+        pickupHtml: pickupStatusHtml(shown, this.waitersFor?.(entry.project, entry.review) ?? []),
+        editFormHtml: this.editFormLink(entry.project, entry.review, shown),
+      }));
     }
     const items = entry.items.map((ref) => shown.items.find((card) => card.id === ref.id && card.revision === ref.revision));
     if (items.some((card) => !card?.current || (!form && card.body.kind !== "notice" && !answerable(card.status)))) {
@@ -286,10 +394,22 @@ export class ReviewPages {
         reviewHtml(view, entry.browser.form, result.message ?? "Review the answers and try again.", form));
     }
     const batchReceipt = engine.browserBatchReceipt(view.id, saveId)!;
-    const after = engine.run("show", { id: view.id }, entry.actor).review as ReviewView | undefined;
-    const remaining = (after?.items ?? []).filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
+    const after = (engine.run("show", { id: view.id }, entry.actor).review as ReviewView | undefined) ?? view;
+    const remaining = after.items.filter((c) => c.current && c.body.kind !== "notice" && answerable(c.status) && !c.clarification)
       .map((c) => c.body.question);
-    sendHtml(response, 200, savedHtml(view, batchReceipt.answers, this.inboxLink(), { receipt: batchReceipt, remainingQuestions: remaining }));
+    sendHtml(response, 200, savedHtml(view, batchReceipt.answers, this.inboxLink(), {
+      receipt: batchReceipt,
+      remainingQuestions: remaining,
+      pickupHtml: pickupStatusHtml(after, this.waitersFor?.(entry.project, entry.review) ?? []),
+      editFormHtml: this.editFormLink(entry.project, entry.review, after),
+    }));
+  }
+
+  private editFormLink(project: string, reviewId: string, review: ReviewView): string {
+    if (!this.hasInbox) return "";
+    const editable = review.items.some((c) => c.current && (c.status === "answered" || c.status === "granted"));
+    if (!editable) return "";
+    return `<form method="post" action="/edit/${encodeURIComponent(project)}/${encodeURIComponent(reviewId)}" class="form-actions"><button type="submit" class="button-secondary">Edit or withdraw answers (before work begins)</button></form>`;
   }
 
   private inboxLink(): string {

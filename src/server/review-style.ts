@@ -221,6 +221,14 @@ a { display: inline-flex; align-items: center; min-height: 44px; color: var(--cy
   background: var(--panel);
 }
 .notice-object { margin-top: .75rem; }
+.pickup-status { margin: .75rem 0 1rem; padding: .75rem 1rem; border: 1px solid var(--line); border-inline-start: 3px solid var(--amber); border-radius: .5rem; background: var(--panel); }
+.pickup-live { border-color: #6de39a55; border-inline-start-color: var(--green); }
+.recent-section { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.recent-review { border-color: var(--line); }
+.recent-review h4 { margin: 0 0 .35rem; font-size: 1rem; font-weight: 600; color: var(--text); }
+.recent-review ul { padding-inline-start: 1.25rem; margin: .5rem 0 1rem; color: var(--soft); }
+.recent-review li + li { margin-top: .45rem; }
+.locked-card { opacity: .9; }
 @media (max-width: 36rem) {
   button { width: 100%; }
 }

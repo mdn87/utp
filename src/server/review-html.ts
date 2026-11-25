@@ -3,7 +3,7 @@ import type { BrowserBatchReceipt, RecordedBrowserAnswer } from "../core/engine.
 import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
 import { waiverNotes } from "../core/quality.js";
-import { CLARITY_FEEDBACK, SURENESS, type RequestBody } from "../core/types.js";
+import { CLARITY_FEEDBACK, SURENESS, type Actor, type RequestBody } from "../core/types.js";
 import { reviewStyle, themeColor } from "./review-style.js";
 
 const KIND_LABELS: Record<string, string> = {
@@ -85,6 +85,88 @@ export interface SavedHtmlOptions {
   remainingQuestions?: string[];
   pickupHtml?: string;
   editFormHtml?: string;
+}
+
+export function pickupStatusHtml(review: ReviewView, waiters: readonly Actor[]): string {
+  if (waiters.length > 0) {
+    const names = waiters.map((w) => `${w.session} on ${w.machine}`).join(", ");
+    return `<p class="pickup-status pickup-live" role="status"><strong>Agent is listening now:</strong> ${escapeText(names)} will pick up your reply immediately.</p>`;
+  }
+  const first = review.items.find((i) => i.body.origin || i.owner);
+  const agent = first?.body.origin?.agent || first?.body.origin?.platform || "the agent";
+  const session = first?.owner?.session && first.owner.session !== "default" ? first.owner.session.slice(0, 12) : undefined;
+  const machine = first?.owner?.machine;
+  const where = [agent, session ? `session ${session}` : undefined, machine ? `on ${machine}` : undefined].filter(Boolean).join(" ");
+  return `<p class="pickup-status" role="status"><strong>Saved — no agent is actively waiting right now.</strong> Return to ${escapeText(where)} and tell it to resume, or run <code>utp resume ${escapeText(review.id)}</code>.</p>`;
+}
+
+export function editReviewHtml(review: ReviewView, token: string, returnLink: string, message?: string, statusMessage?: string): string {
+  const cards = review.items.filter((i) => i.current && i.body.kind !== "notice").map((item, index) => {
+    const b = item.body;
+    const hasAuth = cardHasAuthorization(b);
+    const editable = item.status === "answered" || item.status === "granted";
+    const currentAnswer = item.answer ? answerValue(item.answer, b) : undefined;
+    const noteText = item.answer?.note ? `<p class="muted">Note: ${escapeText(item.answer.note)}</p>` : "";
+    if (!editable) {
+      const ev = item.applied_evidence;
+      const effectHtml = ev
+        ? `<p class="receipt"><strong>Applied effect:</strong> ${escapeText(ev.effect)} <span class="muted">(${escapeText(`${ev.action} on ${ev.target} · scope: ${ev.scope}`)})</span></p>`
+        : "";
+      const clarHtml = item.clarification
+        ? `<p role="status">Held for clarification: "${escapeText(item.clarification.note ?? "")}"</p>`
+        : "";
+      return `<article class="locked-card"><h2>${escapeText(b.question)}</h2>
+        <p class="card-badges"><span class="badge">Locked · ${escapeText(item.status.replaceAll("_", " "))}</span></p>
+        ${currentAnswer ? `<p class="preserve"><strong>Recorded answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
+        ${clarHtml}${effectHtml}
+        <p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code></p></article>`;
+    }
+    const controls: string[] = [];
+    const prompts = itemPrompts(b);
+    if (prompts.length) {
+      for (const [n, prompt] of prompts.entries()) {
+        const cur = item.answer?.items?.[prompt.id] ?? "";
+        const curDetail = item.answer?.details?.[prompt.id] ?? "";
+        controls.push(`<fieldset class="item-card"><legend>${escapeText(prompt.id)} · ${escapeText(prompt.label)}</legend><div class="item-choices">`,
+          ...prompt.choices.map((choice) =>
+            `<label class="option"><input type="radio" name="item-${index}-${n}" value="${escapeText(choice)}"${cur === choice ? " checked" : ""}><span>${escapeText(choice.replaceAll("_", " "))}</span></label>`),
+          "</div>",
+          ...(prompt.detailLabel ? [`<label>${escapeText(prompt.detailLabel)}<textarea name="detail-${index}-${n}" rows="2">${escapeText(curDetail)}</textarea></label>`] : []),
+          "</fieldset>");
+      }
+    } else if (b.options?.length) {
+      const curChoice = item.answer?.value ?? (item.answer?.custom ? "__custom__" : "");
+      const optionRows = b.options.map((option) =>
+        `<label class="option"><input type="radio" name="choice-${index}" value="${escapeText(option.id)}"${curChoice === option.id ? " checked" : ""}><span><strong>${escapeText(option.label)}</strong> <small class="muted">(${escapeText(option.id)})</small><br>${escapeText(option.consequence)}</span></label>`);
+      if (!hasAuth) {
+        optionRows.push(`<label class="option"><input type="radio" name="choice-${index}" value="__custom__"${curChoice === "__custom__" ? " checked" : ""}><span><strong>Your own answer</strong><br>Use the text box below instead of a listed option.</span></label>`);
+      }
+      controls.push('<fieldset><legend>Change option</legend>', ...optionRows, "</fieldset>");
+    }
+    if (hasAuth) {
+      controls.push(`<label>Propose a different scope or ask a question (withholds approval — agent revises before acting)<textarea name="custom-${index}" rows="2"></textarea></label>`);
+    } else {
+      controls.push(`<label>Your own answer <textarea name="custom-${index}" rows="2">${escapeText(item.answer?.custom ?? "")}</textarea></label>`);
+      controls.push(`<label>Optional note for the agent <textarea name="note-${index}" rows="2">${escapeText(item.answer?.note ?? "")}</textarea></label>`);
+    }
+    return `<article class="edit-card"><h2>${escapeText(b.question)}</h2>
+      <p class="card-badges"><span class="badge badge-rec">Editable before work begins (${escapeText(item.status)})</span></p>
+      ${currentAnswer ? `<p class="preserve"><strong>Current answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
+      ${controls.join("\n")}
+      <div class="form-actions">
+        <button type="submit" name="edit-save" value="${index}">Save change</button>
+        <button type="submit" name="edit-withdraw" value="${index}" class="button-secondary" formnovalidate>Withdraw answer</button>
+      </div>
+      <p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code></p></article>`;
+  });
+  const banner = statusMessage ? `<p role="status">${escapeText(statusMessage)}</p>` : "";
+  const err = message ? `<p role="alert" class="error">${escapeText(message)}</p>` : "";
+  return page("Edit answers", `<h1>Review status &amp; edits</h1>
+    <p class="muted">You can change or withdraw an answer while it has not begun executing. Once the agent runs <code>utp begin</code>, that card locks.</p>
+    ${contextHtml(review)}${banner}${err}
+    <form method="post"><input type="hidden" name="presentation" value="${escapeText(token)}">
+    ${cards.join("") || '<p class="muted">No editable or completed cards in this review.</p>'}
+    </form>${returnLink}`);
 }
 
 export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], returnLink: string, opts: SavedHtmlOptions = {}): string {
