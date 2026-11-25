@@ -1,5 +1,6 @@
 // Markdown for people: request cards, reviews, and short result summaries.
 
+import type { BlindReveal } from "../core/blind.js";
 import type { AcceptanceGoal, Actor, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
 import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
@@ -14,6 +15,7 @@ export interface RequestView {
   body: RequestBody;
   answer: AnswerRecord | null;
   clarification?: ClarificationRequest;
+  blind_reveal?: BlindReveal;
   flags: string[];
   review_id?: string;
   asked_at?: string;
@@ -140,7 +142,10 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
     const reviewId = review?.id ?? v.review_id;
     out.push(`**${preview.label}**`, "");
     if ("text" in preview) out.push(preview.text.split(/\r?\n/).map(line => "    " + line).join("\n"), "");
-    else out.push(reviewId ? `Open the image on the review page with \`utp page ${reviewId}\`.`
+    else if (b.kind === "judge") {
+      out.push(reviewId ? `Open this blind preview on the review page with \`utp page ${reviewId}\`.`
+        : "View this preview on the review page.", "");
+    } else out.push(reviewId ? `Open the image on the review page with \`utp page ${reviewId}\`.`
       : `The image data is in \`utp show ${v.id}@${v.revision} --json\`.`, "");
   }
   if (b.options?.length) {
@@ -190,6 +195,17 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
   for (const flag of v.flags) out.push(flag, "");
   out.push(`\`${v.id}@${v.revision}\` · ${cardMetadata(v)}`);
   if (v.answer) out.push("", `Answered: ${answerText(v.answer)}`);
+  if (b.kind === "judge" && v.answer) {
+    if (v.answer.note) out.push(`Reason given · ${v.answer.note}`);
+    if (v.answer.ratings) out.push(`Ratings · Candidate A ${v.answer.ratings.a}/5 and Candidate B ${v.answer.ratings.b}/5`);
+    if (v.answer.repeat_test !== undefined) out.push(v.answer.repeat_test ? "The reviewer would run the test again." : "The reviewer declined another test.");
+  }
+  if (v.blind_reveal) {
+    out.push("", `Candidate A was ${v.blind_reveal.identities.a}. Candidate B was ${v.blind_reveal.identities.b}.`);
+    if (v.blind_reveal.notes?.a) out.push(`Candidate A · ${v.blind_reveal.notes.a}`);
+    if (v.blind_reveal.notes?.b) out.push(`Candidate B · ${v.blind_reveal.notes.b}`);
+    if (v.blind_reveal.recommendation) out.push(`The recommendation was Candidate ${v.blind_reveal.recommendation.toUpperCase()}.`);
+  }
   return out.join("\n");
 }
 
@@ -225,6 +241,9 @@ export function reviewMarkdown(review: ReviewView, mode: "presentation" | "histo
   if (review.default_notices?.length) out.push(...review.default_notices.map(defaultNoticeMarkdown), "");
   if (cards.some(c => c.body.kind !== "notice" && ["queued", "presented", "default_claimed"].includes(c.status))) {
     out.push("Reply with the card letter and your choice, for example \"A: b\". Your own words work too.", "");
+  }
+  if (cards.some(c => c.body.kind === "judge")) {
+    out.push("For a blind comparison, choose a listed option. You can add a short reason.", "");
   }
   cards.forEach((c, i) => out.push(cardMarkdown(c, letter(i), review), ""));
   if (earlier.length) {

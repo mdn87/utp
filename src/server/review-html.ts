@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { answerValue, cardMetadata, dependencyLabels, reviewContext, sharedFromIntent, type ReviewView } from "../cli/render.js";
+import type { BlindReveal } from "../core/blind.js";
 import type { BrowserBatchReceipt, RecordedBrowserAnswer } from "../core/engine.js";
 import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
@@ -6,9 +8,23 @@ import { waiverNotes } from "../core/quality.js";
 import { CLARITY_FEEDBACK, SURENESS, type Actor, type RequestBody } from "../core/types.js";
 import { reviewStyle, themeColor } from "./review-style.js";
 
+const playComparisons = `document.addEventListener("click", (event) => {
+  const pair = event.target instanceof Element && event.target.closest("[data-play-comparison]")?.closest("article");
+  if (!pair) return;
+  for (const video of pair.querySelectorAll(".compare video")) {
+    video.currentTime = 0;
+    video.play().catch(() => {});
+  }
+});`;
+export const comparisonScriptHash = createHash("sha256").update(playComparisons).digest("base64");
+
+export const reviewHasVideoComparison = (review: ReviewView): boolean =>
+  review.items.some((item) => item.body.kind === "judge"
+    && (item.body.previews ?? []).some((p) => "media_type" in p && p.media_type === "video/mp4"));
+
 const KIND_LABELS: Record<string, string> = {
   choose: "Choice", approve: "Approval", handoff: "Manual step", clarify: "Clarification",
-  accept: "Result check", assumptions: "Assumptions", notice: "Notice",
+  accept: "Result check", assumptions: "Assumptions", notice: "Notice", judge: "Blind comparison",
 };
 const UNDO_LABELS: Record<string, string> = {
   easy: "Easy to undo", costly: "Costly to undo", one_way: "Can't be undone",
@@ -85,6 +101,15 @@ export interface SavedHtmlOptions {
   remainingQuestions?: string[];
   pickupHtml?: string;
   editFormHtml?: string;
+  reveals?: { question: string; reveal: BlindReveal }[];
+}
+
+export function blindRevealHtml(reveal: BlindReveal, question: string): string {
+  return `<article class="blind-reveal"><h2>${escapeText(question)}</h2><dl><dt>Candidate A</dt><dd>${escapeText(reveal.identities.a)}</dd>
+    ${reveal.notes?.a ? `<dd class="muted">${escapeText(reveal.notes.a)}</dd>` : ""}
+    <dt>Candidate B</dt><dd>${escapeText(reveal.identities.b)}</dd>
+    ${reveal.notes?.b ? `<dd class="muted">${escapeText(reveal.notes.b)}</dd>` : ""}</dl>`
+    + (reveal.recommendation ? notice(`The recommendation was Candidate ${reveal.recommendation.toUpperCase()}.`) : "") + "</article>";
 }
 
 export function pickupStatusHtml(review: ReviewView, waiters: readonly Actor[]): string {
@@ -193,9 +218,11 @@ export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], 
   const remaining = opts.remainingQuestions?.length
     ? `<section class="remaining-cards" role="status"><strong>Still open in this review (${opts.remainingQuestions.length}):</strong><ul>${opts.remainingQuestions.map((q) => `<li>${escapeText(q)}</li>`).join("")}</ul></section>`
     : "";
+  const revealBlocks = (opts.reveals ?? []).map(({ question, reveal }) => blindRevealHtml(reveal, question)).join("");
   return page("Answers saved", `<h1>Answers saved</h1><p class="receipt">${summary}</p>
     ${opts.pickupHtml ?? ""}${remaining}${contextHtml(review)}
     ${rows ? `<dl aria-label="Saved answers">${rows}</dl>` : ""}
+    ${revealBlocks}
     ${clarRows ? `<dl aria-label="Held for clarification">${clarRows}</dl>` : ""}
     ${hiddenRows ? `<dl aria-label="Hidden cards">${hiddenRows}</dl>` : ""}
     ${opts.editFormHtml ?? ""}${returnLink}`);
@@ -236,11 +263,22 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     for (const dependency of dependencyLabels(b, review.items, review.resolved_dependencies)) parts.push(notice(`Depends on ${dependency}`));
     if (Object.keys(b.glossary ?? {}).length) parts.push("<dl>", ...Object.entries(b.glossary ?? {}).map(([term, meaning]) =>
       `<dt>${escapeText(term)}</dt><dd>${escapeText(meaning)}</dd>`), "</dl>");
-    for (const preview of Array.isArray(b.previews) ? b.previews : []) {
+    const previewBlocks = (Array.isArray(b.previews) ? b.previews : []).map((preview) => {
+      const label = escapeText(preview.label);
       const content = "text" in preview
         ? `<pre>${escapeText(preview.text)}</pre>`
-        : `<img src="data:${escapeText(preview.media_type)};base64,${escapeText(preview.data)}" alt="${escapeText(preview.label)}">`;
-      parts.push(`<figure><figcaption>${escapeText(preview.label)}</figcaption>${content}</figure>`);
+        : preview.media_type === "video/mp4"
+          ? `<video controls muted playsinline preload="metadata" aria-label="${label}" src="data:video/mp4;base64,${escapeText(preview.data)}"></video>`
+          : `<img src="data:${escapeText(preview.media_type)};base64,${escapeText(preview.data)}" alt="${label}">`;
+      return `<figure><figcaption>${label}</figcaption>${content}</figure>`;
+    });
+    if (b.kind === "judge") {
+      parts.push(`<div class="compare">${previewBlocks.join("")}</div>`);
+      if (b.previews?.length === 2 && b.previews.every((p) => "media_type" in p && p.media_type === "video/mp4")) {
+        parts.push('<button type="button" class="button-secondary" data-play-comparison>Play both from the start</button>');
+      }
+    } else {
+      parts.push(...previewBlocks);
     }
     if (b.notes) parts.push(notice(b.notes));
     if (b.narrowing_reason) parts.push(notice("Why the action cannot be split: " + b.narrowing_reason));
@@ -265,7 +303,7 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
           const defTag = b.default?.option === option.id ? ' <span class="badge badge-default">Default if unanswered</span>' : "";
           return `<label class="option"><input type="radio" name="choice-${index}" value="${escapeText(option.id)}"${checked(`choice-${index}`, option.id)}><span><strong>${escapeText(option.label)}</strong> <small class="muted">(${escapeText(option.id)})</small>${recTag}${defTag}<br>${escapeText(option.consequence)}${scope ? "<br>" + scope : ""}${next ? "<br>" + next : ""}</span></label>`;
         });
-        if (!hasAuth) {
+        if (!hasAuth && b.kind !== "judge") {
           optionRows.push(`<label class="option"><input type="radio" name="choice-${index}" value="__custom__"${checked(`choice-${index}`, "__custom__")}><span><strong>Your own answer</strong><br>Use the text box below instead of a listed option.</span></label>`);
         }
         parts.push('<fieldset><legend>Choose an option</legend>', ...optionRows, "</fieldset>");
@@ -286,19 +324,27 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     for (const flag of item.flags) parts.push(notice(flag));
     parts.push(`<p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code> · ${escapeText(cardMetadata(item))}</p>`);
     if (b.kind !== "notice") {
-      if (hasAuth) {
+      if (b.kind === "judge") {
+        const scores = ["1", "2", "3", "4", "5"].map((score) => [score, score] as const);
+        parts.push(`<div class="ratings">${chipGroup(`rating-a-${index}`, "Rate Candidate A", scores)}
+          ${chipGroup(`rating-b-${index}`, "Rate Candidate B", scores)}
+          ${chipGroup(`repeat-${index}`, "Would you run this test again?", [["yes", "Yes"], ["no", "No"]])}</div>`,
+          `<label>Reason (optional) <textarea name="reason-${index}" rows="3">${field(`reason-${index}`)}</textarea></label>`);
+      } else if (hasAuth) {
         parts.push(`<label>Propose a different scope or ask a question (withholds approval — agent revises before acting)<textarea name="custom-${index}" rows="2">${field(`custom-${index}`)}</textarea></label>`);
       } else {
         parts.push(`<label>Your own answer <textarea name="custom-${index}" rows="2">${field(`custom-${index}`)}</textarea></label>`);
         parts.push(`<label>Optional note for the agent (keeps your chosen option) <textarea name="note-${index}" rows="2">${field(`note-${index}`)}</textarea></label>`);
       }
-      const actionChoices: [string, string][] = [
-        ["", "Answer now or leave open"],
-        ["hide", "Hide until tomorrow"],
-        ["answered_elsewhere", "Answered elsewhere"],
-        ["no_longer_matters", "No longer matters"],
-      ];
-      parts.push(`<div class="card-defer">${chipGroup(`action-${index}`, "Batch action (optional)", actionChoices)}</div>`);
+      if (b.kind !== "judge") {
+        const actionChoices: [string, string][] = [
+          ["", "Answer now or leave open"],
+          ["hide", "Hide until tomorrow"],
+          ["answered_elsewhere", "Answered elsewhere"],
+          ["no_longer_matters", "No longer matters"],
+        ];
+        parts.push(`<div class="card-defer">${chipGroup(`action-${index}`, "Batch action (optional)", actionChoices)}</div>`);
+      }
       const sureness = chipGroup(`sureness-${index}`, "How sure are you?", SURENESS.map((choice) =>
         [choice, choice.charAt(0).toUpperCase() + choice.slice(1)]));
       const clarity = chipGroup(`feedback-${index}`, "How clear was this card?", Object.entries(CLARITY_FEEDBACK));
@@ -334,6 +380,7 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     ? `<section class="combined-summary" role="status"><h3>Combined plan check</h3><ul>${opts.previewLines.map((l) => `<li>${escapeText(l)}</li>`).join("")}</ul></section>`
     : "";
   const statusBanner = opts.statusMessage ? `<p role="status">${escapeText(opts.statusMessage)}</p>` : "";
+  const videoScript = reviewHasVideoComparison(review) ? `<script>${playComparisons}</script>` : "";
   return page("Review", `<h1>Review</h1><p class="count">${countText}</p>
     ${contextHtml(review)}
     ${statusBanner}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}
@@ -342,7 +389,7 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
     <div class="form-actions">
       <button type="submit" name="preview" value="1" class="button-secondary">Check combined plan</button>
       <button type="submit">${opts.previewLines?.length ? "Confirm and save" : "Save answers"}</button>
-    </div></form>`);
+    </div></form>${videoScript}`);
 }
 
 export function page(title: string, body: string): string {

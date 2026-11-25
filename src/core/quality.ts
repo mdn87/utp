@@ -38,7 +38,7 @@ export function hasDatedEvidence(item: unknown): boolean {
 
 /** Scan the prose a reviewer reads, preserving field boundaries. Commands, IDs, and encoded images are data. */
 function reviewText(b: RequestBody): string[] {
-  const text = [b.question, b.summary, b.why_now, b.notes, b.default?.consequence, b.narrowing_reason,
+  const text = [b.question, b.summary, b.why_now, ...(b.kind === "judge" ? [] : [b.notes]), b.default?.consequence, b.narrowing_reason,
     b.recommendation?.because, b.recommendation?.preserves, b.recommendation?.bolder_alternative];
   for (const o of b.options ?? []) {
     text.push(o.label, o.consequence, o.agent_next, o.authorization?.action, o.authorization?.target, o.authorization?.scope,
@@ -112,7 +112,7 @@ export function qualityWarnings(body: RequestBody, shared?: SharedContext): Qual
     warn("H06-scope", "Name the affected work and a concrete limit, cost or observable consequence.");
   }
   if (/\b(?:score|rate|judge|compare)\b.*\b(?:example|sample|preview|clip|recording|image|design|draft)s?\b/i.test(question)
-    && !body.previews?.length && !supported && !text.some(s => /https?:\/\/\S+|\[[^\]]+\]\([^)]+\)/.test(s))) {
+    && !body.previews?.length && !body.blind?.candidates?.length && !supported && !text.some(s => /https?:\/\/\S+|\[[^\]]+\]\([^)]+\)/.test(s))) {
     warn("H07-review-target", "Include the example to judge, a preview, or a reference to the evidence.");
   }
   return warnings;

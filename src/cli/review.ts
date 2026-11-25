@@ -83,6 +83,7 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
   let skipped = 0;
   let clarified = 0;
   let shownAny = false;
+  let needsPage = false;
   let presentation: string | undefined;
   const save = async (id: string, args: Record<string, unknown>, shownAt: number): Promise<void> => {
     if (args.clarify) {
@@ -118,6 +119,11 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
         .filter((i) => i.current && (i.status === "queued" || i.status === "presented"));
       if (items.length === 0) {
         if (reviewId) write(reviewMarkdown(review, "history"));
+        continue;
+      }
+      if (items.some((card) => card.body.kind === "judge" && card.body.previews?.some((artifact) => "data" in artifact))) {
+        write(`Open review ${v.id} on the review page to compare its previews. Run utp page ${v.id} for the link.`);
+        needsPage = true;
         continue;
       }
       write(`\n## Review ${v.id}\n`);
@@ -166,7 +172,8 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
         const ids = (item.body.options ?? []).map((o) => o.id);
         for (;;) {
           const reply = await ask(`Answer ${letter(n)}: ${ids.length ? `an option (${ids.join(", ")}), ` : ""}`
-            + "? for clarification, / for your own words, h to hide until tomorrow, or Enter to skip: ");
+            + "? for clarification, " + (item.body.kind === "judge" ? "" : "/ for your own words, ")
+            + "h to hide until tomorrow, or Enter to skip: ");
           if (reply === null) break outer;
           if (reply === "") {
             skipped += 1;
@@ -175,7 +182,7 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
           let args: Record<string, unknown>;
           if (reply === "?") {
             args = { clarify: true };
-          } else if (reply === "/") {
+          } else if (reply === "/" && item.body.kind !== "judge") {
             const words = await ask("Your answer: ", true);
             if (!words?.trim()) {
               skipped += 1;
@@ -192,6 +199,10 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
             args = { hide_until: tomorrowMorning() };
           } else if (ids.includes(reply)) {
             args = { value: reply };
+            if (item.body.kind === "judge") {
+              const reason = await ask("Why did you choose this? Enter to skip: ");
+              if (reason) args.note = reason;
+            }
           } else {
             write(`${reply} isn't one of this card's options.`);
             continue;
@@ -205,7 +216,7 @@ export async function runReview(project: string, io: ReviewIO, withFeedback = fa
     rl.close();
   }
   if (!shownAny) {
-    write(reviewId ? "That review has no questions waiting for you." : "Nothing is waiting for your answer.");
+    if (!needsPage) write(reviewId ? "That review has no questions waiting for you." : "Nothing is waiting for your answer.");
     return EXIT.OK;
   }
   if (clarified) write(`\nRequested clarification on ${clarified} ${clarified === 1 ? "card" : "cards"}.`);

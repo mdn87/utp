@@ -35,7 +35,7 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             setup <codex|claude|antigravity> [--apply] [-- <agent arguments>]
             init [--name <name>] [--new]
             link <project-id>
-Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice> [--file <path>]
+Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge> [--file <path>]
             check <file>
             closeout <report.json> [--keep-notices]
             closeout-hook               (Claude Code hook JSON on standard input)
@@ -231,6 +231,18 @@ const TEMPLATES: Record<string, RequestBody> = {
   notice: {
     kind: "notice", question: "An informational update", why_now: "Say what happened and why it matters.",
     stakes: { reversibility: "easy" }, level: 1, level_reason: "The person needs to know what changed.",
+  },
+  judge: {
+    kind: "judge", question: "Which sample works better for the stated goal?",
+    summary: "Describe the result you are comparing and what the reviewer should look for.",
+    why_now: "Pick the result that best meets the goal, then explain your preference.",
+    stakes: { reversibility: "easy" }, level: 3, level_reason: "The choice needs the person's judgment.",
+    blind: {
+      candidates: [
+        { identity: "First source", artifact: { text: "Preview of the first candidate." } },
+        { identity: "Second source", artifact: { text: "Preview of the second candidate." } },
+      ],
+    },
   },
 };
 

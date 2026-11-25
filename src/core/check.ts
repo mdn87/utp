@@ -1,6 +1,7 @@
 // Queuing and revising use the same checks as the standalone command.
 
 import { createHash } from "node:crypto";
+import { exposesBlindIdentity, normalizeBlind } from "./blind.js";
 import { KINDS, type RequestBody, type ReviewIntent } from "./types.js";
 import { hasDatedEvidence, QUALITY_RULES, qualityWarnings, type SharedContext } from "./quality.js";
 
@@ -61,6 +62,17 @@ export function checkRequest(body: unknown, shared?: SharedContext): CheckFailur
   }
   const b = body as Partial<RequestBody>;
   if (!KINDS.includes(b.kind as never)) fail("S01-kind", `kind must be one of: ${KINDS.join(", ")}`);
+  if (b.kind === "judge") {
+    const blind = normalizeBlind(b.blind);
+    if (typeof blind === "string") fail("S31-blind-candidates", blind);
+    else if (exposesBlindIdentity(b, blind)) fail("S31-blind-candidates", "remove candidate identities from the displayed text");
+    if (b.options !== undefined || b.recommendation !== undefined || b.previews !== undefined
+        || b.default !== undefined || b.skip_if !== undefined || b.level !== 3) {
+      fail("S31-blind-candidates", "use level 3 and put the candidates and recommendation in blind");
+    }
+  } else if (b.blind !== undefined) {
+    fail("S31-blind-candidates", "use a judge request for blind candidates");
+  }
   if (!nonEmpty(b.question)) fail("S02-question", "question is required");
   if (b.summary !== undefined && !nonEmpty(b.summary)) {
     fail("S21-summary", "summary must explain in plain language what this question addresses");
@@ -194,7 +206,14 @@ export function validTaskTitle(value: unknown): value is string {
 
 /** Match the ordered draft without resending large previews. Object key order is immaterial. */
 export function reviewRequestsHash(requests: readonly unknown[]): string {
-  const json = JSON.stringify(requests, (_key, value) => {
+  const normalized = requests.map((req) => {
+    if (req && typeof req === "object" && !Array.isArray(req) && (req as Partial<RequestBody>).kind === "judge") {
+      const blind = normalizeBlind((req as Partial<RequestBody>).blind);
+      if (typeof blind !== "string") return { ...(req as Record<string, unknown>), blind };
+    }
+    return req;
+  });
+  const json = JSON.stringify(normalized, (_key, value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return value;
     return Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]]));
   });

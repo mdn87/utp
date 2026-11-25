@@ -13,7 +13,7 @@ const actor = { machine: "review-inbox", session: "browser" };
 
 const KIND_SHORT: Record<string, string> = {
   choose: "choice", approve: "approval", handoff: "manual step", clarify: "clarify",
-  accept: "result check", assumptions: "assumptions", notice: "notice",
+  accept: "result check", assumptions: "assumptions", notice: "notice", judge: "blind comparison",
 };
 const UNDO_SHORT: Record<string, string> = {
   easy: "easy to undo", costly: "costly to undo", one_way: "can't be undone",
