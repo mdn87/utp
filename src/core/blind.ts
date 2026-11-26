@@ -69,7 +69,9 @@ function anonymousMp4(data: string): string | undefined {
       const size = size32 === 1 ? Number(bytes.readBigUInt64BE(start + 8)) : size32 || end - start;
       if (size < header || size > end - start) return false;
       if (depth === 0) topLevel.add(type);
-      if (videoMetadata.has(type)) {
+      // A self-contained data reference carries only its flags and points to this file's samples.
+      const localReference = type === "url " && size === header + 4 && bytes.readUInt32BE(start + header) === 1;
+      if (videoMetadata.has(type) && !localReference) {
         // Keep sample offsets while clearing metadata.
         bytes.write("free", start + 4, 4, "latin1");
         bytes.fill(0, start + header, start + size);
@@ -78,9 +80,9 @@ function anonymousMp4(data: string): string | undefined {
       } else if ((type === "dref" || type === "stsd") && size > header + 8) {
         // Both dref and stsd have an 8-byte version+flags+entryCount header before child boxes.
         if (!strip(start + header + 8, start + size, depth + 1)) return false;
-      } else if (visualSampleEntries.has(type) && size >= header + 82) {
-        // Clear the 32-byte compressorname field inside visual sample entries without moving sample offsets.
-        bytes.fill(0, start + header + 50, start + header + 82);
+      } else if (visualSampleEntries.has(type) && size >= header + 78) {
+        // VisualSampleEntry has 42 bytes before compressorname, then the 32-byte name, depth and pre_defined.
+        bytes.fill(0, start + header + 42, start + header + 74);
       } else if (type === "hdlr" && size > header + 24) {
         bytes.fill(0, start + header + 24, start + size);
       }
