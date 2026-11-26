@@ -176,6 +176,8 @@ Read-only questions can end with a direct answer.
 ```sh
 # 1. Check prior decisions and prepare a card or batch (all payloads in UTF-8 files)
 utp status --json
+utp history "search words" --json        # earlier reviews by title, question, or tag
+utp follow-up <review-id> <card-id>@<rev> --file round.json --json
 utp consider decision.json
 utp new <choose|approve|handoff|clarify|accept|assumptions|notice|judge> --file card.json
 utp check card.json

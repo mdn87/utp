@@ -16,6 +16,7 @@ import type { DecisionLogEntry, NoticeDigest, ResumeCardPacket } from "../core/e
 import { leakKinds, redactedDecisions } from "../core/redact.js";
 import { writeNoticeDigest } from "../core/report-inbox.js";
 import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types.js";
+import { previousDecision, type HistoryReview } from "../core/review-history.js";
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
 import { call, CliError, readConfig, utpHome, writeConfig } from "./client.js";
@@ -51,6 +52,8 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge>
             show <id>
             status
             log [--tags a,b] [--related <id>] [--text <words>] [--kind <kind>]
+            history [search words]
+            follow-up <review-id> <card@revision>... [--file <round.json>]
             export <id>... --redact --file <output>
             leak-check <file>... [--generic]
             report-import --inbox <directory>
@@ -638,6 +641,23 @@ async function main(argv: string[]): Promise<number> {
       const reqs = r.requests as { id: string; revision: number; status: string; question: string; clarification?: unknown }[];
       return out(r, reqs.length ? reqs.map((q) => `${q.id}@${q.revision}  ${q.status.padEnd(15)}  ${q.question}`
         + (q.clarification ? " (clarification requested)" : "")).join("\n") : "Nothing is open.");
+    }
+    case "history": {
+      const r = await call("history", { query: rest.join(" ") }, { project: projectFor().project });
+      if (r.code !== EXIT.OK || flags.json) return out(r);
+      const rows = (r.reviews as HistoryReview[]).map(review => [
+        `${review.task_title || review.review_id} · ${review.review_id}`,
+        ...review.cards.map(c => `  ${c.ref}  ${c.question} — ${previousDecision(c)}`),
+      ].join("\n"));
+      return out(r, rows.join("\n\n") || "No saved reviews match.");
+    }
+    case "follow-up": {
+      const review = need(rest[0], "a source review id");
+      const extra = flags.file ? readJson(flags.file, "follow-up title and ideas") : {};
+      const r = await call("follow-up", { review, cards: rest.slice(1), title: extra.title, ideas: extra.ideas },
+        { project: projectFor().project, opId });
+      if (r.code !== EXIT.OK || flags.json) return out(r);
+      return out(r, `Started follow-up ${String(r.review_id)}. Open it in the inbox or run utp review ${String(r.review_id)}.`);
     }
     case "log": {
       const { project } = projectFor();

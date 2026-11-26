@@ -3,6 +3,7 @@
 import type { BlindReveal } from "../core/blind.js";
 import type { AcceptanceGoal, Actor, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
 import type { RevisionDiff } from "../core/diff.js";
+import { earlierCard, previousDecision, type FollowUpSource } from "../core/review-history.js";
 import { itemPrompts } from "../core/items.js";
 import { validTaskTitle } from "../core/check.js";
 import { waiverNotes, type SharedContext } from "../core/quality.js";
@@ -27,6 +28,7 @@ export interface RequestView {
 
 export interface ReviewView {
   id: string;
+  follow_up?: FollowUpSource;
   items: RequestView[];
   intent?: ReviewIntent;
   default_notices?: DefaultNotice[];
@@ -127,6 +129,8 @@ export function revisionBannerLines(diff: RevisionDiff): string[] {
 export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView): string {
   const b = v.body;
   const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
+  const prior = earlierCard(review?.follow_up, b);
+  if (prior) out.push("**Earlier decision**", ...(prior.question === b.question ? [] : [prior.question]), previousDecision(prior), "");
   if (v.revision_diff) out.push(...revisionBannerLines(v.revision_diff), "");
   if (!v.current) out.push("A later revision replaced this card.", "");
   else if (v.status === "cancelled") out.push("This card was cancelled.", "");

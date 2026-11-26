@@ -78,6 +78,14 @@ article, .empty {
 .inbox-review ul { padding-inline-start: 1.25rem; margin: .625rem 0 1rem; color: var(--soft); }
 .inbox-review li + li { margin-top: .4rem; }
 .inbox-review li::marker { color: var(--amber); }
+.history-search { margin: 1rem 0 1.5rem; }
+.history-search > div { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.history-search input { flex: 1 1 15rem; min-width: 0; padding: .65rem; color: var(--text); background: var(--canvas); border: 1px solid var(--field-edge); border-radius: .4rem; font: inherit; }
+.history-pick { display: flex; align-items: baseline; gap: .65rem; cursor: pointer; }
+.history-pick input { flex: none; accent-color: var(--cyan); }
+.history-card { margin-bottom: .65rem; }
+.history-card:has(input:checked) { border-color: var(--cyan); }
+.prior-decision { padding-inline-start: .75rem; border-inline-start: 2px solid var(--cyan-edge); color: var(--soft); }
 .card-badges { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 .75rem; }
 .badge {
   display: inline-flex;
@@ -163,7 +171,7 @@ label { display: block; }
 .option:has(:checked) { border-color: var(--cyan); background: var(--cyan-tint); }
 .option input { flex: none; width: 1.125rem; height: 1.125rem; margin: .2rem 0 0; accent-color: var(--cyan); }
 .option span { min-width: 0; }
-textarea, select {
+textarea, select, input[type="text"] {
   display: block;
   width: 100%;
   min-height: 44px;

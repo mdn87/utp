@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { answerValue, cardMetadata, dependencyLabels, reviewContext, sharedFromIntent, type ReviewView } from "../cli/render.js";
+import { earlierCard, previousDecision } from "../core/review-history.js";
 import type { BlindReveal } from "../core/blind.js";
 import type { BrowserBatchReceipt, RecordedBrowserAnswer } from "../core/engine.js";
 import type { RevisionDiff } from "../core/diff.js";
@@ -237,7 +238,7 @@ export interface ReviewHtmlOptions {
   statusMessage?: string;
 }
 
-export function reviewHtml(review: ReviewView, token: string, message?: string, form?: URLSearchParams, opts: ReviewHtmlOptions = {}): string {
+export function reviewHtml(review: ReviewView & { sourceHistoryPath?: string }, token: string, message?: string, form?: URLSearchParams, opts: ReviewHtmlOptions = {}): string {
   const field = (name: string): string => escapeText(form?.get(name) ?? "");
   const checked = (name: string, value: string): string => form?.get(name) === value ? " checked" : "";
   const chipGroup = (name: string, label: string, choices: readonly (readonly [string, string])[]): string => {
@@ -257,6 +258,8 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
       `<article><h2>${escapeText(b.question)}</h2>`,
       `<p class="card-badges"><span class="badge">${escapeText(kindLabel)}</span><span class="badge ${stakesClass}">${escapeText(undoLabel)}</span><span class="badge">Level ${b.level}</span></p>`,
     ];
+    const prior = earlierCard(review.follow_up, b);
+    if (prior) parts.push(`<p class="prior-decision"><strong>Earlier decision</strong><br>${prior.question !== b.question ? escapeText(prior.question) + "<br>" : ""}${escapeText(previousDecision(prior))}</p>`);
     if (item.revision_diff) parts.push(revisionBannerHtml(item.revision_diff));
     if (b.kind !== "notice") parts.push("<h3>What this question addresses</h3>");
     parts.push(notice(b.summary ?? b.why_now));
@@ -386,7 +389,8 @@ export function reviewHtml(review: ReviewView, token: string, message?: string, 
   const statusBanner = opts.statusMessage ? `<p role="status">${escapeText(opts.statusMessage)}</p>` : "";
   const videoScript = reviewHasVideoComparison(review) ? `<script>${playComparisons}</script>` : "";
   return page("Review", `<h1>Review</h1><p class="count">${countText}</p>
-    ${contextHtml(review)}
+    ${review.sourceHistoryPath ? `<p><a href="${escapeText(review.sourceHistoryPath)}">View source review</a></p>` : ""}
+    ${contextHtml(review.follow_up && review.intent ? { ...review, intent: { ...review.intent, already_done: undefined } } : review)}
     ${statusBanner}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}
     <form method="post"><input type="hidden" name="presentation" value="${escapeText(token)}">
     ${defaults.join("")}${previewBlock}${cards.join("")}

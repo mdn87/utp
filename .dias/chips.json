@@ -1255,6 +1255,58 @@
     },
     {
       "schemaVersion": 1,
+      "chipId": "utp:flow:history",
+      "projectId": "utp",
+      "title": "Search saved reviews by title, question or tag",
+      "summary": "Find prepared reviews across the full project history and open the saved cards and decisions in the inbox or terminal.",
+      "stage": "done",
+      "sequence": 287,
+      "prereqs": [
+        "utp:flow:carry-through"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-26T03:19:59Z",
+        "updatedAt": "2026-11-26T03:19:59Z"
+      },
+      "evidence": [
+        {
+          "entryId": "implementation-verified",
+          "at": "2026-11-26T03:19:59Z",
+          "kind": "note",
+          "message": "Search found results beyond the recent list. Desktop and mobile browsers reopened an eight-card review, and terminal search returned revision-bound card references."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "chipId": "utp:flow:follow-up",
+      "projectId": "utp",
+      "title": "Start a follow-up from selected review cards",
+      "summary": "Choose earlier card revisions, carry their decisions into a fresh round, and include new ideas alongside them.",
+      "stage": "done",
+      "sequence": 288,
+      "prereqs": [
+        "utp:flow:history"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-26T03:19:59Z",
+        "updatedAt": "2026-11-26T03:19:59Z"
+      },
+      "evidence": [
+        {
+          "entryId": "implementation-verified",
+          "at": "2026-11-26T03:19:59Z",
+          "kind": "note",
+          "message": "A browser replay selected two earlier decisions and saved three fresh answers. Tests verify source isolation, retry behavior, and recovery after reopening the store."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
       "chipId": "utp:rich:deferred-kinds",
       "projectId": "utp",
       "title": "Confirm all everyday kinds shipped in phase 1",

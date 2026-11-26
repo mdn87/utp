@@ -121,6 +121,134 @@ async function renderInbox(service: Service, pages: ReviewPages, url = "/", meth
   return { status, headers: respHeaders, html };
 }
 
+test("history searches older prepared reviews by title, question and tag, and starts an independent follow-up", async (t) => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-history-"));
+  let service = new Service(data);
+  t.after(() => service.close());
+  const actor = { machine: "laptop", session: "author" };
+  const project = (service.global("project.create", { name: "Sample" }, actor)!.project as ProjectInfo).id;
+  let engine = service.engine(project) as Engine;
+  const run = (op: string, args: Record<string, unknown> = {}, opId?: string) => engine.run(op, args, actor, opId);
+  const card = run("ask", { body: chooseCard("Which search layout?", { tags: ["archive-tools"] }) });
+  const approval = run("ask", { body: approveCard("Approve the rollout?") });
+  const source = String(card.review_id);
+  const ref = `${card.id}@1`;
+  const actionRef = `${approval.id}@1`;
+  run("flush", { intent: { task_title: "First planning round", asked: "Pick a layout.", doing: "Plan the work.", scope_delta: "none" } });
+  run("presented", { review: source, channel: "terminal-review" });
+  assert.equal(run("answer", { id: ref, value: "b", channel: "terminal-review" }).code, 0);
+  assert.equal(run("answer", { id: actionRef, value: "yes", channel: "terminal-review" }).code, 0);
+  for (let i = 0; i < 12; i++) {
+    run("ask", { body: chooseCard(`Which other layout for sample ${i}?`) });
+    run("flush");
+  }
+  const privateDraft = run("ask", { body: chooseCard("Unpublished draft?") });
+  for (const query of ["first PLANNING", "search layout", "archive-tools"]) {
+    const found = run("history", { query });
+    assert.equal(found.code, 0, found.message);
+    assert.deepEqual((found.reviews as { review_id: string }[]).map(r => r.review_id), [source]);
+  }
+  assert.deepEqual(run("history", { query: "unpublished" }).reviews, []);
+  const select = { review: source, cards: [ref, actionRef], title: "Second round", ideas: ["Search by date"] };
+  const before = run("show", { id: source });
+  assert.notEqual(run("follow-up", { ...select, cards: [ref, `${privateDraft.id}@1`] }).code, 0);
+  const created = run("follow-up", select, "history-example");
+  assert.equal(created.code, 0, created.message);
+  assert.notEqual(created.review_id, source);
+  assert.deepEqual(run("follow-up", select, "history-example"), created);
+  assert.notEqual(run("follow-up", { ...select, ideas: [] }, "history-example").code, 0);
+  const shown = run("show", { id: created.review_id }).review as ReviewView;
+  assert.equal(shown.items.length, 3);
+  assert.deepEqual(shown.items.map(c => c.answer), [null, null, null]);
+  assert.deepEqual(shown.items[0]!.body.related, [card.id]);
+  assert.equal(shown.items[0]!.body.options?.[1]?.label, "Second option");
+  assert.ok(shown.items.every(c => !c.body.default && !c.body.options?.some(o => o.authorization)));
+  assert.match(reviewMarkdown(shown), /Second option/);
+  assert.ok(shown.intent?.already_done?.includes(ref));
+  assert.ok(shown.intent?.already_done?.includes("Second option"));
+  assert.equal(shown.follow_up?.cards[0]?.option_id, "b");
+  assert.match(shown.items[2]!.body.question, /Search by date/);
+  assert.deepEqual(run("show", { id: source }), before);
+  assert.equal(run("status").open_review, privateDraft.review_id);
+  service.close();
+  service = new Service(data);
+  engine = service.engine(project) as Engine;
+  assert.deepEqual(run("show", { id: created.review_id }).review, shown);
+});
+
+test("the CLI searches the project and starts a follow-up from the returned revision and a UTF-8 idea file", async t => {
+  const dir = repo();
+  const data = mkdtempSync(path.join(tmpdir(), "utp-cli-history-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  t.after(() => svc.close());
+  const config = { server: svc.url, token: createToken(data, "laptop") };
+  const project = ((await call("project.create", { name: "Sample" }, { config })).project as ProjectInfo).id;
+  const options = { config, project };
+  const source = await call("ask", { body: chooseCard("Which layout?", { tags: ["catalog"] }) }, options);
+  await call("flush", {}, options);
+  const home = mkdtempSync(path.join(tmpdir(), "utp-cli-history-home-"));
+  writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
+  const cmd = (args: string[]) => utp(args, { cwd: dir, home, env: { UTP_PROJECT: project } });
+  const search = await cmd(["history", "CaTaLog", "--json"]);
+  assert.equal(search.code, 0, search.stderr);
+  const saved = JSON.parse(search.stdout).reviews[0];
+  assert.equal(saved.review_id, source.review_id);
+  writeFileSync(path.join(dir, "round.json"), JSON.stringify({ title: "Next round", ideas: ["Café events"] }));
+  const follow = await cmd(["follow-up", saved.review_id, saved.cards[0].ref, "--file", "round.json", "--json"]);
+  assert.equal(follow.code, 0, follow.stdout + follow.stderr);
+  const newer = JSON.parse(follow.stdout);
+  const view = (await call("show", { id: newer.review_id }, options)).review as ReviewView;
+  assert.equal(view.follow_up?.review, saved.review_id);
+  assert.deepEqual(view.follow_up?.cards.map(c => c.ref), [saved.cards[0].ref]);
+  assert.equal(view.items.length, 2);
+  assert.match(view.items[1]!.body.question, /Café events/);
+  assert.match((await cmd(["history", "Next round"])).stdout, /Next round[\s\S]+Café events/);
+});
+
+test("the inbox finds a saved review and opens a follow-up of the checked cards with a new idea", async (t) => {
+  const service = new Service(mkdtempSync(path.join(tmpdir(), "utp-inbox-history-")));
+  t.after(() => service.close());
+  const actor = { machine: "laptop", session: "writer" };
+  const project = (service.global("project.create", { name: "Sample" }, actor)!.project as ProjectInfo).id;
+  const engine = service.engine(project) as Engine;
+  const first = engine.run("ask", { body: chooseCard("Which first layout?") }, actor);
+  const second = engine.run("ask", { body: chooseCard("Which second layout?") }, actor);
+  engine.run("flush", { intent: { task_title: "Layout workshop", asked: "Choose layouts.", doing: "Gather answers.", scope_delta: "none" } }, actor);
+  const pages = new ReviewPages(new URL("https://reviews.example.test"), service, Date.now, true);
+  assert.match((await renderInbox(service, pages)).html, /action="\/history"/);
+  const results = await renderInbox(service, pages, "/history?q=workshop");
+  const detailPath = `/history/${project}/${first.review_id}`;
+  assert.ok(results.html.includes(detailPath));
+  const detail = await renderInbox(service, pages, detailPath);
+  assert.equal(detail.status, 200);
+  assert.ok(detail.html.includes(`value="${second.id}@1"`));
+  const fields = new URLSearchParams({ card: `${second.id}@1`, title: "More ideas", ideas: "Browse by date" });
+  for (const name of ["submission", "version"]) {
+    const value = new RegExp(`name="${name}" value="([^"]+)"`).exec(detail.html)?.[1];
+    assert.ok(value, name);
+    fields.set(name, value);
+  }
+  const route = detailPath + "/follow-up";
+  assert.equal((await renderInbox(service, pages, route, "POST", { origin: "https://other.example.test" }, undefined, fields.toString())).status, 403);
+  const submit = () => renderInbox(service, pages, route, "POST", { origin: pages.origin.origin }, undefined, fields.toString());
+  const response = await submit();
+  assert.equal(response.status, 303);
+  assert.match(response.headers.location!, /^\/review\//);
+  assert.equal((await submit()).status, 303);
+  const found = engine.run("history", { query: "More ideas" }, actor).reviews as { review_id: string }[];
+  assert.equal(found.length, 1);
+  const review = engine.run("show", { id: found[0]!.review_id }, actor).review as ReviewView;
+  assert.equal(review.items.length, 2);
+  assert.ok(review.items[0]!.body.related?.includes(String(second.id)));
+  assert.doesNotMatch(reviewMarkdown(review), /Which first layout/);
+  fields.set("submission", "00000000-0000-4000-8000-000000000001");
+  engine.run("presented", { review: first.review_id, channel: "terminal-review" }, actor);
+  assert.equal(engine.run("answer", { id: `${second.id}@1`, channel: "terminal-review", value: "a" }, actor).code, 0);
+  const changed = await submit();
+  assert.equal(changed.status, 409);
+  assert.match(changed.html, /First option/);
+});
+
 test("Idea 7: per-session draft queues isolate parallel sessions and utp stage checks D4, depends_on, and notice overlap", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-wf7-data-"));
   const svc = await startServer({ dataDir: data, port: 0 });
