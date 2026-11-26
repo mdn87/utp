@@ -967,7 +967,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-25T11:35:00Z"
+        "updatedAt": "2026-11-26T05:51:12.596Z"
       },
       "evidence": [
         {
@@ -993,6 +993,12 @@
           "at": "2026-11-25T11:35:00Z",
           "kind": "stage-change",
           "message": "Side-by-side blind comparisons, media metadata stripping, immutable ballots and reveal tests shipped. Existing workflow migration waits for cutover."
+        },
+        {
+          "entryId": "live-comparison-pilot",
+          "at": "2026-11-26T05:51:12.596Z",
+          "kind": "note",
+          "message": "The live pilot preserves both films, eight earlier cuts, usability and the workflow choice. The source validator accepted both ballot orders. The reviewer has yet to vote."
         }
       ]
     },
@@ -1021,7 +1027,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-25T07:25:09.118Z"
+        "updatedAt": "2026-11-26T05:51:12.596Z"
       },
       "evidence": [
         {
@@ -1053,6 +1059,12 @@
           "at": "2026-11-25T07:25:09.118Z",
           "kind": "note",
           "message": "The trial covers 6 tasks across 3 agents. Of the first 15 requests, 15 have arrived and 0 used a waiver. The reviewer rated 0 cards for clarity."
+        },
+        {
+          "entryId": "playback-field-handoff",
+          "at": "2026-11-26T05:51:12.596Z",
+          "kind": "note",
+          "message": "Seven real tasks span all three agents. Of 20 eligible requests, none of the first 15 used a waiver. The playback handoff is open. None of 13 question cards has a clarity rating."
         }
       ]
     },
@@ -1420,7 +1432,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-26T05:51:12.596Z"
       },
       "evidence": [
         {
@@ -1428,6 +1440,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The phase 2 exit criteria require both real reviews and channel conformance."
+        },
+        {
+          "entryId": "pilot-awaits-reviewer",
+          "at": "2026-11-26T05:51:12.596Z",
+          "kind": "note",
+          "message": "Both films played in Chromium and native Mac WebKit. All three agent adapters chose the appropriate fallback. The ballot and device observation await the reviewer."
         }
       ]
     },

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "chipId": "utp:phase1:use",
-  "observedAt": "2026-11-25T07:25:09.118782+00:00",
+  "observedAt": "2026-11-26T05:51:12.596888+00:00",
   "phase": "in progress",
   "fieldTasks": [
     {
@@ -27,14 +27,19 @@
     {
       "platform": "Codex",
       "task": "Carry the authored task name through the real notification provider to the phone."
+    },
+    {
+      "platform": "Codex",
+      "task": "Repair blind video playback on Apple browsers during a live comparison and issue the playback handoff on the shared service."
     }
   ],
   "AC1": {
+    "allEligibleRequests": 20,
     "eligibleUniqueRequests": 15,
     "targetRequests": 15,
     "requestsWithWaivers": 0,
     "revisionsChecked": 18,
-    "postActivationRequests": 14,
+    "postActivationRequests": 15,
     "historicalEntriesExcluded": 1,
     "scope": "The first fifteen distinct requests in the real shared project. Revisions count once. Historical backfills, prototype reviews and synthetic service projects are outside the sample."
   },
@@ -52,21 +57,21 @@
     "evidence": "The cross-platform suite includes lifecycle, recovery, rendering, adapter and close-out tests. The reviewer socket also runs on a POSIX host."
   },
   "AC3": {
-    "tasks": 6,
+    "tasks": 7,
     "clarity": {
       "cardsRated": 0,
       "clear": 0,
       "clearPercent": null,
       "targetPercent": 80
     },
-    "questionCards": 12,
+    "questionCards": 13,
     "repeatedQuestionTexts": 0,
     "duplicateQuestions": 0,
-    "questionReviewsFlushed": 3,
+    "questionReviewsFlushed": 4,
     "questionReviewsPresented": 3,
     "noticeOnlyReviewsPresented": 2,
-    "allReviewsPresentedPerTask": 0.8333333333333334,
-    "pushReceipts": 3,
+    "allReviewsPresentedPerTask": 0.7142857142857143,
+    "pushReceipts": 4,
     "cardActiveResponseMs": [],
     "pageActiveResponseMs": [
       58819,
