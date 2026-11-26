@@ -230,8 +230,9 @@ parent-repository and staging steps are put off.
 
 ### Explicitly deferred out of this batch
 
-- **Milestones 4b and 5:** the dashboard status card, automatic retries
-  across regions, the pull-request advisory check, and macOS verification.
+- **Milestones 4b and 5:** sending the signed uploads that `upload.py`
+  builds, the dashboard status card, automatic retries across regions, the
+  pull-request advisory check, and macOS verification.
 - **A separate decision for you, not touched here:** pinning the two
   dependencies that currently float. This batch only reports them as
   unpinned.
@@ -251,12 +252,15 @@ What to copy from it:
   built piece is described by what it does today and what is missing. A
   claim that could not be verified says so and gives the reason.
 - **Breakdown.** Status separates complete work, partly implemented work,
-  and work that remains outside the project. Each step of the batch has its
-  own evidence, any prerequisite, a coarse effort, and a completion check
-  the person could run. The report names the steps that change things outside
-  the project and the step that can finish independently. Deferred work and
-  decisions that stay with the person are listed apart from the batch, so
-  the approval covers the batch and nothing else.
+  and work that remains outside the project. Every item that status lists as
+  partly implemented or unfinished appears again, either as a step in the
+  batch or in the deferred list. The batch has a name and a one-sentence
+  goal. Each step has its own evidence, any prerequisite, a coarse effort,
+  and a completion check the person could run. The report names the steps
+  that change things outside the project and the step that can finish
+  independently. Deferred work and decisions that stay with the person are
+  listed apart from the batch, so the approval covers the batch and nothing
+  else.
 
 The closing question follows the asking ladder in section 1. This batch
 changes another repository and a server, which makes it level 3: ask with an
@@ -266,6 +270,11 @@ the review intent: completed work in `already_done`, the goal in `doing`, and
 each deferred item in `scope_delta.deferred` with its reason. When an earlier
 instruction already covers the batch, replace the question with a line saying
 that work is starting.
+
+Asking where a project stands is a read-only question: the report is the
+direct answer, and it needs no close-out record (section 5). Its closing
+question concerns only the proposed batch, which has not started. When
+nothing actionable remains, say so and end without a batch or a question.
 
 ## 7. Command reference
 
