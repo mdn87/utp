@@ -221,8 +221,8 @@ against real data.
 | Order | Remaining outcome | Evidence and prerequisite | Completion check |
 |---|---|---|---|
 | 1 | Implement `export nightly` with tests, combining the fetch, the export, and the failure alert, and point the timer unit at it | `fetch.py` and `alerts.py` provide the pieces separately, and the timer unit runs `export verify` only. Stays inside the exporter. (Coarse effort: medium) | `pytest -v` passes the new nightly tests, including the offline and repeated-alert cases, and the commit is on `origin/main` |
-| 2 | Register a Linux CI runner on the staging server and add the exporter to the parent repository's `.gitmodules` | CI runs 1041 and 1047 are queued, and `.gitmodules` has no exporter entry. Changes files in the parent repository. (Coarse effort: small) | The queued CI run passes on the new runner, which verifies the Linux tests, and `git submodule status` is clean in the parent |
-| 3 | Deploy `exporter.service` and `exporter-nightly.timer` on the staging server and run them against real data | Unit templates are ready in `deploy/`. Depends on step 1. (Coarse effort: small to medium) | `systemctl is-active exporter.service` reports `active`, `curl localhost:8080/health` returns 200, and one `export nightly` run completes on the staging server |
+| 2 | Register a Linux CI runner on the staging server and add the exporter to the parent repository's `.gitmodules` | CI runs 1041 and 1047 are queued, and `.gitmodules` has no exporter entry. Changes files in the parent repository. (Coarse effort: small) | CI passes on the new runner for the latest commit on `origin/main`, which verifies the Linux tests, and `git submodule status` is clean in the parent |
+| 3 | Deploy `exporter.service` and `exporter-nightly.timer` on the staging server and run them against real data | Unit templates are ready in `deploy/`. Depends on step 1. (Coarse effort: small to medium) | `systemctl is-active exporter.service` reports `active`, `curl localhost:8080/health` returns 200, `systemctl list-timers exporter-nightly.timer` shows the next run, and one `export nightly` run completes on the staging server |
 | 4 | Add export row counts to the monitoring job's configuration so its half-hourly checks cover the exports | The monitoring job already runs every 30 minutes on the staging server. Independent of step 2 once step 1 fixes the result file's layout. (Coarse effort: small) | The job's configuration check and tests pass, and its latest report shows export row counts |
 
 Independent work: step 1 can finish inside the exporter even if the
@@ -256,11 +256,11 @@ What to copy from it:
   partly implemented or unfinished appears again, either as a step in the
   batch or in the deferred list. The batch has a name and a one-sentence
   goal. Each step has its own evidence, any prerequisite, a coarse effort,
-  and a completion check the person could run. The report names the steps
-  that change things outside the project and the step that can finish
-  independently. Deferred work and decisions that stay with the person are
-  listed apart from the batch, so the approval covers the batch and nothing
-  else.
+  and a completion check the person could run against that step's outcome.
+  The report names the steps that change things outside the project and the
+  step that can finish independently. Deferred work and decisions that stay
+  with the person are listed apart from the batch, so the approval covers
+  the batch and nothing else.
 
 The closing question follows the asking ladder in section 1. This batch
 changes another repository and a server, which makes it level 3: ask with an
