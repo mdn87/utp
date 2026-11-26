@@ -126,6 +126,25 @@ utp review <new-review-id>
 The optional UTF-8 file can contain `{"title":"Next round","ideas":["Browse by date"]}`.
 Use `--json` with `history` or `follow-up` for structured output.
 
+### Pin a decision for later reviews
+
+Open a saved card in the inbox and choose **Pin decision**. Later reviews in
+the same project have a **Pinned decisions** section with the original answer
+and a link to its card. You can also pin from a saved receipt or the terminal.
+
+```sh
+utp pin <card-id> --note "Applies to all extensions"
+utp pins --json
+utp inbox
+utp unpin <card-id>
+```
+
+The note is optional. Both `utp inbox` and `utp review` show pins before the
+waiting questions. A pin keeps the answer and revision you selected. If the
+answer changes or is withdrawn, reversed, or superseded, its label tells you
+what happened. In JSON, check `stale` and `reasons` before relying on a pin.
+Choose **Unpin** to remove it from later reviews.
+
 ### Recording a chat reply
 
 Show the Markdown from `utp flush` in the conversation. Then run the printed

@@ -121,6 +121,128 @@ async function renderInbox(service: Service, pages: ReviewPages, url = "/", meth
   return { status, headers: respHeaders, html };
 }
 
+test("project pins preserve the selected answer through edits, reversals, supersession and restart", t => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-pins-"));
+  let service = new Service(data);
+  t.after(() => service.close());
+  const actor = { machine: "sample", session: "author" };
+  const create = (name: string) => (service.global("project.create", { name }, actor)!.project as ProjectInfo).id;
+  const project = create("Library"), other = create("Other");
+  const run = (verb: string, args: Record<string, unknown> = {}, id = project) =>
+    (service.engine(id) as Engine).run(verb, args, actor);
+  const card = run("ask", { body: chooseCard("Which compatibility rule?") });
+  const ref = `${card.id}@1`;
+  assert.deepEqual(run("pins").pins, []);
+  assert.equal(run("pin", { id: ref }).code, EXIT.NOT_ALLOWED);
+  run("flush");
+  run("presented", { review: card.review_id, channel: "terminal-review" });
+  run("answer", { id: ref, value: "a", channel: "terminal-review" });
+  const args = { id: ref, note: "Applies to extensions" };
+  assert.equal(run("pin", args).code, 0);
+  const initial = (run("pins").pins as Record<string, unknown>[])[0]!;
+  assert.equal(initial.id, card.id);
+  assert.equal(initial.review_id, card.review_id);
+  assert.equal(initial.revision, 1);
+  assert.equal(initial.title, "Which compatibility rule?");
+  assert.match(String(initial.answer), /First option/);
+  assert.equal(initial.note, args.note);
+  assert.ok(Number.isFinite(Date.parse(String(initial.pinned_at))));
+  assert.equal(initial.stale, false);
+  run("pin", { id: card.id });
+  assert.deepEqual(run("pins").pins, [initial]);
+  assert.deepEqual(run("pins", {}, other).pins, []);
+  assert.equal(run("pin", args, other).code, EXIT.NOT_FOUND);
+  const state = () => (run("pins").pins as { answer: string; stale: boolean; reasons: string[] }[])[0]!;
+  run("edit", { id: ref, value: "b", channel: "terminal-review" });
+  assert.deepEqual(state().reasons, ["changed"]);
+  assert.equal(state().answer, initial.answer);
+  run("edit", { id: ref, withdraw: true, channel: "terminal-review" });
+  assert.deepEqual(state().reasons, ["withdrawn"]);
+  run("answer", { id: ref, value: "a", channel: "terminal-review" });
+  run("reverse", { id: ref, reason: "We changed the rule." });
+  assert.equal(state().stale, true);
+  assert.ok(state().reasons.includes("reversed"));
+  run("revise", { id: card.id, body: chooseCard("Which revised compatibility rule?") });
+  assert.ok(state().reasons.includes("superseded"));
+  const before = state();
+  service.close();
+  service = new Service(data);
+  assert.deepEqual(state(), before);
+  assert.equal(run("unpin", { id: card.id }).code, 0);
+  assert.deepEqual(run("pins").pins, []);
+});
+
+test("the CLI and protected inbox manage pins and show them on later reviews", async t => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-pin-inbox-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  t.after(() => svc.close());
+  const actor = { machine: "sample", session: "author" };
+  const config = { server: svc.url, token: createToken(data, actor.machine) };
+  const project = (svc.service.global("project.create", { name: "Library" }, actor)!.project as ProjectInfo).id;
+  const engine = svc.service.engine(project) as Engine;
+  const run = (op: string, args: Record<string, unknown> = {}) => engine.run(op, args, actor);
+  const source = run("ask", { body: chooseCard("Which compatibility rule?") });
+  const ref = `${source.id}@1`;
+  run("flush");
+  run("presented", { review: source.review_id, channel: "terminal-review" });
+  run("answer", { id: ref, value: "a", channel: "terminal-review" });
+  const pending = run("ask", { body: chooseCard("Which later format?") });
+  run("flush");
+  const cwd = repo(), home = mkdtempSync(path.join(tmpdir(), "utp-pin-home-"));
+  writeFileSync(path.join(home, "config.json"), JSON.stringify(config));
+  const cmd = (args: string[], input?: string) => utp(args, { cwd, home, input, env: { UTP_PROJECT: project } });
+  const pinned = await cmd(["pin", String(source.id), "--note", "Keep <v1>"]);
+  assert.equal(pinned.code, 0, pinned.stderr + pinned.stdout);
+  assert.equal(JSON.parse((await cmd(["pins", "--json"])).stdout).pins[0].note, "Keep <v1>");
+  const inbox = (await cmd(["inbox"])).stdout;
+  assert.match(inbox, /Pinned decisions[\s\S]*First option[\s\S]*Which later format/);
+  const pages = new ReviewPages(new URL("https://reviews.example.test"), svc.service, Date.now, true);
+  const detail = `/history/${project}/${source.review_id}`;
+  const list = await renderInbox(svc.service, pages);
+  assert.match(list.html, /<details[^>]*>\s*<summary>Pinned decisions \(1\)/);
+  assert.ok(list.html.includes(`${detail}#${ref}`));
+  assert.ok(list.html.includes("Keep &lt;v1&gt;"));
+  const local = new URL(String(pages.prepare(project, actor, pending.review_id).url)).pathname;
+  const reviewHtml = (await renderInbox(svc.service, pages, local)).html;
+  assert.match(reviewHtml, /Pinned decisions \(1\)[\s\S]*First option/);
+  const publicLink = await call("review-page.prepare", { review: pending.review_id }, { project, config });
+  assert.equal(publicLink.code, 0, publicLink.message);
+  assert.doesNotMatch(await (await fetch(String(publicLink.url))).text(), /Which compatibility rule|Keep &lt;v1&gt;|Pinned decisions \(1\)/);
+  const post = (op: string, origin: string, values: Record<string, string>) => renderInbox(svc.service, pages,
+    `/pins/${project}/${ref}/${op}`, "POST", { origin, "content-type": "application/x-www-form-urlencoded" },
+    undefined, new URLSearchParams(values).toString());
+  const version = (html: string) => {
+    const value = /name="expected" value="([a-f\d]+)"/.exec(html)?.[1];
+    assert.ok(value);
+    return value;
+  };
+  const unpin = { return: detail, expected: version(list.html) };
+  assert.equal((await post("unpin", "https://elsewhere.example.test", unpin)).status, 403);
+  run("pin", { id: ref, note: "This decision also covers plugins." });
+  assert.equal((await post("unpin", pages.origin.origin, unpin)).status, 409);
+  unpin.expected = version((await renderInbox(svc.service, pages)).html);
+  assert.equal((await post("unpin", pages.origin.origin, unpin)).status, 303);
+  assert.deepEqual(run("pins").pins, []);
+  const page = (await renderInbox(svc.service, pages, detail)).html;
+  assert.ok(page.includes(`/pins/${project}/${ref}/pin`));
+  const oldAnswer = version(page);
+  run("edit", { id: ref, value: "b", channel: "terminal-review" });
+  assert.equal((await post("pin", pages.origin.origin, { return: detail, expected: oldAnswer })).status, 409);
+  const expected = version((await renderInbox(svc.service, pages, detail)).html);
+  const submission = { return: detail, expected, submission: "00000000-0000-4000-8000-000000000011" };
+  assert.equal((await post("pin", pages.origin.origin, submission)).headers.location, detail);
+  run("reverse", { id: ref, reason: "Reconsidered" });
+  assert.match((await renderInbox(svc.service, pages)).html, /Reversed/);
+  const terminal = await cmd(["review", String(pending.review_id)], "a\n");
+  assert.match(terminal.stdout, /Pinned decisions[\s\S]*Reversed[\s\S]*Which later format/);
+  run("revise", { id: source.id, body: chooseCard("Which replacement rule?") });
+  assert.match((await renderInbox(svc.service, pages)).html, /Superseded/);
+  assert.equal((await cmd(["unpin", String(source.id)])).code, 0);
+  assert.equal((await post("pin", pages.origin.origin, submission)).status, 303);
+  assert.deepEqual(run("pins").pins, []);
+  assert.doesNotMatch((await renderInbox(svc.service, pages)).html, /<summary>Pinned decisions/);
+});
+
 test("history searches older prepared reviews by title, question and tag, and starts an independent follow-up", async (t) => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-history-"));
   let service = new Service(data);

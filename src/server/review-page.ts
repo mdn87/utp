@@ -3,7 +3,7 @@ import type { ReviewView } from "../cli/render.js";
 import { ballotContent, Engine, type BrowserAnswer } from "../core/engine.js";
 import { itemPrompts } from "../core/items.js";
 import { EXIT, type Actor, type ClarificationRequest, type Disposition, type OpResult } from "../core/types.js";
-import { cardHasAuthorization, comparisonScriptHash, editReviewHtml, page, pickupStatusHtml, reviewHasVideoComparison, reviewHtml, savedHtml } from "./review-html.js";
+import { cardHasAuthorization, comparisonScriptHash, editReviewHtml, page, pickupStatusHtml, reviewHasVideoComparison, reviewHtml, savedHtml, type BrowserReview } from "./review-html.js";
 import { linkKey, ReviewLinks, token } from "./review-links.js";
 import type { Service } from "./service.js";
 
@@ -230,7 +230,8 @@ export class ReviewPages {
     return { code: EXIT.OK, review_id: review.id, url: new URL(`/review/${id}`, this.origin).href };
   }
 
-  async handle(request: IncomingMessage, response: ServerResponse, readBody: (req: IncomingMessage) => Promise<string | undefined>): Promise<void> {
+  async handle(request: IncomingMessage, response: ServerResponse, readBody: (req: IncomingMessage) => Promise<string | undefined>,
+    fromReviewerInbox = false): Promise<void> {
     const denied = () => sendHtml(response, 403, page("Review unavailable", "<h1>Review unavailable</h1><p>Open the review link from the configured UTP address.</p>"));
     if (request.headers.host?.toLowerCase() !== this.origin.host) return denied();
     const path = request.url ?? "";
@@ -254,7 +255,13 @@ export class ReviewPages {
     const engine = this.service.engine(entry.project);
     if (!(engine instanceof Engine)) return sendHtml(response, 503, page("Review unavailable", "<h1>Review unavailable</h1>"));
     const saveId = `review-save-${linkKey(id)}`;
-    const shown = engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined;
+    const readView = (): BrowserReview | undefined => {
+      const review = engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined;
+      return review && { ...review, ...(fromReviewerInbox ? { pinContext: {
+        project: entry.project, pins: engine.decisionPins(), returnTo: path,
+      } } : {}) };
+    };
+    const shown = readView();
     if (!shown) return denied();
     if (entry.mode === "edit") {
       const pinned = entry.items.map((ref) => shown.items.find((card) => card.id === ref.id && card.revision === ref.revision));
@@ -262,9 +269,9 @@ export class ReviewPages {
         return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>A card in this review was revised. Open a fresh link before editing.</p>" + this.inboxLink()));
       }
       const pinnedItems = pinned.filter((card): card is NonNullable<typeof card> => card !== undefined);
-      const editView: ReviewView = { ...shown, items: pinnedItems };
-      const refreshPinned = (): ReviewView => {
-        const latest = (engine.run("show", { id: entry.review }, entry.actor).review as ReviewView | undefined) ?? shown;
+      const editView: BrowserReview = { ...shown, items: pinnedItems };
+      const refreshPinned = (): BrowserReview => {
+        const latest = readView() ?? shown;
         const latestItems = entry.items
           .map((ref) => latest.items.find((card) => card.id === ref.id && card.revision === ref.revision))
           .filter((card): card is NonNullable<typeof card> => card !== undefined);

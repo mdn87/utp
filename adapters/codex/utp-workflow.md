@@ -32,6 +32,10 @@ Check whether you actually need to ask before creating a card:
   level 3). Wait for an explicit, verified answer before acting. Never guess,
   downgrade a level-3 action to level 2, or act on an unverified reply.
 
+Before drafting a card, read the project's reviewer-selected decisions with
+`utp pins --json`. If a pin has `stale: true`, check its revision and the
+listed reasons. Execution still requires the usual grant.
+
 Before asking a new question, check prior decisions and reversals with
 `utp consider <decision.json>` or `utp log --tags <tags> --text <words>`. If a
 prior reversal exists at the same or higher level, either raise the level or
@@ -176,6 +180,7 @@ Read-only questions can end with a direct answer.
 ```sh
 # 1. Check prior decisions and prepare a card or batch (all payloads in UTF-8 files)
 utp status --json
+utp pins --json                           # decisions the reviewer wants visible in this project
 utp history "search words" --json        # earlier reviews by title, question, or tag
 utp follow-up <review-id> <card-id>@<rev> --file round.json --json
 utp consider decision.json
