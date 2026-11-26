@@ -81,6 +81,45 @@ function pngWithText(keyword: string, value: string): string {
 
 // ---- Blind judge comparisons ------------------------------------------------
 
+test("blind MP4 cleanup preserves the local data reference and decoder configuration", () => {
+  const fullBox = Buffer.from([0, 0, 0, 0, 0, 0, 0, 1]);
+  const localReference = makeMp4Box("url ", Buffer.from([0, 0, 0, 1]));
+  const dref = makeMp4Box("dref", Buffer.concat([fullBox, localReference]));
+  const fields = Buffer.alloc(78);
+  fields.writeUInt16BE(1, 6); // data_reference_index
+  fields[42] = 13;
+  fields.write("Private Maker", 43);
+  fields.writeUInt16BE(24, 74); // depth
+  fields.writeInt16BE(-1, 76); // pre_defined
+  const config = makeMp4Box("avcC", Buffer.from([1, 100, 0, 32, 255, 225, 0, 2, 103, 100, 1, 0, 2, 104, 0]));
+  const entry = makeMp4Box("avc1", Buffer.concat([fields, config]));
+  const stsd = makeMp4Box("stsd", Buffer.concat([fullBox, entry]));
+  const minf = makeMp4Box("minf", Buffer.concat([makeMp4Box("dinf", dref), makeMp4Box("stbl", stsd)]));
+  const headers = Buffer.concat([makeMp4Box("ftyp", Buffer.from("isom")), makeMp4Box("moov", minf)]);
+  const candidates = ["first", "second"].map((identity) => ({
+    identity, artifact: { media_type: "video/mp4", data: Buffer.concat([headers, makeMp4Box("mdat", Buffer.from(identity))]).toString("base64") },
+  }));
+  const normalized = normalizeBlind({ candidates });
+  assert.ok(typeof normalized !== "string");
+  const artifact = normalized.candidates[0].artifact;
+  assert.ok("data" in artifact);
+  const clean = Buffer.from(artifact.data, "base64");
+  const expected = Buffer.concat([headers, makeMp4Box("mdat", Buffer.from("first"))]);
+  const compressor = expected.indexOf(entry) + 8 + 42;
+  expected.fill(0, compressor, compressor + 32);
+  assert.deepEqual(clean, expected);
+
+  const external = makeMp4Box("url ", Buffer.concat([Buffer.alloc(4), Buffer.from("source-name.mp4\0")]));
+  const tagged = Buffer.concat([headers, external, makeMp4Box("mdat", Buffer.from("third"))]);
+  const comparison = normalizeBlind({ candidates: [normalized.candidates[0], {
+    identity: "third", artifact: { media_type: "video/mp4", data: tagged.toString("base64") },
+  }] });
+  assert.ok(typeof comparison !== "string");
+  const second = comparison.candidates[1].artifact;
+  assert.ok("data" in second);
+  assert.equal(Buffer.from(second.data, "base64").includes("source-name.mp4"), false);
+});
+
 test("blind PNG and MP4 candidates strip identifying metadata and refuse identical previews", () => {
   const dupPng = normalizeBlind({
     candidates: [
