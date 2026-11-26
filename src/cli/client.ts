@@ -39,6 +39,15 @@ export function utpHome(): string {
   return process.env.UTP_HOME || path.join(os.homedir(), ".utp");
 }
 
+export function currentSession(): string {
+  const { UTP_SESSION, CODEX_THREAD_ID, ANTIGRAVITY_CONVERSATION_ID } = process.env;
+  if (UTP_SESSION?.trim()) return UTP_SESSION;
+  // A nested agent can inherit the launcher's ID alongside its own.
+  if (CODEX_THREAD_ID && ANTIGRAVITY_CONVERSATION_ID && CODEX_THREAD_ID !== ANTIGRAVITY_CONVERSATION_ID) return "default";
+  const native = CODEX_THREAD_ID || ANTIGRAVITY_CONVERSATION_ID;
+  return native && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(native) ? native : "default";
+}
+
 export function readConfig(): ClientConfig {
   const file = path.join(utpHome(), "config.json");
   const cfg = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as Partial<ClientConfig>) : {};
@@ -84,7 +93,7 @@ export interface CallOptions {
 export async function call(op: string, args: Record<string, unknown>, opts: CallOptions = {}): Promise<OpResult> {
   const cfg = opts.config ?? readConfig();
   const body = JSON.stringify({
-    op, args, session: process.env.UTP_SESSION || "default",
+    op, args, session: currentSession(),
     ...(opts.project ? { project: opts.project } : {}),
     ...(opts.opId ? { op_id: opts.opId } : {}),
   });

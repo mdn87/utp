@@ -47,6 +47,57 @@ function repo(remote?: string): string {
   return dir;
 }
 
+test("native session IDs keep parallel reviews separate and let a fresh process resume the same card", async () => {
+  const data = mkdtempSync(path.join(tmpdir(), "utp-native-data-"));
+  const svc = await startServer({ dataDir: data, port: 0 });
+  const o = { cwd: repo(), home: mkdtempSync(path.join(tmpdir(), "utp-native-home-")) };
+  const codexId = randomUUID(), agyId = randomUUID();
+  const codex = { UTP_SESSION: "", CODEX_THREAD_ID: codexId, ANTIGRAVITY_CONVERSATION_ID: "" };
+  const agy = { UTP_SESSION: "", CODEX_THREAD_ID: "", ANTIGRAVITY_CONVERSATION_ID: agyId };
+  const run = async (args: string[], env: Record<string, string>) => {
+    const result = await utp([...args, "--json"], { ...o, env });
+    assert.equal(result.code, 0, result.stderr + result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  try {
+    assert.equal((await utp(["connect", svc.url], { ...o, input: createToken(data, "workstation") })).code, 0);
+    await run(["init"], codex);
+    assert.equal((await utp(["new", "choose", "--file", "choice.json"], o)).code, 0);
+    const file = path.join(o.cwd, "choice.json");
+    const card = JSON.parse(readFileSync(file, "utf8"));
+    card.question = "Which format should the export use?";
+    card.why_now = "The format determines which existing consumers can read the export.";
+    writeFileSync(file, JSON.stringify(card));
+    const first = await run(["ask", "choice.json"], codex);
+    card.question = "Which format should the import accept?";
+    writeFileSync(file, JSON.stringify(card));
+    const second = await run(["ask", "choice.json"], agy);
+    assert.notEqual(first.review_id, second.review_id);
+    assert.equal((await run(["status"], codex)).open_review, first.review_id);
+    assert.equal((await run(["status"], agy)).open_review, second.review_id);
+    const resume = async (env: Record<string, string>) => (await run(["resume", first.review_id], env)).cards[0];
+    const own = await resume(codex);
+    assert.deepEqual([own.id, own.revision, own.owner.session, own.needs_takeover], [first.id, 1, codexId, false]);
+    assert.equal((await resume(agy)).needs_takeover, true);
+    const nested = { ...codex, ANTIGRAVITY_CONVERSATION_ID: agyId };
+    assert.equal((await resume({ ...nested, UTP_SESSION: codexId })).needs_takeover, false);
+    for (const env of [nested, { ...codex, CODEX_THREAD_ID: "invalid" }]) {
+      const result = await utp(["status", "--json"], { ...o, env });
+      assert.equal(result.code, 0);
+      assert.equal(JSON.parse(result.stdout).open_review, null);
+      assert.match(result.stderr, /UTP_SESSION/);
+    }
+    await run(["flush", first.review_id], codex);
+    const saved = await utp(["review", first.review_id], { ...o, env: { UTP_SESSION: "review-terminal" }, input: "b\n" });
+    assert.equal(saved.code, 0, saved.stderr);
+    const resumed = await resume(agy);
+    assert.deepEqual([resumed.id, resumed.revision, resumed.answer.value], [first.id, 1, "b"]);
+    assert.equal((await run(["status"], agy)).open_review, second.review_id);
+  } finally {
+    await svc.close();
+  }
+});
+
 test("closeout maps every goal, delivers queued notices once by default, and supports --keep-notices", async () => {
   const data = mkdtempSync(path.join(tmpdir(), "utp-closeout-data-"));
   const svc = await startServer({ dataDir: data, port: 0, reportExport: true });

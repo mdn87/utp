@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { utpHome } from "./client.js";
+import { currentSession, utpHome } from "./client.js";
 
 interface Turn { id: string; root: string; before: string | null }
 interface HookInput {
@@ -69,7 +69,7 @@ function fingerprint(root: string): string | null {
 }
 
 export function currentHookTurn(): { directory: string; turn: Turn } | undefined {
-  const directory = sessionDirectory(process.env.UTP_SESSION);
+  const directory = sessionDirectory(currentSession());
   if (!directory) return;
   const turn = readState<Turn>(directory, "turn.json");
   if (!turn) return;

@@ -594,6 +594,7 @@ Rec "s7-guards" "unreachable-service" $script:RC
 Remove-Item Env:UTP_SERVER -ErrorAction SilentlyContinue
 
 Remove-Item Env:UTP_SESSION -ErrorAction SilentlyContinue
+Remove-Item Env:CODEX_THREAD_ID, Env:ANTIGRAVITY_CONVERSATION_ID -ErrorAction SilentlyContinue
 Run-Utp @("status", "--json")
 Rec "s7-guards" "warn-unset-session" $script:RC "warn=$(HasText $ErrFile 'UTP_SESSION is unset')"
 

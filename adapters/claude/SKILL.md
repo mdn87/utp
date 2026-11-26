@@ -1,6 +1,6 @@
 ---
 name: utp
-description: Use the UTP CLI from Claude Code to ask structured decisions, batch reviews, reuse prior authority, and execute verified grants safely.
+description: Use when a Claude Code task needs the person's choice, approval, judgment, or manual observation, or when a handoff names an earlier UTP review.
 ---
 
 # UTP for Claude Code
@@ -70,13 +70,11 @@ Check `chat_provenance` from `utp status --json` or `utp flush --json`:
   use the link from `utp flush` or `utp page <review-id>`. The reviewer can
   also run `utp review <review-id>` in their own terminal.
 
-## 4. Turn-start resume and close-out
+## 4. Resume a review and close out the task
 
-- Start every turn or resumed session with `utp status`. If Claude Code resumed
-  the same session (`claude --resume <id>` with the same `UTP_SESSION`),
-  continue with `utp wait` -> `utp begin` -> `utp applied`. If this is a new
-  session, inspect the workspace and follow the new-session resume path
-  (`utp takeover` or `utp reconcile`) in [utp-workflow.md](./utp-workflow.md).
+- Leave the project, review ID, and pending card revision in the task handoff.
+  When returning to that task, run `utp resume <review-id> --json`. Follow
+  the saved answer and the ownership checks in [utp-workflow.md](./utp-workflow.md).
 - Always pass payloads as UTF-8 files — never inline JSON on the command line.
 - When finishing a task that changed files, write a plain-language completion
   report mapping each stated goal to observed evidence.
