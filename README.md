@@ -272,7 +272,10 @@ and `adapters/antigravity/RULES.snippet.md`. For Claude Code, wire the bundled
 session UUID. For work that changes files or external state, run
 `utp closeout <report.json>` to show what each goal achieved, its evidence,
 and any queued notices. The [agent workflow](adapters/utp-workflow.md#5-close-out-completion-report)
-includes a report example. Claude Code can remind the agent to write one
+includes a report example, and an
+[example status report](adapters/utp-workflow.md#6-example-status-report-with-a-proposed-next-batch)
+that proposes the next batch of work and ends in one approval question.
+Claude Code can remind the agent to write a close-out report
 using the [optional Stop hook](adapters/claude/SKILL.md#5-optional-close-out-reminder-hook).
 Desktop-app conveniences stay optional on top of the CLI, and the
 decision log lives in one small service on a home server so every machine and

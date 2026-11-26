@@ -184,7 +184,90 @@ notice queue could not be checked. Routine completion needs no reply. Use
 `accept` when the person asked to sign off or only they can judge the result.
 Read-only questions can end with a direct answer.
 
-## 6. Command reference
+## 6. Example: status report with a proposed next batch
+
+When the person asks where a project stands or what is left, answer with one
+report they can verify and approve in a single reading. The report below is
+fictional. Copy its order, its level of detail, and the way it divides the
+work.
+
+```markdown
+**Outcome:** The exporter's v0.1 core, 16 tests, package build, and operator
+guide are on `origin/main` (`4f2c9ab`), leaving Linux CI, a scheduled nightly
+run, the staging deployment, and the monitoring link to take it from a tested
+command-line tool to an unattended service.
+
+### Current status (verified against the code, Git, and CI)
+
+- **Already complete (verified on the Windows workstation):** CSV and JSON
+  writers, the date column, the retry queue, the `export` command line, 16
+  passing tests, the package build, and the guide (`docs/INDEX.md`).
+- **Partly implemented:**
+  - The timer unit runs `export verify` as a placeholder. No `export nightly`
+    command yet combines the fetch, the export, and the failure alert.
+  - `upload.py` builds signed upload requests, but nothing sends them yet.
+  - Tests are unverified on Linux and macOS: CI runs 1041 and 1047 are queued
+    because no runner is registered.
+- **Unfinished outside the exporter:** the parent repository's `.gitmodules`
+  has no exporter entry, the staging server has no service or timer
+  installed, and the monitoring job does not read export results.
+
+### Proposed next batch: nightly exports on staging with passing Linux CI (milestone 4a)
+
+**Goal:** turn on Linux CI, ship a working `export nightly`, register the
+submodule, and run the service and its nightly timer on the staging server
+against real data.
+
+| Order | Remaining outcome | Evidence and prerequisite | Completion check |
+|---|---|---|---|
+| 1 | Implement `export nightly` with tests, combining the fetch, the export, and the failure alert, and point the timer unit at it | `fetch.py` and `alerts.py` provide the pieces separately, and the timer unit runs `export verify` only. Stays inside the exporter. (Coarse effort: medium) | `pytest -v` passes the new nightly tests, including the offline and repeated-alert cases, and the commit is on `origin/main` |
+| 2 | Register a Linux CI runner on the staging server and add the exporter to the parent repository's `.gitmodules` | CI runs 1041 and 1047 are queued, and `.gitmodules` has no exporter entry. Changes files in the parent repository. (Coarse effort: small) | The queued CI run passes on the new runner, which verifies the Linux tests, and `git submodule status` is clean in the parent |
+| 3 | Deploy `exporter.service` and `exporter-nightly.timer` on the staging server and run them against real data | Unit templates are ready in `deploy/`. Depends on step 1. (Coarse effort: small to medium) | `systemctl is-active exporter.service` reports `active`, `curl localhost:8080/health` returns 200, and one `export nightly` run completes on the staging server |
+| 4 | Add export row counts to the monitoring job's configuration so its half-hourly checks cover the exports | The monitoring job already runs every 30 minutes on the staging server. Independent of step 2 once step 1 fixes the result file's layout. (Coarse effort: small) | The job's configuration check and tests pass, and its latest report shows export row counts |
+
+Independent work: step 1 can finish inside the exporter even if the
+parent-repository and staging steps are put off.
+
+### Explicitly deferred out of this batch
+
+- **Milestones 4b and 5:** the dashboard status card, automatic retries
+  across regions, the pull-request advisory check, and macOS verification.
+- **A separate decision for you, not touched here:** pinning the two
+  dependencies that currently float. This batch only reports them as
+  unpinned.
+
+Run this batch, including the parent-repository change and the deployment to
+the staging server? Reply `go`.
+```
+
+What to copy from it:
+
+- **Format.** The outcome comes first, in one sentence: what has landed and
+  what remains between that and the goal. Status, the proposed batch, the
+  deferred work, and a single question follow in that order.
+- **Level of language.** Each claim names something the person can check: a
+  commit, a file, a command, a CI run. The status heading says what the
+  claims were verified against, and the first bullet says where. A partly
+  built piece is described by what it does today and what is missing. A
+  claim that could not be verified says so and gives the reason.
+- **Breakdown.** Status separates complete work, partly implemented work,
+  and work that remains outside the project. Each step of the batch has its
+  own evidence, any prerequisite, a coarse effort, and a completion check
+  the person could run. The report names the steps that change things outside
+  the project and the step that can finish independently. Deferred work and
+  decisions that stay with the person are listed apart from the batch, so
+  the approval covers the batch and nothing else.
+
+The closing question follows the asking ladder in section 1. This batch
+changes another repository and a server, which makes it level 3: ask with an
+`approve` card whose `authorization` names the parent repository and the
+server, and offer step 1 alone as the narrower option. Carry the report into
+the review intent: completed work in `already_done`, the goal in `doing`, and
+each deferred item in `scope_delta.deferred` with its reason. When an earlier
+instruction already covers the batch, replace the question with a line saying
+that work is starting.
+
+## 7. Command reference
 
 ### Lifecycle commands
 
