@@ -393,7 +393,9 @@ export class ReviewPages {
     if (items.some((card) => !card?.current || (!form && card.body.kind !== "notice" && !answerable(card.status)))) {
       return sendHtml(response, 409, page("Review changed", "<h1>Review changed</h1><p>Open a fresh link before answering.</p>" + this.inboxLink()));
     }
-    const view: ReviewView = { ...shown, items: items.filter((card) => card !== undefined) };
+    const view = { ...shown, items: items.filter((card) => card !== undefined),
+      ...(this.hasInbox && shown.follow_up ? { sourceHistoryPath:
+        `/history/${encodeURIComponent(entry.project)}/${encodeURIComponent(shown.follow_up.review)}` } : {}) };
     const allowVideo = reviewHasVideoComparison(view);
     if (request.method === "GET") {
       const browser = entry.browser ?? { cookie: token(), form: token(), openedAt: this.now() };

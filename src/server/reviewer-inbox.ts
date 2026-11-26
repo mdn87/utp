@@ -6,6 +6,7 @@ import { validTaskTitle } from "../core/check.js";
 import { Engine } from "../core/engine.js";
 import { EXIT, type Actor } from "../core/types.js";
 import { escapeText, page } from "./review-html.js";
+import { handleHistory, historySearch } from "./history-page.js";
 import { answerable, ReviewPages, sendHtml } from "./review-page.js";
 import { normalizeRemote, type ProjectInfo, type Service } from "./service.js";
 
@@ -95,6 +96,9 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
   if (req.headers.host?.toLowerCase() !== pages.origin.host) return unavailable(403);
   const path = req.url ?? "";
   if (path.startsWith("/review/")) return pages.handle(req, res, readBody);
+  if (path === "/history" || path.startsWith("/history?") || path.startsWith("/history/")) {
+    return handleHistory(req, res, service, pages, readBody, actor, inboxLabel);
+  }
   if (path === "/" && req.method === "GET") {
     const sections: string[] = [];
     const recentEntries: { updatedAt: string; html: string }[] = [];
@@ -157,7 +161,7 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
       ? `<section class="recent-section" aria-label="Recent and in flight"><h3>Recent &amp; In Flight</h3>${recentEntries
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10).map((e) => e.html).join("")}</section>`
       : "";
-    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${sections.join("") || empty}${recentHtml}`));
+    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${historySearch()}${sections.join("") || empty}${recentHtml}`));
   }
   const open = /^\/open\/(prj-[a-f0-9]{12})\/(V-[A-Za-z0-9-]+)$/.exec(path);
   if (open && req.method === "POST") {

@@ -10,7 +10,8 @@
 
 import { randomBytes, randomInt } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { reviewMarkdown, type ReviewView } from "../cli/render.js";
+import { answerValue, reviewMarkdown, type ReviewView } from "../cli/render.js";
+import { followUpCard, matchesHistory, previousDecision, type FollowUpSource, type HistoryCard, type HistoryReview } from "./review-history.js";
 import { BALLOT_OPTIONS, normalizeBlind, publicJudgment, revealJudgment } from "./blind.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
@@ -84,6 +85,7 @@ export interface Review {
   owner?: Actor;
   items: string[];
   intent?: ReviewIntent;
+  follow_up?: FollowUpSource;
   presentations: { id: string; channel: string; at: string; actor?: Actor; items?: string[];
     displayed?: string[]; turn?: string; verified?: Verified; seq: number; other_open?: boolean; acknowledged_at?: string }[];
   page_response_ms?: number;
@@ -609,6 +611,70 @@ export class Engine {
     }
     return out.sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, limit);
   }
+  historyReview(id: string): HistoryReview | undefined {
+    const review = this.reviews.get(id);
+    if (!review || review.status !== "prepared") return undefined;
+    let latest = review.presentations.at(-1)?.at ?? "";
+    const cards: HistoryCard[] = review.items.map(ref => {
+      const r = this.revs.get(ref)!;
+      const body = this.visibleBody(r);
+      const at = r.answer?.at ?? r.asked_at;
+      if (at > latest) latest = at;
+      const reversals = this.reqOf(r).reversals.filter(v => (v.revision ?? 1) === r.revision);
+      return { ref, question: body.question, tags: body.tags ?? [], status: this.effective(r, this.now().toISOString()),
+        ...(r.answer ? { answer: [answerValue(r.answer, body), r.answer.note].filter(Boolean).join(" — ") } : {}),
+        ...(typeof r.answer?.value === "string" ? { option_id: r.answer.value } : {}),
+        reversals: reversals.map(v => v.reason) };
+    });
+    return { review_id: id, task_title: review.intent?.task_title, updated_at: latest, cards,
+      ...(review.follow_up ? { source_review: review.follow_up.review } : {}) };
+  }
+
+  searchHistory(query: string): HistoryReview[] {
+    const terms = normalize(query).split(/\s+/).filter(Boolean);
+    const matches: HistoryReview[] = [];
+    for (const id of this.reviews.keys()) {
+      const review = this.historyReview(id);
+      if (review && matchesHistory(review, terms)) matches.push(review);
+    }
+    return matches.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.review_id.localeCompare(a.review_id));
+  }
+
+  private followUp(a: Args, actor: Actor, opId?: string): OpResult {
+    const source = this.historyReview(str(a, "review"));
+    if (!source) return notFound(a.review);
+    if (a.version !== undefined && a.version !== reviewRequestsHash(source.cards)) {
+      return { code: EXIT.NOT_ALLOWED, message: "The saved review changed. Reload it to see the latest decisions." };
+    }
+    const refs = textList(a.cards, "cards");
+    const selected = source.cards.filter(card => refs.includes(card.ref));
+    if (!refs.length || refs.length !== selected.length) throw new UsageError("Select distinct card revisions from this saved review.");
+    const ideas = textList(a.ideas, "ideas");
+    const proposedTitle = optStr(a, "title")?.trim();
+    const title = proposedTitle || Array.from(`Follow-up to ${source.task_title || source.review_id}`).slice(0, 80).join("").trimEnd();
+    if (!validTaskTitle(title)) throw new UsageError("Use a single-line title of at most 80 characters.");
+    const bodies = selected.map(card => {
+      const rev = this.revs.get(card.ref)!;
+      return followUpCard(card.question, { id: rev.id, body: this.visibleBody(rev) });
+    }).concat(ideas.map(idea => followUpCard(idea.trim())));
+    const original = this.reviews.get(source.review_id)!.intent;
+    const intent: ReviewIntent = { task_title: title, asked: `Revisit selected cards from ${source.task_title || source.review_id}.`,
+      already_done: [`Source review ${source.review_id}`, ...selected.map(c => `${c.ref} · ${c.question} — ${previousDecision(c)}`)].join("\n"),
+      doing: "Gather fresh decisions for this round.", scope_delta: "none",
+      ...(original?.shared_glossary ? { shared_glossary: original.shared_glossary } : {}),
+      ...(original?.shared_evidence ? { shared_evidence: original.shared_evidence } : {}) };
+    const failures = bodies.flatMap((body, i) => checkRequest(body, { glossary: intent.shared_glossary, evidence: intent.shared_evidence })
+      .map(issue => ({ ...issue, message: `Card ${i + 1}. ${issue.message}` })));
+    if (failures.length) return { code: EXIT.CHECK_FAILED, failures, message: failures.map(f => f.message).join(" ") };
+    const at = this.now().toISOString();
+    const review_id = newId("V", at);
+    const ids = bodies.map(() => newId("R", at));
+    const payloads = Object.fromEntries(bodies.map((body, i) => [ids[i]!, body]));
+    return this.commit("follow-up", "review.followed-up", actor, { review_id, ids, owner: actor, input_hash: reviewRequestsHash([a]) },
+      { code: EXIT.OK, review_id, items: ids.map(id => key(id, 1)) },
+      opId, { ...payloads, intent, source: { review: source.review_id, cards: selected } });
+  }
+
   relinkFrom(source: Engine, from: string, to: string, actor: Actor, opId?: string): OpResult {
     const previous = opId ? this.store.findOp(opId) : undefined;
     if (previous) {
@@ -641,6 +707,9 @@ export class Engine {
           if (done.data.op !== op) {
             return { code: EXIT.OTHER, message: `operation id ${opId} was already used for ${String(done.data.op)}` };
           }
+          if (op === "follow-up" && done.data.input_hash !== reviewRequestsHash([args])) {
+            return { code: EXIT.NOT_ALLOWED, message: "This follow-up was already submitted with different selections." };
+          }
           return done.result as OpResult;
         }
       }
@@ -668,6 +737,8 @@ export class Engine {
         case "status": return this.status(actor);
         case "log": return this.log(args);
         case "recent": return { code: EXIT.OK, reviews: this.recentReviews() };
+        case "history": return { code: EXIT.OK, reviews: this.searchHistory(optStr(args, "query") ?? "") };
+        case "follow-up": return this.followUp(args, actor, opId);
         case "resume": return this.resume(args, actor);
         case "closeout.deliver": return this.deliverCloseoutNotices(args, actor, opId);
         default: return { code: EXIT.OTHER, message: `unknown operation: ${op}` };
@@ -1491,6 +1562,7 @@ export class Engine {
         }
       }
       return { code: EXIT.OK, review: { id: v.id, status: v.status, presentations: v.presentations, items,
+        ...(v.follow_up ? { follow_up: v.follow_up } : {}),
         ...(v.owner ? { owner: v.owner } : {}),
         ...(v.intent ? { intent: v.intent } : {}),
         ...(v.delivery ? { delivery: v.delivery.state } : {}),
@@ -1592,10 +1664,15 @@ export class Engine {
         }
         break;
       }
+      case "review.followed-up": {
+        const id = d.review_id as string;
+        this.reviews.set(id, { id, status: "prepared", items: [], presentations: [], owner: d.owner as Actor,
+          intent: this.store.getPayload<ReviewIntent>(e.payloads!.intent!), follow_up: this.store.getPayload<FollowUpSource>(e.payloads!.source!) });
+        for (const request of d.ids as string[]) this.addRequest(e, request, e.payloads?.[request]);
+        break;
+      }
       case "request.asked": {
-        const id = d.id as string;
-        this.reqs.set(id, { id, current: d.revision as number, owner: d.owner as Actor, epoch: 1, observers: [], reversals: [] });
-        this.addRev(e, id, d.revision as number);
+        this.addRequest(e, d.id as string, e.payloads?.body, d.revision as number);
         break;
       }
       case "request.attached":
@@ -1900,8 +1977,12 @@ export class Engine {
     }
   }
 
-  private addRev(e: StoredEvent, id: string, revision: number): void {
-    const sha = e.payloads?.body;
+  private addRequest(e: StoredEvent, id: string, sha: string | undefined, revision = 1): void {
+    this.reqs.set(id, { id, current: revision, owner: e.data.owner as Actor, epoch: 1, observers: [], reversals: [] });
+    this.addRev(e, id, revision, sha);
+  }
+
+  private addRev(e: StoredEvent, id: string, revision: number, sha = e.payloads?.body): void {
     if (!sha) throw new CorruptStoreError(`event ${e.seq} has no request body`);
     const basis = { ...(e.data.basis as Basis) };
     const review_id = e.data.review_id as string;

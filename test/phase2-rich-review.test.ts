@@ -153,6 +153,11 @@ test("blind comparison hides identities across API, log, revision diff, and page
     assertHidden(await as("show", { id: asked.id }));
     assertHidden(await as("show", { id: flushed1.review_id }));
     assert.deepEqual((await as("log", { text: "Source Cedar" })).entries, []);
+    assert.deepEqual((await as("history", { query: "Source Cedar" })).reviews, []);
+    assertHidden(await as("history", { query: "quality" }));
+    const follow = await as("follow-up", { review: flushed1.review_id, cards: [`${asked.id}@1`] });
+    assert.equal(follow.code, EXIT.OK, String(follow.message));
+    assertHidden(await as("show", { id: follow.review_id }));
 
     // Revise after clarification and confirm revision_diff ALSO hides blind identities.
     const prep1 = await as("review-page.prepare", { review: flushed1.review_id });

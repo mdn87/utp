@@ -105,6 +105,27 @@ Each card opens with what the question addresses. In the terminal, type
 The question stays open, and the agent sees your request for clarification
 when it checks the review.
 
+### Find an earlier review and start a follow-up
+
+In the reviewer inbox, search by task title, question, or tag. Open a result
+to read the saved choices and answers. Select the cards to revisit, add any
+new ideas (one per line), and choose **Start follow-up**. The new review
+records the source review, each selected revision, and its earlier decision.
+It starts with every answer open. Ordinary reversible choices keep their
+options. For an approval, blind ballot, or other action, the new question
+asks whether to revisit it. New ideas offer **Pursue**, **Defer**, or **Drop**.
+
+From the project checkout, `utp history "planning round"` lists matching
+reviews and card revisions. Pass the displayed identifiers to the next command.
+
+```sh
+utp follow-up <review-id> <card-id>@1 <another-card-id>@2 --file round.json
+utp review <new-review-id>
+```
+
+The optional UTF-8 file can contain `{"title":"Next round","ideas":["Browse by date"]}`.
+Use `--json` with `history` or `follow-up` for structured output.
+
 ### Recording a chat reply
 
 Show the Markdown from `utp flush` in the conversation. Then run the printed
