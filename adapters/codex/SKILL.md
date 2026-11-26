@@ -1,6 +1,6 @@
 ---
 name: utp
-description: Use the UTP CLI from Codex to ask structured decisions, batch reviews, reuse prior authority, and execute verified grants safely.
+description: Use when a Codex task needs the person's choice, approval, judgment, or manual observation, or when a handoff names an earlier UTP review.
 ---
 
 # UTP for Codex
@@ -11,18 +11,9 @@ grants. Follow the complete workflow and exit-code rules in
 
 ## 1. Session identity (`UTP_SESSION`)
 
-Codex exports `CODEX_THREAD_ID` as the native session UUID in shell commands.
-Bind `UTP_SESSION` to it before calling `utp`:
-
-- **Bash / zsh / Git Bash**:
-  ```sh
-  export UTP_SESSION="${CODEX_THREAD_ID:?CODEX_THREAD_ID is not set}"
-  ```
-- **PowerShell 7**:
-  ```powershell
-  if (-not $env:CODEX_THREAD_ID) { throw "CODEX_THREAD_ID is not set" }
-  $env:UTP_SESSION = $env:CODEX_THREAD_ID
-  ```
+UTP reads `CODEX_THREAD_ID` from each shell command. In a nested agent with
+both platforms' IDs in its environment, set `UTP_SESSION` explicitly to the
+active Codex thread UUID.
 
 If `CODEX_THREAD_ID` is unavailable (for example in a standalone shell), generate
 one unique per-session UUID for grant ownership (never leave `UTP_SESSION` unset
@@ -57,13 +48,11 @@ Check `chat_provenance` from `utp status --json` or `utp flush --json`:
   use the link from `utp flush` or `utp page <review-id>`. The reviewer can
   also run `utp review <review-id>` in their own terminal.
 
-## 4. Turn-start resume and close-out
+## 4. Resume a review and close out the task
 
-- Start every turn or resumed session with `utp status`. If Codex resumed the
-  same thread (`CODEX_THREAD_ID` unchanged), continue with `utp wait` ->
-  `utp begin` -> `utp applied`. If this is a new session, follow the new-session
-  resume path (`utp takeover` / `utp reconcile`) in
-  [utp-workflow.md](./utp-workflow.md).
+- Leave the project, review ID, and pending card revision in the task handoff.
+  When returning to that task, run `utp resume <review-id> --json`. Follow
+  the saved answer and the ownership checks in [utp-workflow.md](./utp-workflow.md).
 - Always pass payloads as UTF-8 files — never inline JSON on the command line.
 - When finishing a task that changed files, write a plain-language completion
   report mapping each stated goal to observed evidence.

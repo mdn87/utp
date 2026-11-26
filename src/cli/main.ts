@@ -19,7 +19,7 @@ import { EXIT, type Grant, type OpResult, type RequestBody } from "../core/types
 import { previousDecision, type HistoryReview } from "../core/review-history.js";
 import { DEFAULT_PORT, startServer } from "../server/http.js";
 import { createToken } from "../server/tokens.js";
-import { call, CliError, readConfig, utpHome, writeConfig } from "./client.js";
+import { call, CliError, currentSession, readConfig, utpHome, writeConfig } from "./client.js";
 import { closeout } from "./closeout.js";
 import { closeoutHook } from "./closeout-hook.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
@@ -271,10 +271,9 @@ const SESSION_VERBS = new Set([
 
 function warnMissingSession(verb: string): void {
   if (!SESSION_VERBS.has(verb)) return;
-  const session = process.env.UTP_SESSION?.trim();
-  if (session && session !== "default") return;
+  if (currentSession().trim() !== "default") return;
   process.stderr.write(
-    "utp: warning: UTP_SESSION is unset or \"default\"; concurrent sessions can collide on grants and chat transcript verification is disabled. Set UTP_SESSION to a unique session ID.\n",
+    "utp: warning: UTP_SESSION is unset or \"default\" and no unique session was selected. Set UTP_SESSION to the active session ID to keep reviews separate and support chat transcript verification.\n",
   );
 }
 

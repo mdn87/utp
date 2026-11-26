@@ -153,7 +153,8 @@ browser page or displaying a terminal review records its own presentation.
 The presentation gains an acknowledgement when the person answers or asks
 for clarification. Creating a page link leaves the cards queued.
 
-Use the native session UUID as `UTP_SESSION` throughout the interaction.
+UTP uses the native Codex or Antigravity session UUID automatically.
+Claude Code's session hook supplies its UUID through `UTP_SESSION`.
 Save the person's complete turn in `reply.txt` and record it with the displayed revision.
 
 ```sh
@@ -230,6 +231,17 @@ and **Google Antigravity** ship under `adapters/` and are included in the npm
 package. Each platform folder contains its own copy of `utp-workflow.md` so
 copying that single folder into your platform's skills directory works
 standalone.
+
+In an ordinary coding session the agent handles routine fixes directly. It
+opens UTP when work depends on your judgment or approval, checks the project's
+prior decisions, and brings the remaining questions together once. The first
+time a checkout needs a review, `utp init` either registers it or identifies
+an existing project to join with `utp link <project-id>`.
+
+If work stops on a question, the agent leaves the project, review ID, and card
+revision in the task handoff. A later session runs `utp resume <review-id> --json`
+in that checkout to recover your answer and check whether the relevant files
+changed. You can switch agents without answering the same question twice.
 
 Run `utp setup <claude|codex|antigravity>` to preview sandbox network settings
 and print the resolved `Adapter files:` directory path. Copy the folder once

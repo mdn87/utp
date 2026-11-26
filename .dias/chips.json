@@ -1027,7 +1027,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-26T05:51:12.596Z"
+        "updatedAt": "2026-11-26T06:22:50Z"
       },
       "evidence": [
         {
@@ -1065,6 +1065,12 @@
           "at": "2026-11-26T05:51:12.596Z",
           "kind": "note",
           "message": "Seven real tasks span all three agents. Of 20 eligible requests, none of the first 15 used a waiver. The playback handoff is open. None of 13 question cards has a clarity rating."
+        },
+        {
+          "entryId": "ordinary-session-rollout",
+          "at": "2026-11-26T06:22:50Z",
+          "kind": "note",
+          "message": "The service recorded withdrawal of the playback check. The task and request counts meet their targets. The remaining clarity measure can use voluntary feedback on an ordinary review."
         }
       ]
     },

@@ -7,7 +7,14 @@ reference below.
 
 ## 1. When to ask (the asking ladder)
 
-Check whether you actually need to ask before creating a card:
+Use UTP when the next step depends on a person's choice, approval, judgment,
+or an observation only they can make. For example, fix a failing export test
+directly. Open a review if supporting the old export format would delay a
+feature and the person needs to choose. A routine turn needs no UTP check.
+
+At the first review in a Git checkout, run `utp init`. If it lists an existing
+project for the same remote, use `utp link <project-id>` to join its decision
+history. If it lists several, identify the intended project before linking.
 
 - **Level 0 — Routine and reversible**: The intent is clear and the change is
   easy to undo locally. Proceed without asking. Record routine policy choices
@@ -109,14 +116,18 @@ and bash.
 
 ## 4. Session identity (`UTP_SESSION`) and resuming work
 
-Set `UTP_SESSION` to a unique, stable per-session identifier before running
-`utp` commands. Leaving `UTP_SESSION` unset or `"default"` triggers a `stderr`
-warning, risks grant collisions between concurrent sessions, and disables chat
-transcript verification.
+UTP reads the native Codex thread or Antigravity conversation UUID. Claude
+Code's SessionStart hook supplies its UUID through `UTP_SESSION`. An explicit
+`UTP_SESSION` takes precedence. If UTP warns about the shared `default`
+identity, set the active session's ID before queuing a card or using a grant.
 
-Run `utp resume [<review-id>] --json` (or `utp status --json`) at the start of
-a session or turn to inspect open, answered, or interrupted work in dependency
-order, including local basis-file staleness and takeover checks:
+When work pauses on a review, put its project, review ID, and the pending
+card ID and revision in the task's existing handoff. Say which action is
+waiting. On return, run `utp resume <review-id> --json` from that checkout.
+It shows the saved answer, changed basis files, and the next action for each
+card. If the ID is missing, use `utp history "<task or question>" --json` to
+find it. An unqualified `utp resume --json` lists work across the project.
+Continue only the review that belongs to the task.
 
 1. **Same-session resume** (`UTP_SESSION` matches the session that queued the
    request): run `utp wait <request-id>` to fetch the answer and grant
@@ -139,7 +150,7 @@ order, including local basis-file staleness and takeover checks:
 
 ## 5. Close-out completion report
 
-After changing files or external state, map each goal or risk the person
+When closing a task that used UTP and changed files or external state, map each goal or risk the person
 stated to evidence they can check. Write a UTF-8 JSON file and run
 `utp closeout report.json`. Show the rendered report, including its queued
 project notices, in your final response.

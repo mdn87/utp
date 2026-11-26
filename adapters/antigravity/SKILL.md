@@ -1,6 +1,6 @@
 ---
 name: utp
-description: Use the UTP CLI from Antigravity to ask structured decisions, batch reviews, reuse prior authority, and route consequential approvals to verified channels.
+description: Use when an Antigravity task needs the person's choice, approval, judgment, or manual observation, or when a handoff names an earlier UTP review.
 ---
 
 # UTP for Antigravity
@@ -11,19 +11,9 @@ grants. Follow the complete workflow and exit-code rules in
 
 ## 1. Session identity (`UTP_SESSION`)
 
-Antigravity exports `ANTIGRAVITY_CONVERSATION_ID` as a per-conversation UUID in
-shell commands. Bind `UTP_SESSION` to it for stable grant ownership so
-concurrent sessions never collide on `"default"`:
-
-- **PowerShell 7**:
-  ```powershell
-  if (-not $env:ANTIGRAVITY_CONVERSATION_ID) { throw "ANTIGRAVITY_CONVERSATION_ID is not set" }
-  $env:UTP_SESSION = $env:ANTIGRAVITY_CONVERSATION_ID
-  ```
-- **Bash / zsh / Git Bash**:
-  ```sh
-  export UTP_SESSION="${ANTIGRAVITY_CONVERSATION_ID:?ANTIGRAVITY_CONVERSATION_ID is not set}"
-  ```
+UTP reads `ANTIGRAVITY_CONVERSATION_ID` from each shell command. In a nested
+agent with both platforms' IDs in its environment, set `UTP_SESSION`
+explicitly to the active Antigravity conversation UUID.
 
 If `ANTIGRAVITY_CONVERSATION_ID` is unavailable (for example in a standalone
 shell), generate one stable per-session UUID file for the run and export
@@ -56,13 +46,11 @@ utp setup antigravity
 utp setup antigravity --apply -- <antigravity arguments>
 ```
 
-## 4. Turn-start resume and close-out
+## 4. Resume a review and close out the task
 
-- Start every turn or resumed conversation with `utp status`. If continuing the
-  same conversation (`ANTIGRAVITY_CONVERSATION_ID` unchanged), resume with
-  `utp wait` -> `utp begin` -> `utp applied`. If starting a new conversation,
-  inspect the workspace and use `utp takeover` or `utp reconcile` per
-  [utp-workflow.md](./utp-workflow.md).
+- Leave the project, review ID, and pending card revision in the task handoff.
+  When returning to that task, run `utp resume <review-id> --json`. Follow
+  the saved answer and the ownership checks in [utp-workflow.md](./utp-workflow.md).
 - Always pass payloads as UTF-8 files — never inline JSON on the command line.
 - When finishing a task that changed files, write a plain-language completion
   report mapping each stated goal to observed evidence.

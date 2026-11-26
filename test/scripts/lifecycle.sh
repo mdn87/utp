@@ -584,7 +584,7 @@ export UTP_SESSION="session-healthy"
 UTP_SERVER="$UNUSED_URL" run_utp status --json
 rec "s7-guards" "unreachable-service" "$RC"
 
-unset UTP_SESSION || true
+unset UTP_SESSION CODEX_THREAD_ID ANTIGRAVITY_CONVERSATION_ID
 run_utp status --json
 rec "s7-guards" "warn-unset-session" "$RC" "warn=$(has_text "$ERR" "UTP_SESSION is unset")"
 

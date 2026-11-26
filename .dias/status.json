@@ -8,10 +8,10 @@
   "milestonePhase": "integration-proof",
   "portfolioGroup": "developer-tools",
   "displayPriority": 500,
-  "assessedAt": "2026-11-26T05:51:12.596Z",
+  "assessedAt": "2026-11-26T06:22:50Z",
   "confidence": "reported",
-  "currentMilestone": "Collect voluntary clarity feedback and the first live blind judgment and playback observation.",
-  "remainingSummary": "Seven real tasks span three agents. None of the first 15 requests needed a waiver. The field still needs clarity feedback. The live comparison and playback handoff await the reviewer.",
+  "currentMilestone": "Use the shared review service in ordinary working sessions and carry decisions across handoffs.",
+  "remainingSummary": "Seven real tasks span all three agents. The first 15 eligible requests used zero waivers. Clarity has no ratings yet and can be measured when a reviewer gives feedback during normal work.",
   "nextChipId": "utp:phase1:use",
   "source": {
     "label": "UTP concept, lifecycle and verification plan, review 0002, merged lifecycle core and CI results",
