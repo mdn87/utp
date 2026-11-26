@@ -1,12 +1,14 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { answerValue, cardMetadata, dependencyLabels, reviewContext, sharedFromIntent, type ReviewView } from "../cli/render.js";
 import { earlierCard, previousDecision } from "../core/review-history.js";
+import { reviewRequestsHash } from "../core/check.js";
+import { PIN_CHANGES, pinVersion, type DecisionPin } from "../core/decision-pins.js";
 import type { BlindReveal } from "../core/blind.js";
 import type { BrowserBatchReceipt, RecordedBrowserAnswer } from "../core/engine.js";
 import type { RevisionDiff } from "../core/diff.js";
 import { itemPrompts } from "../core/items.js";
 import { waiverNotes } from "../core/quality.js";
-import { CLARITY_FEEDBACK, SURENESS, type Actor, type RequestBody } from "../core/types.js";
+import { CLARITY_FEEDBACK, SURENESS, type Actor, type AnswerRecord, type RequestBody } from "../core/types.js";
 import { reviewStyle, themeColor } from "./review-style.js";
 
 const playComparisons = `document.addEventListener("click", (event) => {
@@ -105,6 +107,48 @@ export interface SavedHtmlOptions {
   reveals?: { question: string; reveal: BlindReveal }[];
 }
 
+export interface PinContext {
+  project: string;
+  pins: DecisionPin[];
+  returnTo: string;
+}
+
+export type BrowserReview = ReviewView & { pinContext?: PinContext; sourceHistoryPath?: string };
+
+// Buttons inside an answer or follow-up form submit this separate form so answers never travel with a pin.
+export function pinForm(returnTo: string): string {
+  return `<form hidden id="decision-pins" method="post"><input type="hidden" name="return" value="${escapeText(returnTo)}">
+    <input type="hidden" name="submission" value="${randomUUID()}"></form>`;
+}
+
+function pinButton(project: string, ref: string, op: "pin" | "unpin", expected: string): string {
+  return `<button type="submit" form="decision-pins" formaction="/pins/${escapeText(project)}/${escapeText(ref)}/${op}"
+    name="expected" value="${expected}" class="button-secondary">${op === "pin" ? "Pin decision" : "Unpin"}</button>`;
+}
+
+export function cardPinControl(context: PinContext | undefined, id: string, revision: number, answer?: AnswerRecord | null): string {
+  if (!context) return "";
+  const pin = context.pins.find(p => p.id === id);
+  const ref = `${id}@${revision}`;
+  if (pin?.revision === revision) return pinButton(context.project, ref, "unpin", pinVersion(pin));
+  return answer && !(pin && pin.revision > revision) ? pinButton(context.project, ref, "pin", reviewRequestsHash([answer])) : "";
+}
+
+export function pinnedDecisionsHtml(context?: PinContext, projectLabel?: string): string {
+  if (!context?.pins.length) return "";
+  const rows = context.pins.map(pin => {
+    const ref = `${pin.id}@${pin.revision}`;
+    const href = `/history/${context.project}/${pin.review_id}#${ref}`;
+    const badges = pin.reasons.map(reason => `<span class="badge badge-warn">${PIN_CHANGES[reason]}</span>`).join(" ");
+    return `<li><a href="${escapeText(href)}">${escapeText(pin.title)}</a> ${badges}
+      <p class="preserve">${escapeText(pin.answer)}</p>${pin.note ? `<p class="muted preserve">${escapeText(pin.note)}</p>` : ""}
+      ${pinButton(context.project, ref, "unpin", pinVersion(pin))}</li>`;
+  });
+  const changed = context.pins.filter(pin => pin.stale).length;
+  return `<details class="decision-pins"><summary>Pinned decisions (${rows.length})${projectLabel ? ` · ${escapeText(projectLabel)}` : ""}
+    ${changed ? `<span class="badge badge-warn">${changed} changed</span>` : ""}</summary><ul>${rows.join("")}</ul></details>`;
+}
+
 export function blindRevealHtml(reveal: BlindReveal, question: string): string {
   return `<article class="blind-reveal"><h2>${escapeText(question)}</h2><dl><dt>Candidate A</dt><dd>${escapeText(reveal.identities.a)}</dd>
     ${reveal.notes?.a ? `<dd class="muted">${escapeText(reveal.notes.a)}</dd>` : ""}
@@ -126,10 +170,11 @@ export function pickupStatusHtml(review: ReviewView, waiters: readonly Actor[]):
   return `<p class="pickup-status" role="status"><strong>Saved — no agent is actively waiting right now.</strong> Return to ${escapeText(where)} and tell it to resume, or run <code>utp resume ${escapeText(review.id)}</code>.</p>`;
 }
 
-export function editReviewHtml(review: ReviewView, token: string, returnLink: string, message?: string, statusMessage?: string): string {
+export function editReviewHtml(review: BrowserReview, token: string, returnLink: string, message?: string, statusMessage?: string): string {
   const cards = review.items.map((item, index) => {
     const b = item.body;
     const ref = `${item.id}@${item.revision}`;
+    const pin = cardPinControl(review.pinContext, item.id, item.revision, item.answer);
     const hasAuth = cardHasAuthorization(b);
     const editable = b.kind !== "judge" && (item.status === "answered" || item.status === "granted");
     const currentAnswer = item.answer ? answerValue(item.answer, b) : undefined;
@@ -146,7 +191,7 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
         ? `<p class="muted">Candidate A: ${escapeText(item.blind_reveal.identities.a)} · Candidate B: ${escapeText(item.blind_reveal.identities.b)}</p>`
         : "";
       const lockBadge = b.kind === "judge" && item.answer ? "Immutable blind ballot" : `Locked · ${item.status.replaceAll("_", " ")}`;
-      return `<article class="locked-card"><h2>${escapeText(b.question)}</h2>
+      return `<article class="locked-card"><h2>${escapeText(b.question)}</h2>${pin}
         <p class="card-badges"><span class="badge">${escapeText(lockBadge)}</span></p>
         ${currentAnswer ? `<p class="preserve"><strong>Recorded answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
         ${revealHtml}${clarHtml}${effectHtml}
@@ -180,7 +225,7 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
       controls.push(`<label>Your own answer <textarea name="custom-${index}" rows="2">${escapeText(item.answer?.custom ?? "")}</textarea></label>`);
       controls.push(`<label>Optional note for the agent <textarea name="note-${index}" rows="2">${escapeText(item.answer?.note ?? "")}</textarea></label>`);
     }
-    return `<article class="edit-card"><h2>${escapeText(b.question)}</h2>
+    return `<article class="edit-card"><h2>${escapeText(b.question)}</h2>${pin}
       <p class="card-badges"><span class="badge badge-rec">Editable before work begins (${escapeText(item.status)})</span></p>
       ${currentAnswer ? `<p class="preserve"><strong>Current answer:</strong> ${escapeText(currentAnswer)}</p>${noteText}` : ""}
       ${controls.join("\n")}
@@ -193,6 +238,7 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
   const banner = statusMessage ? `<p role="status">${escapeText(statusMessage)}</p>` : "";
   const err = message ? `<p role="alert" class="error">${escapeText(message)}</p>` : "";
   return page("Edit answers", `<h1>Review status &amp; edits</h1>
+    ${review.pinContext ? pinForm(review.pinContext.returnTo) : ""}${pinnedDecisionsHtml(review.pinContext)}
     <p class="muted">You can change or withdraw an answer while it has not begun executing. Once the agent runs <code>utp begin</code>, that card locks.</p>
     ${contextHtml(review)}${banner}${err}
     <form method="post"><input type="hidden" name="presentation" value="${escapeText(token)}">
@@ -200,12 +246,12 @@ export function editReviewHtml(review: ReviewView, token: string, returnLink: st
     </form>${returnLink}`);
 }
 
-export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], returnLink: string, opts: SavedHtmlOptions = {}): string {
+export function savedHtml(review: BrowserReview, answers: RecordedBrowserAnswer[], returnLink: string, opts: SavedHtmlOptions = {}): string {
   const rows = answers.map(({ id, revision, answer }) => {
     const card = review.items.find(item => item.id === id && item.revision === revision);
     const noteLine = answer.note ? `<dd class="muted">Note: ${escapeText(answer.note)}</dd>` : "";
     return `<dt>${escapeText(card?.body.question ?? id)}</dt><dd class="preserve">${escapeText(answerValue(answer, card?.body))}</dd>${noteLine}
-      <dd class="card-reference">${escapeText(id)}@${revision}</dd>`;
+      <dd class="card-reference">${escapeText(id)}@${revision} ${cardPinControl(review.pinContext, id, revision, answer)}</dd>`;
   }).join("");
   const hiddenRows = (opts.receipt?.hidden ?? []).map(({ id, revision, until }) => {
     const card = review.items.find(item => item.id === id && item.revision === revision);
@@ -224,7 +270,7 @@ export function savedHtml(review: ReviewView, answers: RecordedBrowserAnswer[], 
     ? `<section class="remaining-cards" role="status"><strong>Still open in this review (${opts.remainingQuestions.length}):</strong><ul>${opts.remainingQuestions.map((q) => `<li>${escapeText(q)}</li>`).join("")}</ul></section>`
     : "";
   const revealBlocks = (opts.reveals ?? []).map(({ question, reveal }) => blindRevealHtml(reveal, question)).join("");
-  return page("Answers saved", `<h1>Answers saved</h1><p class="receipt">${summary}</p>
+  return page("Answers saved", `<h1>Answers saved</h1>${review.pinContext ? pinForm(review.pinContext.returnTo) : ""}<p class="receipt">${summary}</p>
     ${opts.pickupHtml ?? ""}${remaining}${contextHtml(review)}
     ${rows ? `<dl aria-label="Saved answers">${rows}</dl>` : ""}
     ${revealBlocks}
@@ -238,7 +284,7 @@ export interface ReviewHtmlOptions {
   statusMessage?: string;
 }
 
-export function reviewHtml(review: ReviewView & { sourceHistoryPath?: string }, token: string, message?: string, form?: URLSearchParams, opts: ReviewHtmlOptions = {}): string {
+export function reviewHtml(review: BrowserReview, token: string, message?: string, form?: URLSearchParams, opts: ReviewHtmlOptions = {}): string {
   const field = (name: string): string => escapeText(form?.get(name) ?? "");
   const checked = (name: string, value: string): string => form?.get(name) === value ? " checked" : "";
   const chipGroup = (name: string, label: string, choices: readonly (readonly [string, string])[]): string => {
@@ -389,6 +435,7 @@ export function reviewHtml(review: ReviewView & { sourceHistoryPath?: string }, 
   const statusBanner = opts.statusMessage ? `<p role="status">${escapeText(opts.statusMessage)}</p>` : "";
   const videoScript = reviewHasVideoComparison(review) ? `<script>${playComparisons}</script>` : "";
   return page("Review", `<h1>Review</h1><p class="count">${countText}</p>
+    ${review.pinContext ? pinForm(review.pinContext.returnTo) : ""}${pinnedDecisionsHtml(review.pinContext)}
     ${review.sourceHistoryPath ? `<p><a href="${escapeText(review.sourceHistoryPath)}">View source review</a></p>` : ""}
     ${contextHtml(review.follow_up && review.intent ? { ...review, intent: { ...review.intent, already_done: undefined } } : review)}
     ${statusBanner}${message ? `<p role="alert" class="error">${escapeText(message)}</p>` : ""}

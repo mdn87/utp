@@ -1307,6 +1307,32 @@
     },
     {
       "schemaVersion": 1,
+      "chipId": "utp:flow:decision-pins",
+      "projectId": "utp",
+      "title": "Pin settled decisions for later project reviews",
+      "summary": "Keep selected answers visible in later terminal and inbox reviews. Read the pinned revision and any changes before drafting a new card.",
+      "stage": "done",
+      "sequence": 289,
+      "prereqs": [
+        "utp:flow:history"
+      ],
+      "linkedRunIds": [],
+      "confidence": "reported",
+      "timestamps": {
+        "createdAt": "2026-11-26T03:58:33Z",
+        "updatedAt": "2026-11-26T03:58:33Z"
+      },
+      "evidence": [
+        {
+          "entryId": "implementation-verified",
+          "at": "2026-11-26T03:58:33Z",
+          "kind": "note",
+          "message": "Desktop and phone-width browsers pinned, reopened and unpinned answers with JavaScript disabled. Terminal and restart tests verified reversal and supersession."
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
       "chipId": "utp:rich:deferred-kinds",
       "projectId": "utp",
       "title": "Confirm all everyday kinds shipped in phase 1",

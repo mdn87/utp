@@ -85,6 +85,10 @@ article, .empty {
 .history-pick input { flex: none; accent-color: var(--cyan); }
 .history-card { margin-bottom: .65rem; }
 .history-card:has(input:checked) { border-color: var(--cyan); }
+.decision-pins { margin: .75rem 0 1rem; }
+.decision-pins ul { padding-inline-start: 1.4rem; }
+.decision-pins li { margin: .65rem 0; overflow-wrap: anywhere; }
+.decision-pins p { margin: .25rem 0; }
 .prior-decision { padding-inline-start: .75rem; border-inline-start: 2px solid var(--cyan-edge); color: var(--soft); }
 .card-badges { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0 .75rem; }
 .badge {

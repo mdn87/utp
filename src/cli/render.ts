@@ -3,6 +3,7 @@
 import type { BlindReveal } from "../core/blind.js";
 import type { AcceptanceGoal, Actor, AnswerRecord, ClarificationRequest, DefaultNotice, Grant, OpResult, RequestBody, ReviewIntent } from "../core/types.js";
 import type { RevisionDiff } from "../core/diff.js";
+import { PIN_CHANGES, type DecisionPin } from "../core/decision-pins.js";
 import { earlierCard, previousDecision, type FollowUpSource } from "../core/review-history.js";
 import { itemPrompts } from "../core/items.js";
 import { validTaskTitle } from "../core/check.js";
@@ -227,6 +228,16 @@ export function answerValue(a: AnswerRecord, body?: RequestBody): string {
 
 export function answerText(a: AnswerRecord): string {
   return `${answerValue(a)} (through ${a.channel}${a.verified === "none" ? ", unverified" : `, verified by ${a.verified}`})`;
+}
+
+export function pinsText(pins: readonly DecisionPin[]): string {
+  if (!pins.length) return "";
+  const rows = pins.map(pin => {
+    const changes = pin.reasons.map(reason => `[${PIN_CHANGES[reason]}]`).join(" ");
+    return [changes, `${pin.id}@${pin.revision}`, `${pin.title} — ${pin.answer}`, pin.note && `(${pin.note})`]
+      .filter(Boolean).join(" ").replace(/\s+/g, " ");
+  });
+  return [`Pinned decisions (${pins.length})`, ...rows].join("\n");
 }
 
 export function defaultNoticeMarkdown(notice: DefaultNotice): string {

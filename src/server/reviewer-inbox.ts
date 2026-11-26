@@ -5,7 +5,8 @@ import type { RequestView, ReviewView } from "../cli/render.js";
 import { validTaskTitle } from "../core/check.js";
 import { Engine } from "../core/engine.js";
 import { EXIT, type Actor } from "../core/types.js";
-import { escapeText, page } from "./review-html.js";
+import { escapeText, page, pinForm, pinnedDecisionsHtml } from "./review-html.js";
+import type { DecisionPin } from "../core/decision-pins.js";
 import { handleHistory, historySearch } from "./history-page.js";
 import { answerable, ReviewPages, sendHtml } from "./review-page.js";
 import { normalizeRemote, type ProjectInfo, type Service } from "./service.js";
@@ -95,23 +96,49 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
   const unavailable = (code: number) => sendHtml(res, code, page("Review unavailable", "<h1>Review unavailable</h1>"));
   if (req.headers.host?.toLowerCase() !== pages.origin.host) return unavailable(403);
   const path = req.url ?? "";
-  if (path.startsWith("/review/")) return pages.handle(req, res, readBody);
+  if (path.startsWith("/review/")) return pages.handle(req, res, readBody, true);
+  const pin = /^\/pins\/(prj-[a-f0-9]{12})\/(R-[A-Za-z0-9-]+@\d+)\/(pin|unpin)$/.exec(path);
+  if (pin && req.method === "POST") {
+    if (req.headers.origin !== pages.origin.origin || !req.headers["content-type"]?.startsWith("application/x-www-form-urlencoded")) return unavailable(403);
+    const raw = await readBody(req);
+    if (raw === undefined) return unavailable(413);
+    const form = new URLSearchParams(raw);
+    const project = pin[1]!, ref = pin[2]!, op = pin[3]!;
+    const engine = service.engine(project);
+    if (!(engine instanceof Engine)) return unavailable(engine.code === EXIT.NOT_FOUND ? 404 : 503);
+    const expected = form.get("expected");
+    if (!expected || !/^[0-9a-f]{64}$/.test(expected)) return unavailable(400);
+    const submission = form.get("submission");
+    if (submission && !/^[0-9a-f-]{36}$/.test(submission)) return unavailable(400);
+    const result = engine.run(op, { id: ref, expected }, actor, submission ? `inbox-pin:${submission}:${op}:${ref}` : undefined);
+    if (result.code !== EXIT.OK) {
+      return sendHtml(res, result.code === EXIT.NOT_FOUND ? 404 : 409, page("Pin unavailable",
+        `<h1>Pin unavailable</h1><p>${escapeText(result.message ?? "This decision changed.")}</p><a href="/history">Review history</a>`));
+    }
+    const back = form.get("return") ?? "";
+    const local = /^\/review\/[A-Za-z0-9_-]{32}$/.test(back)
+      || (back.startsWith(`/history/${project}/`) && /^\/history\/prj-[a-f0-9]{12}\/V-[A-Za-z0-9-]+$/.test(back));
+    res.writeHead(303, { location: local ? back : "/", "cache-control": "no-store" });
+    res.end();
+    return;
+  }
   if (path === "/history" || path.startsWith("/history?") || path.startsWith("/history/")) {
     return handleHistory(req, res, service, pages, readBody, actor, inboxLabel);
   }
   if (path === "/" && req.method === "GET") {
     const sections: string[] = [];
+    const pinSections: string[] = [];
     const recentEntries: { updatedAt: string; html: string }[] = [];
     const nowMs = Date.now();
     for (const project of service.projects()) {
       const engine = service.engine(project.id);
       if (!(engine instanceof Engine)) return unavailable(503);
       const label = inboxLabel(project);
-      const status = engine.run("status", {}, actor);
-      const openReviews = new Set((status.open_reviews as string[] | undefined) ?? (status.open_review ? [status.open_review as string] : []));
+      const status = engine.run("inbox", {}, actor);
+      const pins = status.pins as DecisionPin[];
+      if (pins.length) pinSections.push(pinnedDecisionsHtml({ project: project.id, pins, returnTo: "/" }, label));
       const groups = new Map<string, Outstanding[]>();
       for (const item of status.requests as Outstanding[]) {
-        if (openReviews.has(item.review_id) || item.kind === "notice" || !answerable(item.status)) continue;
         const list = groups.get(item.review_id) ?? [];
         list.push(item);
         groups.set(item.review_id, list);
@@ -161,7 +188,8 @@ export async function handleReviewerInbox(req: IncomingMessage, res: ServerRespo
       ? `<section class="recent-section" aria-label="Recent and in flight"><h3>Recent &amp; In Flight</h3>${recentEntries
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 10).map((e) => e.html).join("")}</section>`
       : "";
-    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${historySearch()}${sections.join("") || empty}${recentHtml}`));
+    return sendHtml(res, 200, page("Review inbox", `<h1>Review inbox</h1>${historySearch()}
+      ${pinSections.length ? pinForm("/") + pinSections.join("") : ""}${sections.join("") || empty}${recentHtml}`));
   }
   const open = /^\/open\/(prj-[a-f0-9]{12})\/(V-[A-Za-z0-9-]+)$/.exec(path);
   if (open && req.method === "POST") {

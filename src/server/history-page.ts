@@ -5,7 +5,7 @@ import { Engine } from "../core/engine.js";
 import { previousDecision, type HistoryReview } from "../core/review-history.js";
 import { EXIT, type Actor } from "../core/types.js";
 import type { ReviewView } from "../cli/render.js";
-import { escapeText, page } from "./review-html.js";
+import { cardPinControl, escapeText, page, pinForm, type PinContext } from "./review-html.js";
 import { answerable, type ReviewPages, sendHtml } from "./review-page.js";
 import type { ProjectInfo, Service } from "./service.js";
 
@@ -17,17 +17,19 @@ export function historySearch(query = ""): string {
 
 const reviewPath = (project: string, review: string) => `/history/${encodeURIComponent(project)}/${encodeURIComponent(review)}`;
 
-function historyDetail(project: string, saved: HistoryReview, view: ReviewView, form?: URLSearchParams, error?: string): string {
+function historyDetail(context: PinContext, saved: HistoryReview, view: ReviewView, form?: URLSearchParams, error?: string): string {
+  const { project, returnTo: target } = context;
   const title = saved.task_title || saved.review_id;
-  const target = reviewPath(project, saved.review_id);
   const checked = new Set(form?.getAll("card"));
   const cards = saved.cards.map((card, i) => {
-    const body = view.items[i]!.body;
+    const item = view.items[i]!;
+    const body = item.body;
     const options = body.options?.map(o => `<li><strong>${escapeText(o.label)}</strong> — ${escapeText(o.consequence)}</li>`).join("");
-    return `<article class="history-card"><label class="history-pick"><input type="checkbox" name="card" value="${escapeText(card.ref)}"${checked.has(card.ref) ? " checked" : ""}>
+    return `<article class="history-card" id="${escapeText(card.ref)}"><label class="history-pick"><input type="checkbox" name="card" value="${escapeText(card.ref)}"${checked.has(card.ref) ? " checked" : ""}>
       <strong>${escapeText(card.question)}</strong></label><p class="preserve">${escapeText(previousDecision(card))}</p>
       ${body.summary ? `<p class="muted">${escapeText(body.summary)}</p>` : ""}
-      ${options ? `<details><summary>Original choices</summary><ul>${options}</ul></details>` : ""}</article>`;
+      ${options ? `<details><summary>Original choices</summary><ul>${options}</ul></details>` : ""}
+      ${cardPinControl(context, item.id, item.revision, item.answer)}</article>`;
   }).join("");
   const src = saved.source_review;
   const open = saved.cards.some(c => answerable(c.status)) ?
@@ -35,7 +37,7 @@ function historyDetail(project: string, saved: HistoryReview, view: ReviewView, 
   return page(title, `<nav><a href="/history">Review history</a> · <a href="/">Inbox</a></nav><h1>${escapeText(title)}</h1>
     ${src ? `<p><a href="${reviewPath(project, src)}">View source review</a></p>` : ""}
     ${view.intent?.already_done ? `<p class="preserve">${escapeText(view.intent.already_done)}</p>` : ""}${open}
-    <form method="post" action="${target}/follow-up">
+    ${pinForm(target)}<form method="post" action="${target}/follow-up">
     <input type="hidden" name="submission" value="${randomUUID()}">
     <input type="hidden" name="version" value="${reviewRequestsHash(saved.cards)}">
     <fieldset><legend>Select cards for a follow-up</legend>${error ? `<p role="alert" class="error">${escapeText(error)}</p>` : ""}${cards}</fieldset>
@@ -85,7 +87,7 @@ export async function handleHistory(req: IncomingMessage, res: ServerResponse, s
     const saved = engine.historyReview(id);
     if (!saved) return missing();
     const shown = engine.run("show", { id }, actor).review as ReviewView;
-    sendHtml(res, status, historyDetail(project, saved, shown, form, error));
+    sendHtml(res, status, historyDetail({ project, pins: engine.decisionPins(), returnTo: reviewPath(project, id) }, saved, shown, form, error));
   };
   if (!route[3]) return render(200);
   const raw = await readBody(req);

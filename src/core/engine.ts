@@ -16,6 +16,7 @@ import { BALLOT_OPTIONS, normalizeBlind, publicJudgment, revealJudgment } from "
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
 import { computeRevisionDiff } from "./diff.js";
+import { pinVersion, type DecisionPin, type SavedPin } from "./decision-pins.js";
 import type { SharedContext } from "./quality.js";
 import { itemAnswerProblem, itemPrompts } from "./items.js";
 import { assertTransition, canTransition, TERMINAL, TransitionError, type State } from "./states.js";
@@ -340,6 +341,7 @@ export class Engine {
   private readonly reqs = new Map<string, Req>();
   private readonly revs = new Map<string, Rev>();
   private readonly reviews = new Map<string, Review>();
+  private readonly pins = new Map<string, SavedPin>();
   private readonly grants = new Map<string, Grant>();
   private readonly archives = new Map<string, DecisionArchive>();
   private readonly routineCounts = new Map<string, number>();
@@ -622,7 +624,7 @@ export class Engine {
       if (at > latest) latest = at;
       const reversals = this.reqOf(r).reversals.filter(v => (v.revision ?? 1) === r.revision);
       return { ref, question: body.question, tags: body.tags ?? [], status: this.effective(r, this.now().toISOString()),
-        ...(r.answer ? { answer: [answerValue(r.answer, body), r.answer.note].filter(Boolean).join(" — ") } : {}),
+        ...(r.answer ? { answer: this.savedAnswer(r, body) } : {}),
         ...(typeof r.answer?.value === "string" ? { option_id: r.answer.value } : {}),
         reversals: reversals.map(v => v.reason) };
     });
@@ -638,6 +640,57 @@ export class Engine {
       if (review && matchesHistory(review, terms)) matches.push(review);
     }
     return matches.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.review_id.localeCompare(a.review_id));
+  }
+
+  private savedAnswer(rev: Rev, body = this.visibleBody(rev)): string | undefined {
+    return rev.answer && [answerValue(rev.answer, body), rev.answer.note].filter(Boolean).join(" — ");
+  }
+
+  decisionPins(): DecisionPin[] {
+    return [...this.pins.values()].map(pin => {
+      const rev = this.revs.get(key(pin.id, pin.revision))!;
+      const reasons: DecisionPin["reasons"] = [];
+      if (!this.isCurrentRev(rev)) reasons.push("superseded");
+      if (this.reqOf(rev).reversals.some(r => (r.revision ?? 1) === rev.revision)) reasons.push("reversed");
+      const answer = this.savedAnswer(rev);
+      if (answer === undefined) reasons.push("withdrawn");
+      else if (answer !== pin.answer) reasons.push("changed");
+      if (rev.status === "stale" || rev.status === "cancelled" || rev.status === "late_conflict") reasons.push(rev.status);
+      return { ...pin, stale: reasons.length > 0, reasons };
+    }).sort((a, b) => b.pinned_at.localeCompare(a.pinned_at) || a.id.localeCompare(b.id));
+  }
+
+  private setPin(op: "pin" | "unpin", a: Args, actor: Actor, opId?: string): OpResult {
+    const ref = str(a, "id");
+    const rev = this.resolve(ref);
+    if (!rev || (ref !== rev.id && ref !== rev.key)) return notFound(ref);
+    const existing = this.pins.get(rev.id);
+    const result = { code: EXIT.OK, id: rev.id, pinned: op === "pin" };
+    const retry = opId ? { input_hash: reviewRequestsHash([a]) } : {};
+    if (op === "unpin") {
+      if (existing && ((ref !== rev.id && rev.revision !== existing.revision)
+          || (a.expected !== undefined && a.expected !== pinVersion(existing)))) {
+        return { code: EXIT.NOT_ALLOWED, message: "The pin changed. Open the current pin before removing it." };
+      }
+      return !existing && !opId ? result : this.commit(op, "decision.unpinned", actor, { id: rev.id, ...retry }, result, opId);
+    }
+    const answer = this.savedAnswer(rev);
+    if (!answer) return { code: EXIT.NOT_ALLOWED, message: "A decision needs a saved answer before you can pin it." };
+    if (a.expected !== undefined && a.expected !== reviewRequestsHash([rev.answer])) {
+      return { code: EXIT.NOT_ALLOWED, message: "The answer changed. Review it before pinning it." };
+    }
+    if (existing && existing.revision > rev.revision) {
+      return { code: EXIT.NOT_ALLOWED, message: "A newer revision of this decision is already pinned." };
+    }
+    const previous = existing?.revision === rev.revision ? existing : undefined;
+    const note = (optStr(a, "note") ?? previous?.note)?.trim();
+    if (note && note.length > 240) throw new UsageError("A pin note can contain up to 240 characters.");
+    const same = previous?.answer === answer && previous.note === (note || undefined);
+    if (same && !opId) return result;
+    const pin: SavedPin = { id: rev.id, revision: rev.revision, review_id: rev.review_id,
+      title: this.visibleBody(rev).question, answer, pinned_at: same ? previous.pinned_at : this.now().toISOString(),
+      ...(note ? { note } : {}) };
+    return this.commit(op, "decision.pinned", actor, { pin, ...retry }, result, opId);
   }
 
   private followUp(a: Args, actor: Actor, opId?: string): OpResult {
@@ -710,6 +763,9 @@ export class Engine {
           if (op === "follow-up" && done.data.input_hash !== reviewRequestsHash([args])) {
             return { code: EXIT.NOT_ALLOWED, message: "This follow-up was already submitted with different selections." };
           }
+          if ((op === "pin" || op === "unpin") && done.data.input_hash !== reviewRequestsHash([args])) {
+            return { code: EXIT.NOT_ALLOWED, message: "This pin operation was already submitted with different details." };
+          }
           return done.result as OpResult;
         }
       }
@@ -738,6 +794,16 @@ export class Engine {
         case "log": return this.log(args);
         case "recent": return { code: EXIT.OK, reviews: this.recentReviews() };
         case "history": return { code: EXIT.OK, reviews: this.searchHistory(optStr(args, "query") ?? "") };
+        case "pin":
+        case "unpin": return this.setPin(op, args, actor, opId);
+        case "pins": return { code: EXIT.OK, pins: this.decisionPins() };
+        case "inbox": {
+          const status = this.status(actor);
+          const drafts = new Set(status.open_reviews);
+          const requests = status.requests.filter(r => !drafts.has(r.review_id) && r.kind !== "notice"
+            && ["queued", "presented", "default_claimed"].includes(r.status));
+          return { code: EXIT.OK, pins: this.decisionPins(), requests };
+        }
         case "follow-up": return this.followUp(args, actor, opId);
         case "resume": return this.resume(args, actor);
         case "closeout.deliver": return this.deliverCloseoutNotices(args, actor, opId);
@@ -1575,7 +1641,7 @@ export class Engine {
     return { code: EXIT.OK, request: this.view(rev) };
   }
 
-  private status(actor?: Actor): OpResult {
+  private status(actor?: Actor) {
     const at = this.now().toISOString();
     const requests = [...this.revs.values()]
       .filter((r) => this.isCurrentRev(r) && this.isOpen(r))
@@ -1651,6 +1717,14 @@ export class Engine {
   private apply(e: StoredEvent): void {
     const d = e.data;
     switch (e.type) {
+      case "decision.pinned": {
+        const pin = d.pin as SavedPin;
+        this.pins.set(pin.id, pin);
+        break;
+      }
+      case "decision.unpinned":
+        this.pins.delete(d.id as string);
+        break;
       case "policy.routine": {
         const category = d.category as string;
         this.routineCounts.set(category, (this.routineCounts.get(category) ?? 0) + 1);

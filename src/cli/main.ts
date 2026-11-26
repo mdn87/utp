@@ -23,7 +23,8 @@ import { call, CliError, readConfig, utpHome, writeConfig } from "./client.js";
 import { closeout } from "./closeout.js";
 import { closeoutHook } from "./closeout-hook.js";
 import { checkout, fingerprints, projectFor, readRegistry, register } from "./registry.js";
-import { cardMarkdown, grantText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
+import { cardMarkdown, grantText, pinsText, resultText, reviewMarkdown, type RequestView, type ReviewView } from "./render.js";
+import type { DecisionPin } from "../core/decision-pins.js";
 import { runRecentReview, runReview } from "./review.js";
 import { launchSetup, setupPlan } from "./setup.js";
 
@@ -51,6 +52,10 @@ Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge>
             presented <review> [--channel <name>]
             show <id>
             status
+            inbox
+            pin <card-id> [--note <text>]
+            unpin <card-id>
+            pins
             log [--tags a,b] [--related <id>] [--text <words>] [--kind <kind>]
             history [search words]
             follow-up <review-id> <card@revision>... [--file <round.json>]
@@ -92,6 +97,7 @@ const OPTIONS = {
   new: { type: "boolean" },
   file: { type: "string" },
   intent: { type: "string" },
+  note: { type: "string" },
   channel: { type: "string" },
   presentation: { type: "string" },
   option: { type: "string" },
@@ -634,13 +640,25 @@ async function main(argv: string[]): Promise<number> {
       if (r.grant) return out(r, `${grantText(r.grant as never)}\n\n${cardMarkdown(r.request as RequestView)}`);
       return out(r, cardMarkdown(r.request as RequestView));
     }
+    case "pin":
+    case "unpin": {
+      const id = need(rest[0], "a decision card id");
+      const r = await call(verb, { id, ...(verb === "pin" ? { note: flags.note } : {}) }, { project: projectFor().project, opId });
+      return out(r, r.code === EXIT.OK ? `${verb === "pin" ? "Pinned" : "Unpinned"} ${id}.` : undefined);
+    }
+    case "pins": {
+      const r = await call("pins", {}, { project: projectFor().project });
+      return out(r, r.code === EXIT.OK ? pinsText(r.pins as DecisionPin[]) || "No pinned decisions." : undefined);
+    }
+    case "inbox":
     case "status": {
       const { project } = projectFor();
-      const r = await call("status", {}, { project });
+      const r = await call(verb, {}, { project });
       if (r.code !== EXIT.OK || flags.json) return out(r);
       const reqs = r.requests as { id: string; revision: number; status: string; question: string; clarification?: unknown }[];
-      return out(r, reqs.length ? reqs.map((q) => `${q.id}@${q.revision}  ${q.status.padEnd(15)}  ${q.question}`
-        + (q.clarification ? " (clarification requested)" : "")).join("\n") : "Nothing is open.");
+      const requests = reqs.length ? reqs.map((q) => `${q.id}@${q.revision}  ${q.status.padEnd(15)}  ${q.question}`
+        + (q.clarification ? " (clarification requested)" : "")).join("\n") : "Nothing is open.";
+      return out(r, [verb === "inbox" ? pinsText(r.pins as DecisionPin[]) : "", requests].filter(Boolean).join("\n\n"));
     }
     case "history": {
       const r = await call("history", { query: rest.join(" ") }, { project: projectFor().project });
@@ -717,6 +735,8 @@ async function main(argv: string[]): Promise<number> {
       const { project } = projectFor();
       readConfig();
       const io = { input: process.stdin, output: process.stdout, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) };
+      const r = await call("pins", {}, { project });
+      if (r.code === EXIT.OK && (r.pins as DecisionPin[]).length) io.output.write(pinsText(r.pins as DecisionPin[]) + "\n\n");
       if (flags.recent) return runRecentReview(project, io);
       return runReview(project, io, flags.feedback, rest[0]);
     }
