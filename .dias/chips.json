@@ -1070,7 +1070,7 @@
           "entryId": "ordinary-session-rollout",
           "at": "2026-11-26T06:22:50Z",
           "kind": "note",
-          "message": "The service recorded withdrawal of the playback check. The task and request counts meet their targets. The remaining clarity measure can use voluntary feedback on an ordinary review."
+          "message": "The service recorded withdrawal of the playback check. The task and request counts meet their targets. The remaining clarity measure can use voluntary feedback on a normal review."
         }
       ]
     },
@@ -1461,7 +1461,7 @@
       "projectId": "utp",
       "title": "Revisit a decision when its basis changes",
       "summary": "Present the original basis and the change. Record keep, amend or reverse, and make the revision discoverable in later lookups.",
-      "stage": "planned",
+      "stage": "active",
       "sequence": 320,
       "prereqs": [
         "utp:policy:lookup",
@@ -1471,7 +1471,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-22T18:15:46Z"
+        "updatedAt": "2026-11-27T01:34:21Z"
       },
       "evidence": [
         {
@@ -1479,6 +1479,12 @@
           "at": "2026-11-22T18:15:46Z",
           "kind": "note",
           "message": "The phase 3 revisit card applies to a decision whose evidence or preconditions changed."
+        },
+        {
+          "entryId": "live-on-shared-service",
+          "at": "2026-11-27T01:34:21Z",
+          "kind": "stage-change",
+          "message": "Tests cover keep, amend and reverse in lookups. Two browsers saved an amendment on the review page. The shared service runs the release. Installed agent clients still need it."
         }
       ]
     },
