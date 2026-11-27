@@ -371,10 +371,10 @@ unknown or unanswered decision. It also refuses a revisit of an earlier
 revisit: ask about the original decision again.
 
 UTP adds the earlier decision to the card as it was recorded: its question,
-the saved answer, and the date. Every renderer shows it above the question,
-with the original basis and the change. A native question dialog can't carry
-that context, so a revisit card always uses Markdown, the terminal review, or
-the review page.
+the saved answer, and the date. Every renderer shows it directly below the
+question and above the options, with the original basis and the change. A
+native question dialog can't carry that context, so a revisit card always
+uses Markdown, the terminal review, or the review page.
 
 The answer is recorded on the earlier decision and follows the latest
 answer. If the person changes the answer, or the agent cancels or revises the
@@ -393,6 +393,12 @@ card, the record changes with it.
   as amended.
 - `keep` leaves the earlier decision in force and records that it was
   reconsidered.
+
+If the person writes their own answer instead of choosing an option, UTP
+keeps their words on the revisit card and records no outcome on the earlier
+decision, which stays in force. Revise the card so that one option states
+what they wrote, usually the label of `amend`, and ask again. Their answer to
+the revised card is the one UTP records.
 
 Use `utp reverse` for a reversal the person didn't answer through a card,
 such as a corrected level-1 decision. Use `utp follow-up` to gather new

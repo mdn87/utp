@@ -237,6 +237,39 @@ test("amending records the amended wording and retires the earlier answer as aut
   } finally { h.store.close(); }
 });
 
+test("the person's own answer stays on the revisit card and records no outcome until an option states it", () => {
+  const h = new Harness();
+  const OWN = "Stay strict this week and ask again after the next supplier file.";
+  try {
+    const first = h.present(earlier());
+    h.answer(first.id, "a");
+    h.ok("pin", { id: first.id });
+    const second = h.present(revisit(first.id));
+    h.t += 60_000;
+    h.ok("answer", { id: second.id, channel: "terminal-review", custom: OWN }, PERSON);
+
+    const entry = h.entry(first.id);
+    assert.equal(entry.revisits, undefined);
+    assert.deepEqual(entry.reversals, []);
+    assert.deepEqual(h.engine.decisionPins()[0]!.reasons, []);
+    assert.equal(h.run("wait", { id: first.id }).code, 0);
+    assert.equal(h.view(second.id).answer!.custom, OWN);
+    const found = h.ok("log", { related: first.id, text: "after the next supplier file" }).entries as DecisionLogEntry[];
+    assert.deepEqual(found.map((e) => `${e.kind}:${e.id}`), [`revisit:${second.id}`]);
+
+    const stated = revisit(first.id);
+    stated.options = stated.options!.map((o) => (o.id === "amend" ? { ...o, label: OWN } : o));
+    h.ok("revise", { id: second.id, body: stated });
+    const flushed = h.ok("flush");
+    h.ok("presented", { review: flushed.review_id, channel: "conversation" });
+    h.answer(`${second.id}@2`, "amend");
+    const record = h.entry(first.id).revisits![0]!;
+    assert.equal(record.outcome, "amend");
+    assert.equal(record.amendment, OWN);
+    assert.equal(h.run("wait", { id: first.id }).code, 17);
+  } finally { h.store.close(); }
+});
+
 test("the revisit card shows the earlier decision, its basis and the change in Markdown and on the page, and never in a dialog", () => {
   const h = new Harness();
   try {

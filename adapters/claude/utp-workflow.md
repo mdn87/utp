@@ -55,7 +55,9 @@ are `keep`, `amend`, and `reverse`; write the amended decision as the label
 of the `amend` option. Don't undo the earlier decision yourself, and don't
 ask it again as a new question. After `amend` or `reverse`, the earlier
 answer no longer authorizes anything, so put any authorization the next
-action needs on the revisit card's own options.
+action needs on the revisit card's own options. If the person answers in
+their own words, UTP records no outcome on the earlier decision: revise the
+card so that one option states what they wrote, and ask again.
 
 ## 2. Independent work, batching, and upfront channel routing
 
