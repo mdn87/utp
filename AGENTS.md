@@ -7,13 +7,21 @@ repository: Claude Code, Codex, Antigravity, or another.
 
 ## Current phase
 
-Phase 1: verify the lifecycle on the shared service and deliver the seven
-everyday request kinds, the default policy, and the batch review page.
+Phase 1 (the lifecycle on the shared service, the seven everyday request
+kinds, the default policy, and the batch review page) and the phase 2 rich
+review (side-by-side blind comparisons and native question dialogs) are
+built and tested. Neither phase is closed. Phase 1 waits for the reviewer's
+clarity ratings on question cards from ordinary work. Phase 2 still needs a
+real blind ballot, a real manual handoff, the move of the existing
+comparison workflows to UTP, and a renderer check on every channel.
+The work record is the board of work items checked into this repository
+(`chips.json` and `status.json`). Check it before starting work, because
+this summary can fall behind it.
+
 The code targets TypeScript on Node 20 or later. `docs/concept/` is the
 specification and `docs/decisions/` records the person's answers.
 [Review 0002](docs/decisions/0002-followup-review.answers.json) sets the
-release scope and default policy. Blind comparisons and migration of the
-existing comparison workflows are phase 2 work.
+release scope and default policy.
 
 ## Build and test
 
