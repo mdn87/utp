@@ -1461,7 +1461,7 @@
       "projectId": "utp",
       "title": "Revisit a decision when its basis changes",
       "summary": "Present the original basis and the change. Record keep, amend or reverse, and make the revision discoverable in later lookups.",
-      "stage": "active",
+      "stage": "done",
       "sequence": 320,
       "prereqs": [
         "utp:policy:lookup",
@@ -1471,7 +1471,7 @@
       "confidence": "reported",
       "timestamps": {
         "createdAt": "2026-11-22T18:15:46Z",
-        "updatedAt": "2026-11-27T01:34:21Z"
+        "updatedAt": "2026-11-27T01:49:51Z"
       },
       "evidence": [
         {
@@ -1485,6 +1485,12 @@
           "at": "2026-11-27T01:34:21Z",
           "kind": "stage-change",
           "message": "Tests cover keep, amend and reverse in lookups. Two browsers saved an amendment on the review page. The shared service runs the release. Installed agent clients still need it."
+        },
+        {
+          "entryId": "client-release-installed",
+          "at": "2026-11-27T01:49:51Z",
+          "kind": "stage-change",
+          "message": "The installed command created and checked a revisit card, and the live service looked up its decision. All three installed agent guides now describe the card."
         }
       ]
     },
