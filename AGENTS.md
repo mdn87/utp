@@ -14,6 +14,9 @@ built and tested. Neither phase is closed. Phase 1 waits for the reviewer's
 clarity ratings on question cards from ordinary work. Phase 2 still needs a
 real blind ballot, a real manual handoff, the move of the existing
 comparison workflows to UTP, and a renderer check on every channel.
+Phase 3 has started: the `revisit` card, which asks the person to keep,
+amend, or reverse a logged decision whose basis has changed, is built and
+tested. The retro, template versions, and the metrics report are not built.
 The work record is the board of work items checked into this repository
 (`chips.json` and `status.json`). Check it before starting work, because
 this summary can fall behind it.

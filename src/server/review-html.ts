@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { answerValue, cardMetadata, dependencyLabels, reviewContext, sharedFromIntent, type ReviewView } from "../cli/render.js";
 import { earlierCard, previousDecision } from "../core/review-history.js";
+import { revisitContext, revisitText } from "../core/revisit.js";
 import { reviewRequestsHash } from "../core/check.js";
 import { PIN_CHANGES, pinVersion, type DecisionPin } from "../core/decision-pins.js";
 import type { BlindReveal } from "../core/blind.js";
@@ -27,7 +28,7 @@ export const reviewHasVideoComparison = (review: ReviewView): boolean =>
 
 const KIND_LABELS: Record<string, string> = {
   choose: "Choice", approve: "Approval", handoff: "Manual step", clarify: "Clarification",
-  accept: "Result check", assumptions: "Assumptions", notice: "Notice", judge: "Blind comparison",
+  accept: "Result check", assumptions: "Assumptions", notice: "Notice", judge: "Blind comparison", revisit: "Revisit",
 };
 const UNDO_LABELS: Record<string, string> = {
   easy: "Easy to undo", costly: "Costly to undo", one_way: "Can't be undone",
@@ -306,6 +307,7 @@ export function reviewHtml(review: BrowserReview, token: string, message?: strin
     ];
     const prior = earlierCard(review.follow_up, b);
     if (prior) parts.push(`<p class="prior-decision"><strong>Earlier decision</strong><br>${prior.question !== b.question ? escapeText(prior.question) + "<br>" : ""}${escapeText(previousDecision(prior))}</p>`);
+    for (const [label, text] of revisitContext(b, item.earlier_decision)) parts.push(`<h3>${escapeText(label)}</h3>`, notice(text));
     if (item.revision_diff) parts.push(revisionBannerHtml(item.revision_diff));
     if (b.kind !== "notice") parts.push("<h3>What this question addresses</h3>");
     parts.push(notice(b.summary ?? b.why_now));
@@ -375,6 +377,7 @@ export function reviewHtml(review: BrowserReview, token: string, message?: strin
       parts.push(notice(`Stated default: ${defTitle}. ${b.default.consequence}`));
     }
     for (const flag of item.flags) parts.push(notice(flag));
+    for (const record of item.revisits ?? []) parts.push(notice(revisitText(record)));
     parts.push(`<p class="card-reference"><code>${escapeText(item.id)}@${item.revision}</code> · ${escapeText(cardMetadata(item))}</p>`);
     if (b.kind !== "notice") {
       if (b.kind === "judge") {

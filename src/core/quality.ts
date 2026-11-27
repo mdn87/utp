@@ -39,7 +39,8 @@ export function hasDatedEvidence(item: unknown): boolean {
 /** Scan the prose a reviewer reads, preserving field boundaries. Commands, IDs, and encoded images are data. */
 function reviewText(b: RequestBody): string[] {
   const text = [b.question, b.summary, b.why_now, ...(b.kind === "judge" ? [] : [b.notes]), b.default?.consequence, b.narrowing_reason,
-    b.recommendation?.because, b.recommendation?.preserves, b.recommendation?.bolder_alternative];
+    b.recommendation?.because, b.recommendation?.preserves, b.recommendation?.bolder_alternative,
+    b.revisit?.original_basis, b.revisit?.change];
   for (const o of b.options ?? []) {
     text.push(o.label, o.consequence, o.agent_next, o.authorization?.action, o.authorization?.target, o.authorization?.scope,
       o.authorization?.expected_effect);

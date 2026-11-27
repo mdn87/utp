@@ -128,6 +128,15 @@ export function computeRevisionDiff(previous: RevisionSnapshot, current: Revisio
     changes.push(`Summary updated: ${current.body.summary}`);
   }
 
+  if (current.body.revisit && previous.body.revisit) {
+    if (norm(previous.body.revisit.original_basis) !== norm(current.body.revisit.original_basis)) {
+      changes.push(`What the earlier decision rested on was updated: ${current.body.revisit.original_basis}`);
+    }
+    if (norm(previous.body.revisit.change) !== norm(current.body.revisit.change)) {
+      changes.push(`What changed was updated: ${current.body.revisit.change}`);
+    }
+  }
+
   const prevOpts = previous.body.options ?? [];
   const nextOpts = current.body.options ?? [];
   if (prevOpts.length || nextOpts.length) {

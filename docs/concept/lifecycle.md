@@ -355,6 +355,50 @@ decision and revision. Pass it to `utp wait <id> --authority-file decision.json`
 to check the exact effect and obtain the original request's grant. The
 original basis, owner, approval rules, and one-use limit still apply.
 
+## Revisiting a decision (phase 3)
+
+When the basis of a logged decision changes, ask the person with a `revisit`
+request. Don't undo the decision silently, and don't ask it again as if it
+were new. A logged decision is one the person answered, one the agent
+applied, or a delivered level-1 decision recorded with `utp decide`.
+
+`revisit.decision` names the earlier decision by its request id.
+`revisit.original_basis` says what that decision rested on and
+`revisit.change` says what is different now, with dated evidence on the
+card. The options are `keep`, `amend`, and `reverse`, and the label of the
+`amend` option states the amended decision. UTP refuses a revisit of an
+unknown or unanswered decision. It also refuses a revisit of an earlier
+revisit: ask about the original decision again.
+
+UTP adds the earlier decision to the card as it was recorded: its question,
+the saved answer, and the date. Every renderer shows it above the question,
+with the original basis and the change. A native question dialog can't carry
+that context, so a revisit card always uses Markdown, the terminal review, or
+the review page.
+
+The answer is recorded on the earlier decision and follows the latest
+answer. If the person changes the answer, or the agent cancels or revises the
+card, the record changes with it.
+
+- `utp show` and `utp log` list a decision's revisits under `revisits`, each
+  with its outcome, the change, the revisit card, and the time.
+  `utp log --related <id>` finds both cards.
+- `reverse` counts as a reversal wherever reversals are read. `utp consider`
+  and `utp decide` return it for related tags and ids, the history page shows
+  it, and a pinned decision is marked as reversed.
+- After `amend` or `reverse`, the earlier answer can't authorize anything.
+  `utp wait` and `utp begin` on the earlier decision exit `17`, and the
+  answer can't be cited as existing authority. The revisit card's own options
+  carry any authorization the next action needs. A pinned decision is marked
+  as amended.
+- `keep` leaves the earlier decision in force and records that it was
+  reconsidered.
+
+Use `utp reverse` for a reversal the person didn't answer through a card,
+such as a corrected level-1 decision. Use `utp follow-up` to gather new
+preferences on a saved review. A follow-up doesn't change the earlier
+decisions.
+
 ## Notifications
 
 - The request is stored before anything is sent.

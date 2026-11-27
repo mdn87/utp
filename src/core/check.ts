@@ -2,7 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { exposesBlindIdentity, normalizeBlind } from "./blind.js";
-import { KINDS, type RequestBody, type ReviewIntent } from "./types.js";
+import { KINDS, REVISIT_OUTCOMES, type RequestBody, type ReviewIntent } from "./types.js";
 import { hasDatedEvidence, QUALITY_RULES, qualityWarnings, type SharedContext } from "./quality.js";
 
 export interface CheckFailure {
@@ -83,7 +83,7 @@ export function checkRequest(body: unknown, shared?: SharedContext): CheckFailur
   if (!["easy", "costly", "one_way"].includes(b.stakes?.reversibility as string)) {
     fail("S06-stakes", "stakes.reversibility must be easy, costly or one_way");
   }
-  const needsOptions = ["choose", "approve", "clarify"].includes(b.kind as string);
+  const needsOptions = ["choose", "approve", "clarify", "revisit"].includes(b.kind as string);
   const options = Array.isArray(b.options) ? b.options : [];
   if (b.options !== undefined && !Array.isArray(b.options)) fail("S07-options", "Supply options as a list.");
   if (needsOptions && options.length < 2) fail("S07-options", "this kind needs at least two options");
@@ -154,6 +154,25 @@ export function checkRequest(body: unknown, shared?: SharedContext): CheckFailur
         fail("S24-approval-evidence", "Include dated evidence with a claim and source for the action being approved.");
       }
     }
+  }
+  if (b.kind === "revisit") {
+    const spec = b.revisit && typeof b.revisit === "object" ? b.revisit : undefined;
+    if (!nonEmpty(spec?.decision) || !persistedRef.test(spec.decision)) {
+      fail("S32-revisit", "revisit.decision must name the logged decision by its request id, for example R-20261122-0a1b2c3d.");
+    }
+    if (!nonEmpty(spec?.original_basis) || !nonEmpty(spec?.change)) {
+      fail("S32-revisit", "Say what the decision rested on in revisit.original_basis and what is different now in revisit.change.");
+    }
+    if (options.length !== REVISIT_OUTCOMES.length || !REVISIT_OUTCOMES.every((id) => ids.has(id))) {
+      fail("S32-revisit", "A revisit offers exactly three options with the ids keep, amend and reverse.");
+    }
+    if (!(Array.isArray(b.evidence) && b.evidence.some(hasDatedEvidence)) && !shared?.evidence?.some(hasDatedEvidence)) {
+      fail("S32-revisit", "Include dated evidence with a claim and source for what changed.");
+    }
+    if (b.default !== undefined) fail("S32-revisit", "A revisit can't carry a default: it always waits for the person.");
+    if (b.level !== 2 && b.level !== 3) fail("S32-revisit", "A revisit asks the person, so use level 2 or 3.");
+  } else if (b.revisit !== undefined) {
+    fail("S32-revisit", "Use a revisit request to reconsider a logged decision.");
   }
   if (b.narrowing_reason !== undefined && !nonEmpty(b.narrowing_reason)) {
     fail("S26-fields", "Give a nonempty explanation for an indivisible action.");

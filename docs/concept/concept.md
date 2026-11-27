@@ -164,6 +164,10 @@ Kind-specific requirements, enforced by `utp check`:
   `naming`, `other`) so recommendation-override rates can be tracked by
   category; a recommendation asserting current system state carries dated
   evidence.
+- `revisit` names the logged decision it reconsiders, says what that decision
+  rested on and what changed, carries dated evidence of the change, and
+  offers exactly three options with the ids `keep`, `amend`, and `reverse`.
+  It has no default and always waits for the person.
 
 ## Anatomy
 

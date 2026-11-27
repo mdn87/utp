@@ -8,6 +8,8 @@ export interface HistoryCard {
   answer?: string;
   option_id?: string;
   reversals: string[];
+  /** One line per revisit that kept or amended this decision. A revisit that reversed it is in reversals. */
+  revisits?: string[];
 }
 
 export interface FollowUpSource {
@@ -35,7 +37,8 @@ export function matchesHistory(review: HistoryReview, terms: string[]): boolean 
 
 export function previousDecision(card: HistoryCard): string {
   const outcome = card.answer ?? "No answer recorded";
-  return [outcome, ...card.reversals.map(reason => `Reversed — ${reason}`), `(${card.status.replaceAll("_", " ")})`].join(" ");
+  return [outcome, ...card.reversals.map(reason => `Reversed — ${reason}`), ...(card.revisits ?? []),
+    `(${card.status.replaceAll("_", " ")})`].join(" ");
 }
 
 /** Follow-ups gather new preferences. An earlier action, deadline or default belongs to its original request. */

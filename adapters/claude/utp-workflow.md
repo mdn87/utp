@@ -48,6 +48,15 @@ Before asking a new question, check prior decisions and reversals with
 prior reversal exists at the same or higher level, either raise the level or
 record `reversal_reason` explaining why the reversal does not apply.
 
+When what a logged decision rested on has changed, ask with a `revisit` card
+(`utp new revisit`). Name the earlier decision by its request id, say what it
+rested on and what is different now, and attach dated evidence. The options
+are `keep`, `amend`, and `reverse`; write the amended decision as the label
+of the `amend` option. Don't undo the earlier decision yourself, and don't
+ask it again as a new question. After `amend` or `reverse`, the earlier
+answer no longer authorizes anything, so put any authorization the next
+action needs on the revisit card's own options.
+
 ## 2. Independent work, batching, and upfront channel routing
 
 - Queue questions with `utp ask <card.json>` (or `utp decide <decision.json>`),
@@ -287,7 +296,7 @@ utp pins --json                           # decisions the reviewer wants visible
 utp history "search words" --json        # earlier reviews by title, question, or tag
 utp follow-up <review-id> <card-id>@<rev> --file round.json --json
 utp consider decision.json
-utp new <choose|approve|handoff|clarify|accept|assumptions|notice|judge> --file card.json
+utp new <choose|approve|handoff|clarify|accept|assumptions|notice|judge|revisit> --file card.json
 utp check card.json
 utp ask card.json --json                 # or: utp decide decision.json --json
 utp stage batch.json --flush --json      # validate, check D4/order/notices, queue, and flush
@@ -340,6 +349,8 @@ utp applied <grant-id> --evidence evidence.json
   (include `"remaining_scope"` in `evidence.json` for `partial`).
 - **Take over from an ended or idle session**: `utp takeover <request-id>`.
 - **Record a later decision reversal**: `utp reverse <request-id> --file reason.json`.
+  Use it for a reversal the person didn't answer through a card. When the
+  person should decide, ask with a `revisit` card.
 
 ### Exit-code dispatch table
 

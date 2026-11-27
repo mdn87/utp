@@ -15,7 +15,7 @@ export function pinVersion(pin: SavedPin): string {
 }
 
 export const PIN_CHANGES = {
-  reversed: "Reversed", superseded: "Superseded", changed: "Answer changed", withdrawn: "Answer withdrawn",
+  reversed: "Reversed", amended: "Amended", superseded: "Superseded", changed: "Answer changed", withdrawn: "Answer withdrawn",
   cancelled: "Cancelled", stale: "Basis changed", late_conflict: "Conflicting answer",
 } as const;
 
