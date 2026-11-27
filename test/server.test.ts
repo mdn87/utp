@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "./support/tmp.js";
 import { createServer, get, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";

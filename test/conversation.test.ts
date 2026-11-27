@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, mkdtempSync, renameSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync } from "node:fs";
+import { mkdtempSync } from "./support/tmp.js";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { reviewMarkdown, type ReviewView } from "../src/cli/render.js";

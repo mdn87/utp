@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync } from "./support/tmp.js";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Engine, GRANT_LEASE_MS, TAKEOVER_IDLE_MS } from "../src/core/engine.js";

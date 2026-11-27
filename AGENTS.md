@@ -32,6 +32,9 @@ output elsewhere: set `UTP_TOOLING_DIR` to a folder whose `node_modules` holds
 both `node scripts/build.mjs` and `node scripts/test.mjs`.
 If the shell uses an HTTP proxy, install the project's dependencies in the
 tooling directory and keep `UTP_TOOLING_DIR` set when running the CLI.
+Tests make their temporary folders through `test/support/tmp.ts`, which
+removes them when each test process exits. Set `UTP_KEEP_TMP=1` to keep
+them for debugging.
 
 ## Public repository
 
