@@ -2,8 +2,20 @@
 
 import type { BlindComparison } from "./blind.js";
 
-export const KINDS = ["choose", "approve", "handoff", "clarify", "accept", "assumptions", "notice", "judge"] as const;
+export const KINDS = ["choose", "approve", "handoff", "clarify", "accept", "assumptions", "notice", "judge", "revisit"] as const;
 export type Kind = (typeof KINDS)[number];
+
+/** The three answers a revisit card offers, which are also its option ids. */
+export const REVISIT_OUTCOMES = ["keep", "amend", "reverse"] as const;
+export type RevisitOutcome = (typeof REVISIT_OUTCOMES)[number];
+
+/** What a revisit card says about the logged decision it reconsiders. */
+export interface RevisitSpec {
+  /** The earlier decision's request id, with or without @revision. */
+  decision: string;
+  original_basis: string;
+  change: string;
+}
 
 export interface Authorization {
   action: string;
@@ -115,6 +127,7 @@ export interface RequestBody {
   assumptions?: AssumptionItem[];
   previews?: RequestPreview[];
   blind?: BlindComparison;
+  revisit?: RevisitSpec;
   stakes: { reversibility: "easy" | "costly" | "one_way" };
   level: 0 | 1 | 2 | 3;
   level_reason: string;

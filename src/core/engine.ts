@@ -12,6 +12,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { answerValue, reviewMarkdown, type ReviewView } from "../cli/render.js";
 import { followUpCard, matchesHistory, previousDecision, type FollowUpSource, type HistoryCard, type HistoryReview } from "./review-history.js";
+import { isRevisitOutcome, revisitText, type EarlierDecision, type RevisitRecord } from "./revisit.js";
 import { BALLOT_OPTIONS, normalizeBlind, publicJudgment, revealJudgment } from "./blind.js";
 import { interpretChat, laterCorrection, withinListedScope, type ChatTurn } from "./conversation.js";
 import { checkRequest, intentFailure, reviewRequestsHash, validReviewIntent, validTaskTitle } from "./check.js";
@@ -190,6 +191,8 @@ export interface DecisionLogEntry {
   tags: string[];
   related: string[];
   reversals: Req["reversals"];
+  /** Answered revisits of this decision, oldest first. Absent when there are none. */
+  revisits?: RevisitRecord[];
   asked_at: string;
   origin_project?: string;
   archived?: true;
@@ -286,6 +289,7 @@ function contentKey(body: RequestBody, basis: Basis): string {
     goals: Array.isArray(body.goals) ? body.goals.map(sorted) : [],
     assumptions: Array.isArray(body.assumptions) ? body.assumptions.map(sorted) : [],
     blind: sorted(body.blind),
+    revisit: sorted(body.revisit),
     default: sorted(body.default),
     basis: sorted(basis),
   });
@@ -346,6 +350,8 @@ export class Engine {
   private readonly archives = new Map<string, DecisionArchive>();
   private readonly routineCounts = new Map<string, number>();
   private readonly openReviews = new Map<string, string>();
+  /** Answered revisits by the decision they reconsidered. Rebuilt after any event. */
+  private revisitCache?: Map<string, RevisitRecord[]>;
 
   constructor(
     private readonly store: EventStore,
@@ -622,11 +628,12 @@ export class Engine {
       const body = this.visibleBody(r);
       const at = r.answer?.at ?? r.asked_at;
       if (at > latest) latest = at;
-      const reversals = this.reqOf(r).reversals.filter(v => (v.revision ?? 1) === r.revision);
+      const reversals = this.reversalsOf(this.reqOf(r)).filter(v => (v.revision ?? 1) === r.revision);
+      const revisits = this.revisitsOf(r.id).filter(v => v.revision === r.revision && v.outcome !== "reverse").map(revisitText);
       return { ref, question: body.question, tags: body.tags ?? [], status: this.effective(r, this.now().toISOString()),
         ...(r.answer ? { answer: this.savedAnswer(r, body) } : {}),
         ...(typeof r.answer?.value === "string" ? { option_id: r.answer.value } : {}),
-        reversals: reversals.map(v => v.reason) };
+        reversals: reversals.map(v => v.reason), ...(revisits.length ? { revisits } : {}) };
     });
     return { review_id: id, task_title: review.intent?.task_title, updated_at: latest, cards,
       ...(review.follow_up ? { source_review: review.follow_up.review } : {}) };
@@ -651,7 +658,8 @@ export class Engine {
       const rev = this.revs.get(key(pin.id, pin.revision))!;
       const reasons: DecisionPin["reasons"] = [];
       if (!this.isCurrentRev(rev)) reasons.push("superseded");
-      if (this.reqOf(rev).reversals.some(r => (r.revision ?? 1) === rev.revision)) reasons.push("reversed");
+      if (this.reversalsOf(this.reqOf(rev)).some(r => (r.revision ?? 1) === rev.revision)) reasons.push("reversed");
+      if (this.wasAmended(rev)) reasons.push("amended");
       const answer = this.savedAnswer(rev);
       if (answer === undefined) reasons.push("withdrawn");
       else if (answer !== pin.answer) reasons.push("changed");
@@ -847,7 +855,7 @@ export class Engine {
         const wanted = effectArg(citation.authorization);
         if (!source || !source.answer || !this.isCurrentRev(source) || !["answered", "granted"].includes(source.status)
           || (source.body.expires_at && Date.parse(source.body.expires_at) <= this.now().getTime())
-          || this.wasReversed(source) || !sameActor(this.reqOf(source).owner, actor)) {
+          || this.wasReversed(source) || this.wasAmended(source) || !sameActor(this.reqOf(source).owner, actor)) {
           return { ...denied, message: "the cited answer is unavailable to this session for execution" };
         }
         const authorization = this.authorizationFor(source, source.answer);
@@ -886,7 +894,8 @@ export class Engine {
       } : undefined;
     const failures = checkRequest(a.body, shared);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
-    const body = blindBody(a.body as RequestBody);
+    const body = this.revisitBody(blindBody(a.body as RequestBody));
+    if ("code" in body) return body;
     const basis = body.kind === "judge" ? {} : this.basisFor(body, basisArg(a.basis));
     let near: string | undefined;
     if (body.dedupe_key) {
@@ -1186,8 +1195,9 @@ export class Engine {
     const isOwner = sameActor(req.owner, actor);
     const base = { id: rev.id, revision: rev.revision, status: st, answer: rev.answer ?? null, role: isOwner ? "owner" : "observer" };
     const last = this.lastGrant(rev);
-    if (["answered", "granted"].includes(st) && this.wasReversed(rev)) {
-      return { code: EXIT.REVOKED, ...base, message: "this decision was reversed; get a current answer before acting" };
+    const retired = this.retiredBy(rev);
+    if (["answered", "granted"].includes(st) && retired) {
+      return { code: EXIT.REVOKED, ...base, message: `this decision was ${retired}; get a current answer before acting` };
     }
     if (a.authority !== undefined) {
       const wanted = effectArg(a.authority);
@@ -1332,8 +1342,9 @@ export class Engine {
     const { g, rev, req } = found;
     const refused = this.grantRefusal(g, rev, req, actor);
     if (refused) return refused;
-    if (g.status === "active" && this.wasReversed(rev)) {
-      return { code: EXIT.REVOKED, grant: g.id, message: "this decision was reversed; get a current answer before acting" };
+    const retired = this.retiredBy(rev);
+    if (g.status === "active" && retired) {
+      return { code: EXIT.REVOKED, grant: g.id, message: `this decision was ${retired}; get a current answer before acting` };
     }
     if (g.status !== "active" || rev.status !== (g.from_default ? "default_claimed" : "granted") || this.lastGrant(rev)?.id !== g.id) {
       return { code: EXIT.NOT_ALLOWED, grant: g.id, message: "this grant was already used; a grant allows one action" };
@@ -1436,7 +1447,8 @@ export class Engine {
     }
     const failures = checkRequest(a.body);
     if (failures.length) return { code: EXIT.CHECK_FAILED, failures };
-    const body = blindBody(a.body as RequestBody);
+    const body = this.revisitBody(blindBody(a.body as RequestBody));
+    if ("code" in body) return body;
     const basis = body.kind === "judge" ? {} : this.basisFor(body, basisArg(a.basis));
     const revision = rev.revision + 1;
     const review_id = this.openReviews.get(actorKey(actor)) ?? newId("V", this.now().toISOString());
@@ -1500,8 +1512,7 @@ export class Engine {
   private reverse(a: Args, actor: Actor, opId?: string): OpResult {
     const rev = this.resolve(str(a, "id"));
     if (!rev) return notFound(a.id);
-    const closedDecision = rev.status === "closed" && rev.body.kind === "notice" && rev.body.level === 1 && !!rev.policy;
-    if (!rev.answer && rev.status !== "applied" && !closedDecision) {
+    if (!this.isLogged(rev)) {
       return { code: EXIT.NOT_ALLOWED, message: "a reversal needs an answered or applied decision, or a delivered level-1 decision recorded with utp decide" };
     }
     const reason = str(a, "reason");
@@ -1690,15 +1701,20 @@ export class Engine {
     return [...this.reqs.values()].map((req) => {
       const rev = this.current(req);
       const b = this.visibleBody(rev);
+      const reversals = this.reversalsOf(req);
+      const revisits = this.revisitsOf(req.id);
       return {
         entry: {
           id: req.id, revision: rev.revision, kind: b.kind, level: b.level, level_reason: b.level_reason, question: b.question,
           status: this.effective(rev, at), answer: rev.answer?.value ?? rev.answer?.disposition ?? null,
-          tags: b.tags ?? [], related: b.related ?? [], reversals: req.reversals, asked_at: rev.asked_at,
+          tags: b.tags ?? [], related: b.related ?? [], reversals, asked_at: rev.asked_at,
+          ...(revisits.length ? { revisits } : {}),
           ...(rev.policy ? { policy: rev.policy } : {}),
         },
         searchText: [b.question, b.why_now, b.notes ?? "", rev.answer?.custom ?? "", rev.answer?.note ?? "",
-          ...Object.values(rev.answer?.details ?? {}), ...req.reversals.map((r) => r.reason)].join(" ").toLowerCase(),
+          ...Object.values(rev.answer?.details ?? {}), ...reversals.map((r) => r.reason),
+          b.revisit?.original_basis ?? "", b.revisit?.change ?? "",
+          ...revisits.flatMap((v) => [v.change, v.amendment ?? ""])].join(" ").toLowerCase(),
       };
     });
   }
@@ -1716,6 +1732,7 @@ export class Engine {
 
   private apply(e: StoredEvent): void {
     const d = e.data;
+    this.revisitCache = undefined;
     switch (e.type) {
       case "decision.pinned": {
         const pin = d.pin as SavedPin;
@@ -2318,7 +2335,9 @@ export class Engine {
       ...(r.body.kind === "judge" && r.body.blind && r.answer ? { blind_reveal: revealJudgment(r.body.blind, r.blind_swapped === true) } : {}),
       grants: r.grants.map((g) => this.grants.get(g)), flags: r.flags, review_id: r.review_id, asked_at: r.asked_at,
       presented_at: r.presented_at ?? null, hide_until: r.hide_until ?? null, remaining_scope: r.remaining_scope ?? null,
-      reconciliations: r.reconciliations, reversals: req.reversals, owner: req.owner, observers: req.observers.length,
+      reconciliations: r.reconciliations, reversals: this.reversalsOf(req), owner: req.owner, observers: req.observers.length,
+      ...(this.revisitsOf(r.id).length ? { revisits: this.revisitsOf(r.id) } : {}),
+      ...(r.body.kind === "revisit" && r.body.revisit ? { earlier_decision: this.earlierDecision(r.body.revisit.decision) } : {}),
       ...(r.policy ? { policy: r.policy } : {}),
       ...(r.clarification ? { clarification: r.clarification } : {}),
       ...(r.applied_evidence ? { applied_evidence: r.applied_evidence } : {}),
@@ -2354,7 +2373,74 @@ export class Engine {
   }
 
   private wasReversed(r: Rev): boolean {
-    return this.reqOf(r).reversals.some((entry) => entry.revision === r.revision);
+    return this.reversalsOf(this.reqOf(r)).some((entry) => entry.revision === r.revision);
+  }
+
+  private wasAmended(r: Rev): boolean {
+    return this.revisitsOf(r.id).some((v) => v.outcome === "amend" && v.revision === r.revision);
+  }
+
+  /** Why this revision's answer can no longer be acted on, if a reversal or an amendment retired it. */
+  private retiredBy(r: Rev): "reversed" | "amended" | undefined {
+    return this.wasReversed(r) ? "reversed" : this.wasAmended(r) ? "amended" : undefined;
+  }
+
+  /** A decision the log holds: answered, applied, or a delivered level-1 decision recorded with utp decide. */
+  private isLogged(r: Rev): boolean {
+    return !!r.answer || r.status === "applied"
+      || (r.status === "closed" && r.body.kind === "notice" && r.body.level === 1 && !!r.policy);
+  }
+
+  /** Answered revisit cards, by the id of the decision each one reconsidered, oldest first. */
+  private revisitsOf(id: string): RevisitRecord[] {
+    if (!this.revisitCache) {
+      const recorded = new Set<State>(["answered", "granted", "executing", "applied", "outcome_unknown"]);
+      const index = new Map<string, RevisitRecord[]>();
+      for (const req of this.reqs.values()) {
+        const rev = this.current(req);
+        const spec = rev.body.revisit;
+        const outcome = rev.answer?.value;
+        if (rev.body.kind !== "revisit" || !spec || !rev.answer || !isRevisitOutcome(outcome) || !recorded.has(rev.status)) continue;
+        const [target = "", revision] = spec.decision.split("@");
+        const amendment = outcome === "amend" ? rev.body.options?.find((o) => o.id === "amend")?.label : undefined;
+        const list = index.get(target) ?? [];
+        list.push({ request: rev.key, revision: Number(revision), outcome, change: spec.change,
+          ...(amendment ? { amendment } : {}), at: rev.answer.at, tags: rev.body.tags ?? [] });
+        index.set(target, list);
+      }
+      for (const list of index.values()) list.sort((a, b) => a.at.localeCompare(b.at));
+      this.revisitCache = index;
+    }
+    return this.revisitCache.get(id) ?? [];
+  }
+
+  /** Reversals recorded with utp reverse, plus decisions the person reversed through a revisit. */
+  private reversalsOf(req: Req): Req["reversals"] {
+    const revisited = this.revisitsOf(req.id).filter((v) => v.outcome === "reverse")
+      .map((v) => ({ at: v.at, reason: `${v.change} (revisit ${v.request})`, tags: v.tags, revision: v.revision }));
+    return revisited.length ? [...req.reversals, ...revisited] : req.reversals;
+  }
+
+  private earlierDecision(ref: string): EarlierDecision | undefined {
+    const target = this.resolve(ref);
+    if (!target) return undefined;
+    const answer = this.savedAnswer(target);
+    return { ref: target.key, question: this.visibleBody(target).question, ...(answer ? { answer } : {}),
+      decided_at: target.answer?.at ?? target.asked_at, status: this.effective(target, this.now().toISOString()) };
+  }
+
+  /** Pins a revisit card to the logged decision it reconsiders, or says why it can't be asked. */
+  private revisitBody(body: RequestBody): RequestBody | OpResult {
+    if (body.kind !== "revisit" || !body.revisit) return body;
+    const target = this.resolve(body.revisit.decision);
+    if (!target) return notFound(body.revisit.decision);
+    if (target.body.kind === "revisit") {
+      return { code: EXIT.NOT_ALLOWED, message: "revisit the original decision, not an earlier revisit of it" };
+    }
+    if (!this.isLogged(target)) {
+      return { code: EXIT.NOT_ALLOWED, message: "a revisit needs an answered or applied decision, or a delivered level-1 decision recorded with utp decide" };
+    }
+    return { ...body, revisit: { ...body.revisit, decision: target.key }, related: [...new Set([...(body.related ?? []), target.id])] };
   }
 
   private isOpen(r: Rev): boolean {

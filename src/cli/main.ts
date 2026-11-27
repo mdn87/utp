@@ -38,7 +38,7 @@ Setup       serve [--data <dir>] [--host <addr>] [--port <n>] [--review-origin <
             setup <codex|claude|antigravity> [--apply] [-- <agent arguments>]
             init [--name <name>] [--new]
             link <project-id>
-Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge> [--file <path>]
+Requests    new <choose|approve|handoff|clarify|accept|assumptions|notice|judge|revisit> [--file <path>]
             check <file>
             closeout <report.json> [--keep-notices]
             closeout-hook               (Claude Code hook JSON on standard input)
@@ -248,6 +248,19 @@ const TEMPLATES: Record<string, RequestBody> = {
   notice: {
     kind: "notice", question: "An informational update", why_now: "Say what happened and why it matters.",
     stakes: { reversibility: "easy" }, level: 1, level_reason: "The person needs to know what changed.",
+  },
+  revisit: {
+    kind: "revisit", question: "One sentence: should the earlier decision stand now that its basis changed?",
+    why_now: "Say what waits on this and why the change needs an answer now.",
+    revisit: { decision: "R-20260101-00000000", original_basis: "What the earlier decision rested on.",
+      change: "What is different now." },
+    options: [
+      { id: "keep", label: "Keep the decision as it is", consequence: "What stays the same, and what the change then costs." },
+      { id: "amend", label: "Keep it with one stated change", consequence: "What the amended decision changes." },
+      { id: "reverse", label: "Reverse the decision", consequence: "What is undone and what replaces it." },
+    ],
+    evidence: [exampleEvidence],
+    stakes: { reversibility: "easy" }, level: 2, level_reason: "It changes a decision the person already made.",
   },
   judge: {
     kind: "judge", question: "Which sample works better for the stated goal?",
@@ -686,6 +699,7 @@ async function main(argv: string[]): Promise<number> {
       const entries = r.entries as DecisionLogEntry[];
       return out(r, entries.length ? entries.map((e) => `${e.id}  ${e.status}  ${e.answer ?? "-"}  ${e.question}`
         + (e.reversals.length ? `  (reversed ${e.reversals.length}x)` : "")
+        + (e.revisits?.length ? `  (revisited ${e.revisits.length}x)` : "")
         + (e.archived ? `  (archived from ${e.origin_project})` : "")).join("\n") : "No matching decisions.");
     }
     case "export": {

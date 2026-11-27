@@ -5,6 +5,7 @@ import type { AcceptanceGoal, Actor, AnswerRecord, ClarificationRequest, Default
 import type { RevisionDiff } from "../core/diff.js";
 import { PIN_CHANGES, type DecisionPin } from "../core/decision-pins.js";
 import { earlierCard, previousDecision, type FollowUpSource } from "../core/review-history.js";
+import { revisitContext, revisitText, type EarlierDecision, type RevisitRecord } from "../core/revisit.js";
 import { itemPrompts } from "../core/items.js";
 import { validTaskTitle } from "../core/check.js";
 import { waiverNotes, type SharedContext } from "../core/quality.js";
@@ -25,6 +26,10 @@ export interface RequestView {
   revision_diff?: RevisionDiff;
   applied_evidence?: { action: string; target: string; scope: string; effect: string };
   policy?: unknown;
+  /** On a revisit card: the decision it reconsiders, as UTP recorded it. */
+  earlier_decision?: EarlierDecision;
+  /** On any decision: the answered revisits of it, oldest first. */
+  revisits?: RevisitRecord[];
 }
 
 export interface ReviewView {
@@ -132,6 +137,7 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
   const out: string[] = [`### ${mark ? `${mark}. ` : ""}${b.question}`, ""];
   const prior = earlierCard(review?.follow_up, b);
   if (prior) out.push("**Earlier decision**", ...(prior.question === b.question ? [] : [prior.question]), previousDecision(prior), "");
+  for (const [label, text] of revisitContext(b, v.earlier_decision)) out.push(`**${label}**`, text, "");
   if (v.revision_diff) out.push(...revisionBannerLines(v.revision_diff), "");
   if (!v.current) out.push("A later revision replaced this card.", "");
   else if (v.status === "cancelled") out.push("This card was cancelled.", "");
@@ -200,6 +206,7 @@ export function cardMarkdown(v: RequestView, mark?: string, review?: ReviewView)
   for (const flag of v.flags) out.push(flag, "");
   out.push(`\`${v.id}@${v.revision}\` · ${cardMetadata(v)}`);
   if (v.answer) out.push("", `Answered: ${answerText(v.answer)}`);
+  if (v.revisits?.length) out.push("", ...v.revisits.map(revisitText));
   if (b.kind === "judge" && v.answer) {
     if (v.answer.note) out.push(`Reason given · ${v.answer.note}`);
     if (v.answer.ratings) out.push(`Ratings · Candidate A ${v.answer.ratings.a}/5 and Candidate B ${v.answer.ratings.b}/5`);

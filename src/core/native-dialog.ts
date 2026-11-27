@@ -222,6 +222,7 @@ function droppedFields(card: RequestView): string[] {
   if (b.depends_on?.length) dropped.push("depends_on");
   if (b.skip_if?.length) dropped.push("skip_if");
   if (b.notes) dropped.push("notes");
+  if (b.revisit) dropped.push("revisit (the earlier decision and what changed)");
   if (card.revision_diff) dropped.push("revision_diff");
   if (card.flags?.length) dropped.push("flags");
   if (card.clarification) dropped.push("clarification");

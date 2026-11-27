@@ -31,7 +31,9 @@ actionable default/notice controls with close-out deduplication, and live
 pickup status with a pre-execution edit window and `utp resume`. Phase 2 rich
 review adds side-by-side blind `judge` comparisons (with PNG/MP4 metadata
 stripping and immutable ballots) and lossless native question dialog mapping
-with mandatory fallbacks (`utp dialog`). Start with:
+with mandatory fallbacks (`utp dialog`). Phase 3 has started with the
+`revisit` card, which asks the person to keep, amend, or reverse a logged
+decision whose basis has changed. Start with:
 
 - [Concept](docs/concept/concept.md): what UTP is, the kinds of decisions it
   handles, the request and answer formats, and the build phases.
